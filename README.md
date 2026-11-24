@@ -1,6 +1,6 @@
-# mac-audit
+# macassay
 
-`mac-audit.sh` is a read-only health and security audit for macOS that writes one Markdown report.
+`macassay` is a read-only health and security audit for macOS that writes one Markdown report.
 
 ## Why
 
@@ -11,10 +11,10 @@ The script turns a manual review of a Mac into a repeatable run. The report open
 The script needs only stock macOS: `/bin/bash` 3.2 and built-in tools. Run it as a normal user; it refuses to audit as root.
 
 ```sh
-./mac-audit.sh                      # audit this Mac, write ./mac-audit-<host>-<date>.md
-./mac-audit.sh --quick --offline    # skip log searches and update checks
-./mac-audit.sh --host HOST --user USER --key ~/.ssh/KEY   # audit a remote Mac over SSH
-./mac-audit.sh -h                   # all options, examples, and install steps
+./macassay                      # audit this Mac, write ./macassay-<host>-<date>.md
+./macassay --quick --offline    # skip log searches and update checks
+./macassay --host HOST --user USER --key ~/.ssh/KEY   # audit a remote Mac over SSH
+./macassay -h                   # all options, examples, and install steps
 ```
 
 Remote mode sends the script inside the SSH command. Nothing is copied to the remote disk, and the report is saved on the local Mac.
@@ -23,11 +23,11 @@ Remote mode sends the script inside the SSH command. Nothing is copied to the re
 
 Some checks need root: all listeners, effective `sshd` settings, the packet filter, background items, sudoers contents, the secure boot policy, device profiles, and other accounts' keys, LaunchAgents, startup files, and crontabs. They run only through sudo rules that allow fixed read-only command lines. Without the rules, the report lists these checks as skipped.
 
-1. Review the rules: `./mac-audit.sh --print-sudoers`
-2. Install them: `sudo ./mac-audit.sh --install-sudoers`
+1. Review the rules: `./macassay --print-sudoers`
+2. Install them: `sudo ./macassay --install-sudoers`
 3. Run the audit as usual.
 
-The installer writes `/etc/sudoers.d/mac-audit` and checks it with `visudo` before and after. Undo it with `sudo rm /etc/sudoers.d/mac-audit`. Install again after you add a user or a `sudoers.d` file. For a remote Mac, run `./mac-audit.sh --host HOST --install-sudoers`; it asks for the remote sudo password.
+The installer writes `/etc/sudoers.d/macassay` and checks it with `visudo` before and after. Undo it with `sudo rm /etc/sudoers.d/macassay`. Install again after you add a user or a `sudoers.d` file. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
 
 ## Limits
 
@@ -38,6 +38,6 @@ The installer writes `/etc/sudoers.d/mac-audit` and checks it with `visudo` befo
 
 ## Development
 
-- Check syntax with `bash -n mac-audit.sh`, and lint with `shellcheck mac-audit.sh` (ShellCheck from Homebrew, for development only).
+- Check syntax with `bash -n macassay`, and lint with `shellcheck macassay` (ShellCheck from Homebrew, for development only).
 - Run the fixture tests with `dev/test.sh`. They need no root and no network.
 - The design of the sudo rules is in `dev/features/sudo-rules.md`. The project history and verified facts are in `dev/HANDOFF.md`.

@@ -13,7 +13,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 - [/] Version 1.2 (built and code-reviewed on `feature/sudo-rules`; install tests T5 and T7 to T11 pending): per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`.
 
-Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by value. More proposals, ranked, are in `dev/prior-art.md` (Proposed checks for 1.3):
+Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by value. More proposals, ranked, are in `dev/prior-art-ideas.md`:
 
 - [ ] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation.
 - [ ] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`).
@@ -52,7 +52,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [ ] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script?
 - [ ] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root.
-- [ ] Continue mac-audit rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of mac-audit's host checks; evidence is in `dev/prior-art.md`.
+- [ ] Continue macassay rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of macassay's host checks; evidence is in `dev/prior-art.md`.
 - [x] Project name: pick one that does not overlap with the projects in `dev/prior-art.md` (several use `macaudit` or `mac-security-audit`). (resolved 2026-11-24): `macassay`. See Decisions.
 - [ ] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel.
 

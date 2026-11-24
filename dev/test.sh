@@ -1,11 +1,11 @@
 #!/bin/bash
-# Fixture tests for the logic functions in mac-audit.sh. Development only; not shipped.
+# Fixture tests for the logic functions in macassay. Development only; not shipped.
 # Usage: dev/test.sh   (no root, no network; exits non-zero when a case fails)
 
 cd "$(dirname "$0")/.." || exit 1
-# shellcheck source=/dev/null  # the suite lints mac-audit.sh on its own
-MAC_AUDIT_LIB=1 . ./mac-audit.sh
-T=$(mktemp -d /tmp/mac-audit-test.XXXXXX) || exit 1
+# shellcheck source=/dev/null  # the suite lints macassay on its own
+MACASSAY_LIB=1 . ./macassay
+T=$(mktemp -d /tmp/macassay-test.XXXXXX) || exit 1
 # A watchdog stops the suite after 60 seconds, so a hang fails instead of stalling.
 ( sleep 60; echo "FAIL suite timed out after 60 seconds" >&2; kill -TERM $$ ) & WD=$!
 trap '{ kill "$WD"; wait "$WD"; } 2>/dev/null; rm -rf "$T"' EXIT
@@ -21,7 +21,7 @@ ACCTS='account root 0 /var/root
 account alice 501 /Users/alice
 account bob 502 /Users/bob
 account _www 70 /Library/WebServer
-sudoersd mac-audit
+sudoersd macassay
 sudoersd extra_rules'
 
 # F1: a normal account list gives a valid file for the granted user.
@@ -34,7 +34,7 @@ check "F1 no rules for the granted user" hasnt "$T/f1" "/Users/bob"
 check "F1 no rules for system accounts" hasnt "$T/f1" "/Library/WebServer"
 check "F1 sudoers.d files" has "$T/f1" "/bin/cat /etc/sudoers.d/extra_rules"
 check "F1 always_set_home follows the alias" [ "$(grep -n 'Cmnd_Alias' "$T/f1" | cut -d: -f1)" -lt "$(grep -n 'always_set_home' "$T/f1" | cut -d: -f1)" ]
-check "F1 grant line" has "$T/f1" "bob ALL = (root) NOPASSWD: MACAUDIT"
+check "F1 grant line" has "$T/f1" "bob ALL = (root) NOPASSWD: MACASSAY"
 
 # F2: no wildcards, no ALL in a command, no shell or interpreter, bputil only on Apple silicon.
 grep '^    /' "$T/f1" > "$T/f2.cmds"

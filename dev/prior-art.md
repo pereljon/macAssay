@@ -1,24 +1,20 @@
 # Prior art: macOS audit and security projects
 
-This file tracks GitHub projects that audit or harden macOS, what each one checks, and which ideas mac-audit should adopt. It does not hold mac-audit's plan of record; adopted checks move to `docs/ISSUES.md` and a feature design doc. The `prior-art-scout` agent (`.claude/agents/prior-art-scout.md`) maintains it.
+This file is the repo log: the GitHub projects that audit or harden macOS, what each one checks, and the search state for finding more. It does not hold the ideas to adopt; `dev/prior-art-ideas.md` lists each idea with its sources, date added, and status. Neither file is macassay's plan of record; planned checks move to `docs/ISSUES.md` and a feature design doc. The `prior-art-scout` agent (`.claude/agents/prior-art-scout.md`) maintains both files.
 
 Last full review: 2026-11-24.
 
 ## Summary
 
-None of the reviewed tools should run on the audited Macs as they stand, and none replaces mac-audit. Deep reviews of the two closest peers, mac-posture-audit and macharden, found that neither has a remote mode or a sudo-rule model, both cover about half of mac-audit's host checks, and mac-posture-audit's written rules forbid both features. mac-posture-audit, macharden, Pareto, and NIST mSCP are the best sources of checks to borrow. Most of the others install root daemons, change settings, or reach the network, which conflicts with mac-audit's read-only, stock-tools, least-privilege design.
+None of the reviewed tools should run on the audited Macs as they stand, and none replaces macassay. Deep reviews of the two closest peers, mac-posture-audit and macharden, found that neither has a remote mode or a sudo-rule model, both cover about half of macassay's host checks, and mac-posture-audit's written rules forbid both features. mac-posture-audit, macharden, Pareto, and NIST mSCP are the best sources of checks to borrow. Most of the others install root daemons, change settings, or reach the network, which conflicts with macassay's read-only, stock-tools, least-privilege design.
 
 The 2026-11-24 discovery run added 15 reviews. Most of the 115 relevant repos the macOS audit searches found are small, recent, and often written with AI assistance; few add checks. The best new sources are drduh's launchd script (launch item flags), sudo-check (sudoers rules), mac-compass (signing and baseline design), and the agentic toolkit (Homebrew and MCP settings).
 
-Recommended for mac-audit:
-
-- **Version 1.2 (pending approval):** read effective SSH settings with `sshd -G`, which needs no root, and drop the `sshd -T` sudo rule. Replace the `profiles show` rule with `profiles list -type configuration`.
-- **Version 1.3, highest value:** remote-support tool detection; plaintext credential files (presence and permissions only); browsers or Electron apps with a debug port; dangerous global git settings; sudoers file ownership and permissions; more `sshd` keys; screen-lock delay; world-writable app bundles; stale or disabled update checks; browser native-messaging hosts; more sharing services.
-- **Beyond checks:** cite CIS and mSCP rule IDs in findings; add a read-only tripwire test; give findings stable IDs and an accepted-risk list.
+The recommendations from these reviews are in `dev/prior-art-ideas.md`: priority A checks for 1.3, and the `sshd -G` and `profiles list` changes for 1.2.
 
 ## Tracked repos
 
-Rows are sorted by value as a source for mac-audit. "Last commit" is the newest commit at the last review; the scout compares it with the current one to find repos worth a second look.
+Rows are sorted by value as a source for macassay. "Last commit" is the newest commit at the last review; the scout compares it with the current one to find repos worth a second look.
 
 | Repo | Type | Language | Runs as | Changes the Mac | Network | Last commit | Reviewed | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -62,7 +58,7 @@ Rows are sorted by value as a source for mac-audit. "Last commit" is the newest 
 | [ivanpsn/mac-security-audit](https://github.com/ivanpsn/mac-security-audit) | Audit and fix for AI-agent hosts | Bash | `sudo` | Yes (`--fix`) | `softwareupdate -l` | `be4ff6d` 2026-10-14 | 2026-11-24 | Unsafe: README links to a zip of Windows executables |
 ## Per-repo reviews
 
-Each review lists what the tool does, how it works, the tests it runs, its safety on a personal Mac, and what to adopt. Reviews read shallow clones; nothing was run.
+Each review lists what the tool does, how it works, the tests it runs, its safety on a personal Mac, and what to adopt. Each item in an **Adopt:** bullet has a row in `dev/prior-art-ideas.md`. Reviews read shallow clones; nothing was run.
 
 ### demirelo/mac-posture-audit
 
@@ -71,7 +67,7 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **Tests:** about 587 results across the system baseline, sharing, persistence, browsers and extensions, wallets, MCP servers, AI-agent instruction files, git and SSH configuration, credential files, and developer tools.
 - **Safety:** a CI tripwire (`scripts/check-read-only.sh`) fails the build on any command that changes the system. Network calls run only with `--network`. Privileged checks use `sudo -n` and are skipped when sudo needs a password; there are no fixed sudo rules.
 - **Adopt:** credential-file presence and permissions, dangerous global git settings, risky `~/.ssh/config` options, browsers or Electron apps with a debug port, VS Code and Cursor workspace trust, and the read-only tripwire as a test.
-- **Deep review (2026-11-24):** no remote mode, although it is one file with no `source` and could support one. No sudo-rule model: it refuses root and uses `sudo -n` per probe, so privileged checks run only while sudo credentials are cached. Its Markdown report has no Limitations section and, by design, no command-output evidence. CONTRIBUTING.md forbids writes other than `--snapshot`, remediation, and network calls outside `--network`, so a sudoers installer or SSH remote mode would not fit upstream. About half its 7,473 lines are wallet, AI-agent, or developer-tool specific, and it lacks most of mac-audit's host checks. One maintainer; no outside pull requests or issues.
+- **Deep review (2026-11-24):** no remote mode, although it is one file with no `source` and could support one. No sudo-rule model: it refuses root and uses `sudo -n` per probe, so privileged checks run only while sudo credentials are cached. Its Markdown report has no Limitations section and, by design, no command-output evidence. CONTRIBUTING.md forbids writes other than `--snapshot`, remediation, and network calls outside `--network`, so a sudoers installer or SSH remote mode would not fit upstream. About half its 7,473 lines are wallet, AI-agent, or developer-tool specific, and it lacks most of macassay's host checks. One maintainer; no outside pull requests or issues.
 
 ### ParetoSecurity/pareto-mac
 
@@ -229,7 +225,7 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **How it works:** Go with a Swift app. It stores raw command output with SHA-256 hashes and writes a JSON scan document and an HTML report.
 - **Tests:** about 14 native probes (SIP, FileVault, Gatekeeper, firewall states and block-all, `softwareupdate --schedule`, XProtect against SOFA, PF, Remote Login), plus a subset of mSCP rules and package vulnerabilities.
 - **Safety:** it refuses to run as root; `--privileged` runs the same binary through sudo for two fixed probes. It fetches the SOFA feed and expects pinned downloads of Go, osquery, Syft, and Grype (README). I did not download them.
-- **Adopt:** nothing new. Its native probes are in mac-audit already.
+- **Adopt:** nothing new. Its native probes are in macassay already.
 
 ### SwordSec/SwordCheck
 
@@ -245,7 +241,7 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **How it works:** `macos_security_audit.sh` (855 lines) scores each check and collects fix commands in the report.
 - **Tests:** system integrity, firewall, VPN presence, sharing, Bluetooth, saved Wi-Fi networks, privacy toggles, screen lock, password hints, SSH, Find My Mac, launch items, TCC, and battery.
 - **Safety:** it starts `sudo -v` and a keep-alive loop (`macos_security_audit.sh:152-154`). It prints fix commands, which the user runs. The README quick start downloads the script from a different GitHub account than this repo's owner; I did not fetch it. The "Sudo Timeout" check always warns (`:572`).
-- **Adopt:** only the Find My Mac idea. The script reads it with `nvram -x -p` (`:574`), which dumps all of NVRAM; a single-variable read is the only form mac-audit could use.
+- **Adopt:** only the Find My Mac idea. The script reads it with `nvram -x -p` (`:574`), which dumps all of NVRAM; a single-variable read is the only form macassay could use.
 
 ### canerfilibeli/armazi
 
@@ -276,7 +272,7 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **What it is:** a dependency-free macOS hardening audit with 54 weighted checks mapped to CIS, NIST 800-53, and MITRE ATT&CK, a score, and a `--fix` mode. MIT, one maintainer, created 2026-09-12.
 - **How it works:** zsh only; `bin/macharden` sources 14 library files and reads JSON data files (`data/compliance_mappings.json`, locales) from disk, and refuses to run from standard input. Markdown, HTML, SARIF, and JSON reports; HTML, SARIF, and `--diff` need python3. Mocked zsh tests with a fake root run in CI.
 - **Tests:** hardening 21, network 12, secrets 11, persistence 10. It lacks listener probes, signers, root-daemon writability, accounts, logs, disk, backups, DNS, proxy, certificates, TCC, and `pf`.
-- **Safety:** the audit path makes no network calls and writes only its report. It does not refuse root, and its one privileged command (`sudo -n sshd -T`) can resolve `sshd` through `PATH`. As a normal user it cannot read `/etc/sudoers.d`, so it reports no NOPASSWD rules (false negative). `--fix` runs remediation strings with `eval` (`lib/remediate.sh:562`), and some embed file names read from the Mac in double quotes (`lib/audit_persistence.sh:94`), so a crafted LaunchAgent file name runs code when the user applies fixes; a report to the maintainer is drafted. Its NOPASSWD check would fail on every Mac with mac-audit's rules.
+- **Safety:** the audit path makes no network calls and writes only its report. It does not refuse root, and its one privileged command (`sudo -n sshd -T`) can resolve `sshd` through `PATH`. As a normal user it cannot read `/etc/sudoers.d`, so it reports no NOPASSWD rules (false negative). `--fix` runs remediation strings with `eval` (`lib/remediate.sh:562`), and some embed file names read from the Mac in double quotes (`lib/audit_persistence.sh:94`), so a crafted LaunchAgent file name runs code when the user applies fixes; a report to the maintainer is drafted. Its NOPASSWD check would fail on every Mac with macassay's rules.
 - **Adopt:** BPF device access, IP forwarding, promiscuous interfaces, open Wi-Fi auto-join, core dumps, login keychain lock policy, secrets in shell history, `PATH` hygiene, sudo `timestamp_timeout`, the CIS, NIST, and MITRE IDs, and the rule that missing evidence is INFO, never PASS. Never its `eval` remediation.
 
 ### fexxdev/macos_security_audit
@@ -356,90 +352,6 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **Safety:** do not download the zip. The script claims to change nothing, but `--fix` disables services, edits shell files, deletes Docker LaunchDaemons, and changes permissions.
 - **Adopt:** nothing beyond ideas already taken from fullstacksushil.
 
-## Proposed checks for 1.3
-
-Priority A checks cover the highest-value gaps. None needs root, and all fit stock tools, read-only, and no secrets in the report. These add to the checks already planned for 1.3 in `docs/ISSUES.md`. Each command needs a check on a live Mac before it ships.
-
-| Priority | Check | How (stock command) | Root | Flag | Sources |
-| --- | --- | --- | --- | --- | --- |
-| A | Remote-support tools running | `ps -axo comm=` for TeamViewer, AnyDesk, RustDesk, ScreenConnect, Splashtop, BeyondTrust, LogMeIn, RealVNC, TigerVNC, JumpCloud Assist | No | MEDIUM | macaudit |
-| A | Plaintext credential files | Presence, key names, and `stat` mode of `~/.netrc`, `~/.aws/credentials`, `~/.git-credentials`, `~/.npmrc`, `~/.pypirc`, `~/.docker/config.json`, `~/.kube/config`, `~/.config/gh/hosts.yml`; never values | No | MEDIUM; HIGH if group or others can read | mac-posture-audit, Pareto |
-| A | Browser or Electron with a debug port | `ps -axwwo command=` for `--remote-debugging-port`, `--remote-debugging-pipe`, `--inspect`; report the app name only | No | HIGH if running; MEDIUM if set in a LaunchAgent | mac-posture-audit |
-| A | Dangerous global git settings | Read `~/.gitconfig` for `core.hooksPath` and `credential.helper store` (not `/usr/bin/git`, which can prompt to install developer tools) | No | MEDIUM | mac-posture-audit |
-| A | Sudoers file ownership and permissions | `stat -f '%Su:%Sg %Sp'` on `/etc/sudoers`, `/etc/sudoers.d`, its files, and `/usr/bin/sudo` (expect root-owned and setuid) | No | HIGH if not root-owned or writable by others | Lynis AUTH-9252, sudo-check |
-| A | SSH client options | Parse `~/.ssh/config` for `ForwardAgent yes` and `StrictHostKeyChecking no` (not `ssh -G`, which can run `Match exec`) | No | MEDIUM under `Host *`; else LOW | mac-posture-audit, Pareto |
-| A | Weak SSH keys | `ssh-keygen -l -f` on `~/.ssh/*.pub` | No | MEDIUM for DSA or RSA under 2048 bits | Pareto |
-| A | More sshd settings | `sshd -G` keys `permituserenvironment`, `hostbasedauthentication`, `gatewayports`, `permittunnel`, `allowtcpforwarding`, `x11forwarding`, `maxauthtries` | No | MEDIUM or LOW by key | Lynis SSH-7408 |
-| A | Screen-lock delay | `sysadminctl -screenLock status` | No | LOW above 5 s; MEDIUM above 15 min | mSCP, CIS 2.11.2 |
-| A | Update checks stale or off | `/Library/Preferences/com.apple.SoftwareUpdate` keys `LastFullSuccessfulDate`, `AutomaticCheckEnabled`, `AutomaticDownload`, `AutomaticallyInstallMacOSUpdates`, `ConfigDataInstall`, `CriticalUpdateInstall`; App Store `AutoUpdate` | No | MEDIUM if not checked in 30 days or checks off; LOW for the rest | mSCP CIS 1.1, Pareto, check-mac, agentic toolkit |
-| A | Browser native-messaging hosts | List `NativeMessagingHosts` folders for Chrome, Edge, Brave, and Firefox, system-wide and per user | No | INFO; MEDIUM if the host program is in an unusual path | fuzzlove |
-| A | World-writable apps and folders | `find /Applications -name '*.app' -type d -perm -2`; `find /Library -type d -perm -002 ! -perm -1000` | No | MEDIUM for apps; LOW for folders | mSCP CIS 5.1.5, 5.1.7 |
-| B | More sharing services | AirPlay Receiver (ControlCenter on TCP 5000 or 7000), Media Sharing (TCP 3689), Content Caching (`AssetCache` `Activated`), Bluetooth Sharing, SMB guest access, Apache and NFS enabled; printer sharing (`cupsctl`, `_share_printers`); Internet Sharing; Remote Apple Events (`launchctl list`, `com.apple.AEServer`) | No | MEDIUM for Apache, NFS, SMB guest; LOW for the rest | mergen, Pareto, mSCP, macabre, check-mac |
-| B | Launch item anomaly flags | `plutil -extract` on each launchd plist; `xattr -p com.apple.quarantine` on the target; `stat -f %m` on the plist. Flags: target under `~/Downloads` or `/var/folders`, quarantined target, `AbandonProcessGroup`, `StartInterval` under 60 s, shell with `-c`, program named like a system binary outside system folders, plist younger than 7 days; inline commands in the plist (`curl`, `wget`, `base64`, `eval`, `python -c`, `osascript -e`, `/dev/tcp`); `KeepAlive` with a user-writable program | No | MEDIUM for a Downloads, temp, or quarantined target; LOW for the rest | drduh guide, macos-persist-scan, mcp-macos-security, mac-security-audit-skill, macharden, fullstacksushil |
-| B | Sudoers Defaults that weaken sudo | Read through the existing sudoers rule: `env_keep` with `DYLD_*` or `LD_*`, `!env_reset`, `setenv`, `!authenticate`, `visiblepw`, `timestamp_timeout` of -1. Planned in `docs/ISSUES.md` (stronger sudoers checks); this adds the key list | Yes (existing rule) | MEDIUM; HIGH for `!authenticate` | sudo-check |
-| B | SSH authorized_keys options | Read option names (`command=`, `from=`, `no-pty`, `permitopen`) from `authorized_keys`; never option values | No | INFO; MEDIUM for `command=` | mcp-macos-security |
-| B | Third-party Homebrew taps | `brew tap` names; the tap of each installed package (`brew info --json=v2 --installed`); names in `HOMEBREW_NO_INSECURE_REDIRECT`, `HOMEBREW_CASK_OPTS`, `HOMEBREW_VERIFY_ATTESTATIONS`. Run after mac-audit's existing Homebrew update. The `brew.env` path is unverified | No | INFO; LOW for a tap with no installed package | agentic toolkit |
-| B | XProtect scans off | `xprotect status`, launch and background scans | Unverified | MEDIUM | mSCP CIS 5.10 |
-| B | AI-agent hooks and MCP servers | `plutil -convert json -o -` on `~/.claude/settings.json`, Cursor and Codex config; names and program paths only; also flag launcher packages with no pinned version (`npx -y name`) | No | INFO; HIGH if a program is in `/tmp`, `/Users/Shared`, or a hidden folder; LOW for an unpinned launcher | loongsuite-pilot, mac-posture-audit, agentic toolkit |
-| B | Editor workspace trust off | Grep VS Code and Cursor `settings.json` for `security.workspace.trust.enabled: false` and `task.allowAutomaticTasks: on` | No | LOW | mac-posture-audit |
-| B | Mounted network shares | `/sbin/mount` for `smbfs`, `nfs`, `afpfs` | No | INFO | fuzzlove |
-| B | Password hints and login window | `dscl . -list /Users hint` (account names only); `SHOWFULLNAME`, `RetriesUntilHint` | No | LOW | mSCP CIS 2.12.1, mergen |
-| B | Password and lockout policy | `pwpolicy getaccountpolicies`, key fields only | Unverified | LOW | fuzzlove |
-| B | Privileged helpers in app bundles | `Contents/Library/LaunchServices` and `SMPrivilegedExecutables` in `Info.plist`, with signer | No | MEDIUM if unsigned or ad hoc | MacOS-Maid |
-| B | Unencrypted external volumes | `diskutil list external`, then `diskutil info` | No | INFO | mSCP CIS 5.3.2 |
-| B | World-writable umask | `umask` lines in `/etc/zshrc`, `/etc/profile`, and the user's startup files; value and file only | No | LOW for 000 or 002 | Lynis SHLL-6230 |
-| B | Shell history not a regular file | `find ~ -maxdepth 1 -name '.*history' ! -type f` | No | LOW | Lynis HOME-9310 |
-| B | Long uptime | `sysctl -n kern.boottime` | No | LOW above 14 days | Pareto |
-| B | Tailscale Funnel or Serve | `tailscale funnel status` and `tailscale serve status`, using the app's CLI when installed | No | HIGH for Funnel; INFO for Serve | fullstacksushil, ivanpsn |
-| B | Local AI servers and containers on all interfaces | A listener on `*:11434` (Ollama) rated as such; `docker ps` ports on `0.0.0.0` when the Docker CLI exists and the daemon answers | No | MEDIUM | fullstacksushil, ivanpsn |
-| B | Installers without quarantine | `xattr -p com.apple.quarantine` on `.app`, `.pkg`, `.dmg`, `.command` items in `~/Downloads` from the last 90 days | No | MEDIUM | macwatchdog-cli, mac-security-audit-skill |
-| B | Profile payload types | Flag root CA, VPN, and SCEP payloads in the profiles inventory | No for user profiles | MEDIUM for a root CA; else INFO | macwatchdog-cli |
-| B | CA private-key permissions | `stat -f %Lp` on `~/Library/Application Support/mkcert/rootCA-key.pem` and similar CA roots | No | HIGH if group or others can read; else INFO | fexxdev |
-| B | IP forwarding | `sysctl -n net.inet.ip.forwarding net.inet6.ip6.forwarding` | No | MEDIUM if on while Internet Sharing is off | macharden |
-| B | BPF device access | `ls -l /dev/bpf*`; `dscl . -read /Groups/access_bpf GroupMembership` | No | MEDIUM if world-readable; INFO for the group | macharden |
-| B | PATH hygiene | The user's login `PATH`, captured before mac-audit resets it: `.`, or world-writable folders | No | HIGH for `.`; MEDIUM for a world-writable folder | macharden |
-| B | Secrets in shell history | `grep -c` for token patterns in `~/.zsh_history` and `~/.bash_history`; counts only | No | MEDIUM | macharden |
-| B | macOS release without security updates | `sw_vers -productVersion` against a maintained list of supported majors | No | MEDIUM | fort |
-| B | Login keychain lock policy | `security show-keychain-info ~/Library/Keychains/login.keychain-db` | No | LOW without auto-lock or lock on sleep | macharden |
-| C | Low-value extras | Network time off; unified-log private data on; third-party QuickLook generators; Wake-on-LAN and Power Nap; Terminal Secure Keyboard Entry; outbound firewall and antivirus inventory; `.rhosts` and `hosts.equiv` present; hibernate mode (`pmset -g`); firewall block-all (`socketfilterfw --getblockall`); Bluetooth power; saved Wi-Fi network count; iCloud Desktop and Documents sync; Find My Mac (`nvram fmm-mobileme-token-FMM`, one variable, never `nvram -p`; unverified); entitlements of third-party apps (`codesign -d --entitlements :-`: `get-task-allow`, `disable-library-validation`, `allow-dyld-environment-variables`); random-looking launchd labels; `sudo -V` against known sudo CVEs (Apple backports unverified); secret-bearing file names (`.env`, `*.tfstate`, `*.pem`) in project folders; developer mode (`DevToolsSecurity -status`); core dumps (`kern.coredump`); USB restricted mode; promiscuous interfaces; configured VPN services (`scutil --nc list`); per-service DNS servers; telemetry sharing; Touch ID for sudo; daily-use account is an admin; USB device inventory | No | INFO or LOW | fuzzlove, mSCP, mergen, Lynis, check-mac, macabre, Di-kairos, hackerman-jpeg, macos-trust, persist-scan, sudo-check, SwordCheck, macharden, fexxdev, fort, idlework, 6kdave, macwatchdog-cli |
-
-## Ideas beyond checks
-
-| Idea | What it changes | Source | Target |
-| --- | --- | --- | --- |
-| Read SSH settings with `sshd -G` | Drops the `sshd -T` sudo rule. Verified on macOS 27.2.1: it runs without root and prints the same keys | mSCP | 1.2, pending approval |
-| Inventory device profiles with `profiles list -type configuration` | Replaces `profiles show`, whose expanded output might carry payload secrets | Code review of 1.2 | 1.2, pending approval |
-| Read-only tripwire test | A test that fails when `mac-audit.sh` gains a command that changes the system | mac-posture-audit | 1.3 |
-| CIS and mSCP citations | Each matching finding names its CIS section and mSCP rule ID, and where it applies a MITRE ATT&CK technique ID | mSCP, mac-compass | 1.3 |
-| Stable finding IDs | Each flag gets an ID such as `MA-SSH-001`, so findings can be cited, suppressed, and compared | Lynis, macabre | 1.3 |
-| Accepted-risk list | A user file of finding IDs to hide or mark as accepted | Lynis | 1.3 |
-| Machine-readable sidecar | ID, severity, and text per finding, for run-to-run comparison | Lynis, macabre, mac-compass | Later |
-| Run-to-run comparison | `--compare PREVIOUS` shows what changed; startup items keyed on program, arguments, and run conditions. macabre exits non-zero on a regression; mac-compass compares normalized baselines | macaudit, macabre, mac-compass | Later |
-
-| Combined findings | Report attack chains such as FileVault off with auto-login on, or SSH on with the firewall off | fexxdev, mac-posture-audit | 1.3 |
-| Severity exit codes | Exit status reflects the worst finding, for scripted use | fort | 1.3 |
-| SARIF output | A SARIF file beside the Markdown report, for code-scanning tools | macharden | Later |
-## Not adopted
-
-| Item | Source | Reason |
-| --- | --- | --- |
-| Running any of the tools on the audited Macs | All | Root daemons, settings changes, network calls, or a whole-script root run |
-| mSCP pass and fail rules | mSCP | About 57% of checks pass only under an MDM profile |
-| Remediation and fix commands | mergen, mOSL, mSCP, stronghold, armazi | mac-audit never changes the Mac; mergen's fixes also have bugs |
-| Lynis hardening index and other scores | Lynis, macabre, SwordCheck, Di-kairos | One score hides a HIGH finding among passes |
-| Continuous monitoring, file-activity logs, notifications | macaudit, NuwaStone | Not a one-shot audit; logs file names; permanent root services |
-| Per-app version checks | Pareto | Needs vendor update feeds over the network |
-| Threat feeds and known-bad extension catalogs | fuzzlove, mac-posture-audit | Needs external feeds |
-| Vulnerability and release feeds (SOFA, OSV, NVD, CISA KEV, EPSS) | MacScope, SwordCheck | Network calls to third parties |
-| Check definitions or tool updates fetched from GitHub and run by `sh -c` | armazi | Remote text decides what runs |
-| Whole-tool root runs and `sudo -v` keep-alive loops | mac-compass, Di-kairos, hackerman-jpeg CIS script | Breaks least privilege; mac-audit uses per-command sudo rules |
-| `nvram -p` for AMFI boot arguments | mSCP, mergen | Dumps every NVRAM variable; read `nvram boot-args` only |
-| Privacy toggles (Siri, analytics, Apple Intelligence, Safari) | mergen | Preferences, not security findings |
-| IPv6 off, firmware password, kext consent, eficheck | mOSL | Preferences, or obsolete on Apple silicon |
-
-| Remediation strings run through `eval` with values read from the Mac | macharden | Command injection; a report to the maintainer is drafted |
-| `curl \| bash` and `curl \| sudo bash` installs | fullstacksushil, icdcdev, clawkeeper | Runs unreviewed remote code, as root in some cases |
-| README download links to binary archives | ivanpsn | Looks like a malware lure; nothing was downloaded |
 ## Search terms
 
 The scout runs each term with `gh search repos` and records what it found. Add a term when a reviewed repo's topics or README suggest one; drop a term after two runs that find nothing new.
@@ -1133,9 +1045,9 @@ Repos the scout found and skipped, so later runs do not reconsider them. Reasons
 ## Method and caveats
 
 - **Reading only:** no reviewed repo was run, built, or installed. Each was cloned shallow and read as data.
-- **Who reviewed:** navjotk8690/macaudit was reviewed directly; the others by subagents, cross-checked against `mac-audit.sh`.
+- **Who reviewed:** navjotk8690/macaudit was reviewed directly; the others by subagents, cross-checked against `macassay`.
 - **Verified on macOS 27.2.1:** `sshd -G` without root; `sysadminctl -screenLock status` output; the macaudit `PATH` and dashboard claims, by reading its code.
-- **Corrections to subagent claims:** reviewers said mac-audit lacks an executable-in-`/tmp` check, a stealth-mode check, an MDM check, a guest-account check, and a screen-lock check. All five exist in `mac-audit.sh`; those items were removed.
+- **Corrections to subagent claims:** reviewers said macassay lacks an executable-in-`/tmp` check, a stealth-mode check, an MDM check, a guest-account check, and a screen-lock check. All five exist in `macassay`; those items were removed.
 - **Not verified:** network endpoints were found by reading code, not by watching traffic. Large code bases (fuzzlove, Lynis) were sampled. Shallow clones show no history, so maintenance was judged from the newest commit and releases.
 - **Discovery run 2026-11-24:** the 15 reviews above read shallow clones from the GitHub web UI's `macos auditing security` family of searches; nothing was run, downloaded as an archive, or fetched from a release. Command lists came from READMEs, catalogs, and a grep of the source, not from reading every check. Ranking of the queue is by name and description only. The caller's 11 skipped repos are not in this file.
 - **Licensing:** mSCP is CC BY 4.0 except Apple-contributed text; borrow commands and rule IDs with attribution, not description text. Lynis, Pareto, and NuwaStone are GPL-3.0; take ideas and stock commands, not code. The same holds for SwordCheck (AGPL-3.0), check-mac (EUPL-1.2), and the CIS script by hackerman-jpeg (GPL-3.0).

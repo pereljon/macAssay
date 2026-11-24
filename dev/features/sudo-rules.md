@@ -51,11 +51,11 @@ A normal-user run, local or remote, gets the privileged checks without full root
 
 These were checked on the Mac mini on 2026-11-24.
 
-- `sudo -n -k -l /sbin/pfctl -s info` exits 0 for the audit user with no mac-audit rule installed. The user has `(ALL) ALL` with a password, and `-l COMMAND` reports any matching rule, not only NOPASSWD rules. The handoff's probe would pass every check.
+- `sudo -n -k -l /sbin/pfctl -s info` exits 0 for the audit user with no macassay rule installed. The user has `(ALL) ALL` with a password, and `-l COMMAND` reports any matching rule, not only NOPASSWD rules. The handoff's probe would pass every check.
 - `sudo -n -k true` exits 1 and prints `sudo: a password is required`.
 - `sudo -l` works without a password for this user because the user has NOPASSWD entries. Under the default `listpw=any`, one NOPASSWD entry is enough.
 - The Defaults for this user include `env_reset` and `env_keep+="HOME MAIL"`, and do not set `secure_path`. `env_reset` keeps the caller's `PATH` (`man sudoers`). A command run through sudo therefore sees the user's `PATH` and `HOME`. The user's `PATH` puts `~/.local/bin` and `/opt/homebrew/bin` before `/usr/bin`.
-- `always_set_home` takes effect exactly when `HOME` is in `env_keep` (`man sudoers`). The rules set it for the mac-audit commands.
+- `always_set_home` takes effect exactly when `HOME` is in `env_keep` (`man sudoers`). The rules set it for the macassay commands.
 - `log_allowed` and `log_denied` are on by default (`man sudoers`), so each `sudo -n -k` call writes a log entry, allowed or refused. The Defaults for this user show `!log_allowed`, which is a local setting.
 - sudo reads every file in `sudoers.d` except names that end in `~` or contain a `.` (`man sudoers`).
 - `visudo -c -f FILE` runs without root and reports `parsed OK`.
@@ -65,7 +65,7 @@ These were checked on the Mac mini on 2026-11-24.
 - `/usr/bin/readlink -f` resolves a symlink chain.
 - `/var/root` is `root:wheel 750`. `/Users` is `root:admin 755`. `/usr/local/bin` is `root:wheel 755`.
 - The macOS `awk` (20200816) does not support `\s`.
-- `./mac-audit.sh -o` with no value loops forever: `shift 2` fails with one argument left.
+- `./macassay -o` with no value loops forever: `shift 2` fails with one argument left.
 - `kmutil showloaded --list-only` prints a UUID column (reported by the review agent; no third-party kexts are loaded here to confirm).
 - Homebrew's `brew outdated` runs `brew update --auto-update` first, at most once a day by default (`utils/auto-update.sh`).
 - `/Library/LaunchDaemons/com.cloudflare.cloudflared.plist` runs `/opt/homebrew/bin/cloudflared` as root. The program and its folder are owned by and writable by the audit user. The new check must flag it.
@@ -96,10 +96,10 @@ The `install-sudoers` mode refuses to run without root.
 The functions come first, and the dispatch comes after this line:
 
 ```sh
-[ "${MAC_AUDIT_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
+[ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 ```
 
-`dev/test.sh` sources the script with `MAC_AUDIT_LIB=1` to load the functions without running a mode. Functions that hold logic worth testing read standard input or arguments and write standard output, with no calls to `dscl`, `sudo`, or the file system inside them:
+`dev/test.sh` sources the script with `MACASSAY_LIB=1` to load the functions without running a mode. Functions that hold logic worth testing read standard input or arguments and write standard output, with no calls to `dscl`, `sudo`, or the file system inside them:
 
 - `gen_rules`: the rule generator.
 - `classify_refusal`: decides whether sudo refused a command.
@@ -125,7 +125,7 @@ The report header and Limitations are built from these records.
 
 ### The priv helper
 
-1. If `/etc/sudoers.d/mac-audit` does not exist, call `skip LABEL "mac-audit sudo rules not installed"` and stop. No sudo call is made, so nothing is logged. The user can see the file's existence, because `sudoers.d` is mode 755.
+1. If `/etc/sudoers.d/macassay` does not exist, call `skip LABEL "macassay sudo rules not installed"` and stop. No sudo call is made, so nothing is logged. The user can see the file's existence, because `sudoers.d` is mode 755.
 2. Run `/usr/bin/sudo -n -k COMMAND ARGS...`, with standard error sent to a temporary file.
 3. If `classify_refusal` reports a refusal, call `skip LABEL "refused or unavailable"` and print nothing. A refusal is exit status 1 with a standard error line that starts with `sudo:` or contains `is not allowed to execute` or `may not run sudo`.
 4. Otherwise, record `LABEL` as ran, and append the command's standard error to its output.
@@ -137,9 +137,9 @@ The report header and Limitations are built from these records.
 `--print-sudoers` and `--install-sudoers` both call `collect_accounts`, which reads the local users with `dscl` and the `sudoers.d` folder with `ls`, then pass the result to `gen_rules`. Neither step needs root.
 
 ```
-# mac-audit read-only rules for USER, generated by mac-audit.sh VERSION.
-# Undo: sudo rm /etc/sudoers.d/mac-audit
-Cmnd_Alias MACAUDIT = \
+# macassay read-only rules for USER, generated by macassay VERSION.
+# Undo: sudo rm /etc/sudoers.d/macassay
+Cmnd_Alias MACASSAY = \
     /usr/sbin/lsof -nP -iTCP -sTCP\:LISTEN, \
     /usr/sbin/lsof -nP -d txt -Fpn, \
     /usr/sbin/sshd -T, \
@@ -151,13 +151,13 @@ Cmnd_Alias MACAUDIT = \
     /usr/bin/profiles show -type configuration, \
     /usr/bin/bputil -d, \
     /bin/cat /etc/sudoers, \
-    /bin/cat /etc/sudoers.d/FILE, \                  (one line per file present, and mac-audit)
+    /bin/cat /etc/sudoers.d/FILE, \                  (one line per file present, and macassay)
     /bin/ls -ln /var/at/tabs, \
     /usr/bin/ssh-keygen -l -f HOME/.ssh/authorized_keys, \       (per account)
     /bin/ls -ln HOME/Library/LaunchAgents, \                     (per account)
     /bin/ls -lnd HOME/.zshrc HOME/.zprofile HOME/.zshenv HOME/.zlogin HOME/.bashrc HOME/.bash_profile HOME/.profile   (per account)
-Defaults!MACAUDIT always_set_home
-USER ALL = (root) NOPASSWD: MACAUDIT
+Defaults!MACASSAY always_set_home
+USER ALL = (root) NOPASSWD: MACASSAY
 ```
 
 - The accounts are root (home `/var/root`) and each local user with UID 501 or above, except the granted user. The granted user reads their own files without sudo.
@@ -176,18 +176,18 @@ USER ALL = (root) NOPASSWD: MACAUDIT
 
 ### Installer
 
-`--install-sudoers[=USER]` writes `/etc/sudoers.d/mac-audit`. `USER` defaults to `SUDO_USER`. The installer refuses to run when neither is set.
+`--install-sudoers[=USER]` writes `/etc/sudoers.d/macassay`. `USER` defaults to `SUDO_USER`. The installer refuses to run when neither is set.
 
 1. Refuse to run without root.
 2. Run `visudo -c` on the current configuration, and stop if it fails. The installer never edits a configuration that is already broken.
 3. Generate the rules into `$TMP`, and validate the file with `visudo -c -f`.
 4. Check that the granted user cannot write any folder on the path to a file that a rule names. The check runs `sudo -u USER /bin/test -w FOLDER` for each folder from the parent up to `/`. If any folder is writable, stop and name it.
-5. If `/etc/sudoers.d/mac-audit` exists with identical content, print "already installed" and stop. If it differs, print the differences.
-6. Copy the old file, if any, to `$TMP`. Write the new file to `/etc/sudoers.d/.mac-audit.new` with owner root:wheel and mode 0440, then rename it to `mac-audit`.
+5. If `/etc/sudoers.d/macassay` exists with identical content, print "already installed" and stop. If it differs, print the differences.
+6. Copy the old file, if any, to `$TMP`. Write the new file to `/etc/sudoers.d/.macassay.new` with owner root:wheel and mode 0440, then rename it to `macassay`.
 7. Run `visudo -c`. If it fails, restore the old file or remove the new one, and exit with an error.
 8. Verify from the granted user with `sudo -u USER /usr/bin/sudo -n -k /sbin/pfctl -s info >/dev/null`. This runs one read-only rule for real; the `-l` form would pass without the rule. It also fails when a later line in `/etc/sudoers` overrides the rule, because sudo applies the last matching entry. On failure, keep the file and print a warning, since the file is valid.
 9. Warn when `/etc/sudoers` has no `#includedir` or `@includedir` line for `/private/etc/sudoers.d` or `/etc/sudoers.d`.
-10. Print the undo command: `sudo rm /etc/sudoers.d/mac-audit`.
+10. Print the undo command: `sudo rm /etc/sudoers.d/macassay`.
 
 `--print-sudoers[=USER]` prints the generated file and exits. It needs no root. `USER` defaults to the current user.
 
@@ -209,7 +209,7 @@ The rules list accounts and `sudoers.d` files as they were at install time. Reru
 
 Section 15 always appears. A skipped check prints one line with its reason.
 
-- **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. A line that starts with `#` and a digit is a rule for a user ID, not a comment. A NOPASSWD rule whose command list contains `ALL`, after any tags, is MEDIUM. Another NOPASSWD rule outside the mac-audit file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The mac-audit file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
+- **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. A line that starts with `#` and a digit is a rule for a user ID, not a comment. A NOPASSWD rule whose command list contains `ALL`, after any tags, is MEDIUM. Another NOPASSWD rule outside the macassay file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The macassay file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
 - **Secure boot policy.** `bputil -d </dev/null`, so the volume prompt cannot block the run. `filter_bputil` keeps only lines that name the security mode, SIP, kernel extensions, or MDM, and drops any line that holds a UUID or a hex string of 32 characters or more. A security mode other than Full is MEDIUM.
 - **Device profiles.** `profiles show -type configuration`. `filter_profiles` keeps only profile name, identifier, and organization lines.
 - **Other accounts and root.** For each account in the rules:
@@ -248,7 +248,7 @@ The finding names the plist, the program, and the worst item found.
 | An option without its value exits 2 instead of looping | B1 |
 | The home `du` passes `--` before the globs, so a file name that starts with `-` is not an option | Security Context, B1 |
 | Truncated blocks end with "(truncated after N lines)" | B1 |
-| The usage line names `mac-audit.sh`, not `scripts/mac-audit.sh` | B1 |
+| The usage line names `macassay`, not `scripts/macassay` | B1 |
 | `-h` prints the header block from line 2 to the first line that is not a comment, with examples and install steps | Requirement 4 |
 | Homebrew is found at `/opt/homebrew/bin/brew` or `/usr/local/bin/brew`, because `PATH` is fixed. The fixed `PATH` keeps the installer's root run off user-writable folders | Security Context |
 
@@ -257,7 +257,7 @@ The root-mode crontab mix-up (`docs/ISSUES.md`) goes away with root mode.
 ## Report changes
 
 - The header gains two lines: `Privileged checks: N ran, M skipped` and `Other checks skipped: K`.
-- Limitations lists each skipped check with its reason. Its first bullet says that privileged checks need the mac-audit sudo rules.
+- Limitations lists each skipped check with its reason. Its first bullet says that privileged checks need the macassay sudo rules.
 
 ## Side effects
 
@@ -265,7 +265,7 @@ The root-mode crontab mix-up (`docs/ISSUES.md`) goes away with root mode.
 
 - With the rules installed, sudo logs each privileged command. Without the rules, the script makes no sudo call.
 - The SSH method check makes one SSH connection as `nobody` to `127.0.0.1`, which sshd logs.
-- The installer, only when the user runs it, writes `/etc/sudoers.d/mac-audit`. A remote install logs the whole script as the sudo command line on the remote Mac.
+- The installer, only when the user runs it, writes `/etc/sudoers.d/macassay`. A remote install logs the whole script as the sudo command line on the remote Mac.
 - The rules give the granted user password-free access to the listed commands outside the audit as well. Any process that runs as that user gets the same access. Only the sudoers files are shown in full.
 
 ## Out of scope

@@ -1,8 +1,8 @@
-# mac-audit: handoff from network-manager
+# macassay: handoff from network-manager
 
 Date: 2026-11-24
 From: the network-manager session (`~/Claude/projects/tech/network-manager`)
-Files in this folder: `HANDOFF.md` (this document) and `mac-audit.sh` (version 1.1, 2026-11-24)
+Files: this document, `dev/HANDOFF.md`, and the script, now `macassay` at the repo root. The script arrived as `mac-audit.sh` version 1.1 (2026-11-24); the project was renamed `macassay` on 2026-11-24 (`docs/ISSUES.md`, Decisions). This document describes version 1.1 under its original name.
 
 ## Purpose
 

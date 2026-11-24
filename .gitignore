@@ -41,4 +41,5 @@ build/
 .claudemux-*
 
 # Audit reports describe a real Mac
+macassay-*.md
 mac-audit-*.md

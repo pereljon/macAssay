@@ -12,9 +12,9 @@ Two kinds of test cover version 1.2:
 
 ## dev/test.sh (fixture tests)
 
-`dev/test.sh` runs in Bash 3.2. It sources the script with `MAC_AUDIT_LIB=1` and runs each case as a function. A watchdog stops the whole suite after 60 seconds, so a hang fails instead of stalling. It exits non-zero if any case fails.
+`dev/test.sh` runs in Bash 3.2. It sources the script with `MACASSAY_LIB=1` and runs each case as a function. A watchdog stops the whole suite after 60 seconds, so a hang fails instead of stalling. It exits non-zero if any case fails.
 
-- F1. `gen_rules` with a normal account list produces a file that `visudo -c -f` accepts. It has rules for root and each other account, none for the granted user, and `Defaults!MACAUDIT always_set_home` after the alias.
+- F1. `gen_rules` with a normal account list produces a file that `visudo -c -f` accepts. It has rules for root and each other account, none for the granted user, and `Defaults!MACASSAY always_set_home` after the alias.
 - F2. `gen_rules` output has no `*`, no `ALL` in a command field, and no shell, interpreter, editor, or `sqlite3`.
 - F3. `gen_rules` skips hostile inputs and warns for each: account names with a space, `,`, `*`, `:`, `=`, `(`, `\`, or a leading `-`; home paths with `..`, or outside `/Users/NAME` and `/var/root`; `sudoers.d` names with a `.`, `*`, `[`, or a space. The output still passes `visudo -c -f`.
 - F4. `gen_rules` refuses a granted user that is root, has a UID below 501, or is missing from the account list.
@@ -30,42 +30,42 @@ Two kinds of test cover version 1.2:
 
 ## Manual runs without rules installed
 
-- T1. `bash -n mac-audit.sh` passes. `shellcheck mac-audit.sh` reports no finding that the 1.1 baseline lacks.
-- T2. `./mac-audit.sh -h` prints the whole header block, including the examples and the install steps, and stops before the code. The usage line says `mac-audit.sh`.
-- T3. `./mac-audit.sh --print-sudoers` prints the rule file without root, and `visudo -c -f` accepts it.
-- T4. `./mac-audit.sh --quick --offline --skip-du -o $TMP/r1.md`:
+- T1. `bash -n macassay` passes. `shellcheck macassay` reports no finding that the 1.1 baseline lacks.
+- T2. `./macassay -h` prints the whole header block, including the examples and the install steps, and stops before the code. The usage line says `macassay`.
+- T3. `./macassay --print-sudoers` prints the rule file without root, and `visudo -c -f` accepts it.
+- T4. `./macassay --quick --offline --skip-du -o $TMP/r1.md`:
   - It finishes without a password prompt and without a privacy prompt.
-  - The header says `Privileged checks: 0 ran, N skipped`. Limitations lists each skipped check with the reason "mac-audit sudo rules not installed".
+  - The header says `Privileged checks: 0 ran, N skipped`. Limitations lists each skipped check with the reason "macassay sudo rules not installed".
   - `log show --last 5m --predicate 'process == "sudo"'` shows no entry from the run.
   - No `sudo:` line, no shell startup line text, and no dashed UUID appear in the report.
   - The root-run program check flags `com.cloudflare.cloudflared.plist` as HIGH, and daemons under `/Applications` as MEDIUM.
   - Apart from the expected changes, the flags match the B1 baseline.
-- T5. `sudo ./mac-audit.sh --quick` exits 2 with the message that the audit does not run as root. The user runs this, because sudo asks for the password.
+- T5. `sudo ./macassay --quick` exits 2 with the message that the audit does not run as root. The user runs this, because sudo asks for the password.
 
 ## Manual runs with rules installed
 
-These cases need the rules installed on the Mac mini. The user runs the install, because sudo asks for the user's password. Before T7, ask the user to confirm, with this impact: one new file, `/etc/sudoers.d/mac-audit`, that gives the audit user password-free use of the listed commands. Undo: `sudo rm /etc/sudoers.d/mac-audit`.
+These cases need the rules installed on the Mac mini. The user runs the install, because sudo asks for the user's password. Before T7, ask the user to confirm, with this impact: one new file, `/etc/sudoers.d/macassay`, that gives the audit user password-free use of the listed commands. Undo: `sudo rm /etc/sudoers.d/macassay`.
 
-- T6. `./mac-audit.sh --install-sudoers` without root exits non-zero with a message that it needs root.
-- T7. `sudo ./mac-audit.sh --install-sudoers` installs the file as root:wheel, mode 0440. It reports the `includedir` result, passes the verification step, and prints the undo command. `visudo -c` passes afterward.
-- T8. A full run, `./mac-audit.sh -o $TMP/r2.md`:
+- T6. `./macassay --install-sudoers` without root exits non-zero with a message that it needs root.
+- T7. `sudo ./macassay --install-sudoers` installs the file as root:wheel, mode 0440. It reports the `includedir` result, passes the verification step, and prints the undo command. `visudo -c` passes afterward.
+- T8. A full run, `./macassay -o $TMP/r2.md`:
   - The header says every privileged check ran.
   - Section 15 shows the sudoers contents, the `bputil` lines, the device profiles, the other accounts, the crontab listing, `lsof`, `sshd -T`, and `pf`.
   - The existing NOPASSWD rules in `/etc/sudoers` (`httpd`, `kill`, `killall`) are flagged LOW.
   - The UUID check from T4 passes.
   - The raw root output of `profiles show -type configuration` holds no password, PSK, or secret fields (code review finding CR-4).
 - T9. Compare the `bputil -d` and `profiles` lines in the report with the raw output, which the user runs with sudo. Update the F7 fixtures from the real output.
-- T10. A second `sudo ./mac-audit.sh --install-sudoers` prints "already installed" and leaves the file unchanged.
+- T10. A second `sudo ./macassay --install-sudoers` prints "already installed" and leaves the file unchanged.
 - T11. Commands outside the rules are refused without a password prompt: `sudo -n -k /bin/cat /etc/master.passwd`, `sudo -n -k /usr/sbin/lsof -nP`, `sudo -n -k /usr/bin/du -h -d 1 -x /`, and `sudo -n -k /bin/ls -ln /var/root`.
 
 ## Flag conflicts and interface changes
 
-- T12. `./mac-audit.sh --sudo` exits 2 with "Unknown option".
-- T13. `./mac-audit.sh --print-sudoers --install-sudoers` exits 2.
-- T14. `./mac-audit.sh --print-sudoers -o x.md` prints the rules and does not create `x.md`.
-- T15. `./mac-audit.sh --print-sudoers=nosuchuser` and `--print-sudoers=root` exit non-zero with a message.
-- T16. `./mac-audit.sh -o` and `./mac-audit.sh --host` exit 2 with a usage error, within one second.
-- T17. A fake `awk` placed first in `PATH`, which writes a marker file, is never run: `./mac-audit.sh --quick --offline --skip-du -o $TMP/r3.md` leaves no marker.
+- T12. `./macassay --sudo` exits 2 with "Unknown option".
+- T13. `./macassay --print-sudoers --install-sudoers` exits 2.
+- T14. `./macassay --print-sudoers -o x.md` prints the rules and does not create `x.md`.
+- T15. `./macassay --print-sudoers=nosuchuser` and `--print-sudoers=root` exit non-zero with a message.
+- T16. `./macassay -o` and `./macassay --host` exit 2 with a usage error, within one second.
+- T17. A fake `awk` placed first in `PATH`, which writes a marker file, is never run: `./macassay --quick --offline --skip-du -o $TMP/r3.md` leaves no marker.
 
 ## Remote mode
 
@@ -121,7 +121,7 @@ Architecture review, 2026-11-24 (opus, high effort). Each line gives the finding
 - Q3-11 Untrusted text can add report rows or address an LLM reviewer: fixed. Breaks the Security Context.
 - Q3-12 `kmutil` UUIDs and the `awk \s` bug: fixed. Breaks the No secrets rule.
 - Q3-13 Truncation has no marker: fixed. User decision B1.
-- Q3-14 1.2 gaps (`sudoers.d` name validation, `..` in homes, granted-user validation, mac-audit's own INFO flag, refusal wording, `always_set_home`): fixed. Breaks the Least privilege rule.
+- Q3-14 1.2 gaps (`sudoers.d` name validation, `..` in homes, granted-user validation, macassay's own INFO flag, refusal wording, `always_set_home`): fixed. Breaks the Least privilege rule.
 - Q3-15 No size check on the encoded remote command: dropped. No requirement and not Critical; the script uses about 43 KB of an SSH limit of about 256 KB.
 - Q2 Additional checks: the root-run program check is in 1.2 (user decision B2). The rest are planned for 1.3 in `docs/ISSUES.md`.
 - ShellCheck SC2035 (`du` glob): fixed. Breaks the Security Context.
