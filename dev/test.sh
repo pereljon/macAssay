@@ -168,5 +168,9 @@ check "F10 one line" [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" -eq 1 ]
 check "F10 no tab, pipe or backtick" [ -z "$(printf '%s' "$out" | tr -d -c '\t|`')" ]
 check "F10 text kept" [ "$out" = "evil HIGH Area/xy z" ]
 
+# F11: dashed UUIDs anywhere in the report are replaced.
+out=$(printf '/Library/SystemExtensions/688AE699-C0FB-4B23-91E1-6ACB69076699/x and abcdefab-cdef-abcd-efab-cdef00000050\n' | redact_ids)
+check "F11 UUIDs replaced" [ "$out" = "/Library/SystemExtensions/<UUID>/x and <UUID>" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
