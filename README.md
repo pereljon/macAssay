@@ -21,7 +21,7 @@ Remote mode sends the script inside the SSH command. Nothing is copied to the re
 
 ## Limits
 
-- The script makes no changes, with these side effects: a temporary folder under `/tmp` that is removed on exit, a refresh of Apple's update catalog cache (skip with `--offline`), one HTTP GET to each local network listener, and `nc -z` connect tests to the sharing ports.
+- The script makes no changes, with these side effects: a temporary folder under `/tmp` that is removed on exit, a refresh of Apple's update catalog cache and a Homebrew auto-update that changes no installed package (skip both with `--offline`), one HTTP GET to each local network listener, and `nc -z` connect tests to the sharing ports.
 - Without root, some checks are skipped. The sudo setup for privileged checks is planned for version 1.2 (`docs/ISSUES.md`).
 - Remote mode has not been tested against a second Mac.
 

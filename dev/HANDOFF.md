@@ -24,7 +24,7 @@ The script started as a scripted version of a manual review of the user's Mac mi
 - Bash 3.2 compatible, because `/bin/bash` on macOS is 3.2. No Python, Node or Homebrew tools are required.
 - macOS Local Network privacy blocks agent-launched Python, Node and Homebrew tools from reaching LAN hosts. Use `/usr/bin/curl`, `/usr/bin/ssh` and `/usr/bin/nc` for any LAN access.
 - Remote mode base64-encodes the script and runs it inside the SSH command: `ssh host "bash -c \"\$(printf %s 'B64' | base64 -D)\" mac-audit --stdout ..."`. Nothing is copied to the remote disk in version 1.1. The report is saved on the local Mac.
-- Side effects of a run: a temporary folder `/tmp/mac-audit.XXXXXX` that is removed on exit; `softwareupdate -l` refreshes Apple's update catalog cache (skipped with `--offline`); one HTTP GET to each LAN listener; `nc -z` connect tests to the sharing ports.
+- Side effects of a run: a temporary folder `/tmp/mac-audit.XXXXXX` that is removed on exit; `softwareupdate -l` refreshes Apple's update catalog cache (skipped with `--offline`); `brew outdated` may first run Homebrew's auto-update, at most once a day by default, which updates Homebrew and its package lists but no installed package (skipped with `--offline`); one HTTP GET to each LAN listener; `nc -z` connect tests to the sharing ports.
 - Keep secrets out of the report. Serial numbers and UUIDs are omitted. `authorized_keys` shows key type and comment only. Shell startup files are only searched for suspicious patterns; their contents are never copied into the report.
 
 ## Current state (version 1.1)
