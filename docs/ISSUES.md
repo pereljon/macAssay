@@ -18,6 +18,13 @@ Version 1.2, from `dev/HANDOFF.md` (Pending work requested by the user):
 - [ ] Build the installer with the safeguards listed in `dev/HANDOFF.md` (item 5).
 - [ ] Bump `VERSION` to 1.2.
 
+## Publish checklist
+
+Do these in the change that gives the repo a public remote.
+
+- [ ] Write `SECURITY.md`: report privately through a GitHub security advisory only (no email address); supported versions are the latest release; in scope are sudoers rules and the installer, the audit changing the Mac, secrets reaching the report, and command injection from data read off the audited Mac; findings in an audit's results are not security issues.
+- [ ] Turn on private vulnerability reporting in the GitHub repo settings.
+
 ## Next steps
 
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
