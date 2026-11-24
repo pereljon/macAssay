@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: designing
-status: 2026-11-24 drafted; revised after the architecture review and the user's decisions
+lifecycle: building
+status: 2026-11-24 drafted, revised after the architecture review, built, code-reviewed; rules install tests pending
 ---
 
 # Privileged checks through per-command sudo rules (version 1.2)
@@ -40,6 +40,11 @@ A normal-user run, local or remote, gets the privileged checks without full root
 - 2026-11-24 (A2): Rules for other accounts show metadata and fingerprints only: `ssh-keygen -l`, `ls -ln`, `ls -lnd`, and one `ls -ln /var/at/tabs`. Conviction: `ok`. Rejected: `cat` rules for shell startup files, `authorized_keys`, and per-user `crontab -l`. Those give standing password-free read access to files that often hold tokens, and `cat` follows symlinks. Cost: the pattern search no longer covers other accounts' startup files.
 - 2026-11-24 (A3): Mode dispatch, a record of every skipped check, and a `dev/test.sh` that is not shipped. Conviction: `ok`.
 - 2026-11-24 (B1, B2): Version 1.2 includes the 1.1 fixes and one new check, root-run programs that a user can write. The other proposed checks are planned for 1.3 in `docs/ISSUES.md`. Conviction: `ok`.
+- 2026-11-24: The root-run program check rates an item MEDIUM when it is writable only through the `admin` group, as `/Applications` is. Every other case is HIGH: another owner, write access for everyone, for any other group, or through an ACL. Group `wheel` holds only root on macOS and is ignored. Conviction: `ok`. The first run flagged 10 daemons, 9 of them through `/Applications`. Rejected: HIGH for all, which buried the one direct case (cloudflared).
+- 2026-11-24: The audit shows the user's own crontab as schedule and command name only, without arguments or variable values, which may hold tokens. Found in the code review; it follows the No secrets principle and decision A2.
+- 2026-11-24: Root is refused for every mode except a local `--install-sudoers`, including remote mode. Found in the code review; it follows decision A1.
+- 2026-11-24: The report replaces every dashed UUID with `<UUID>`. Version 1.1 already printed install-folder UUIDs from system extension paths and group records. It follows the No secrets principle.
+- 2026-11-24: The script answers `--version`, per the development `AGENTS.md` (Releases).
 - 2026-11-24: The sudoers check keeps the handoff's severities in 1.2 (`NOPASSWD: ALL` MEDIUM, other NOPASSWD LOW). Stronger sudoers checks are planned for 1.3.
 
 ## Verified facts
@@ -76,21 +81,22 @@ Assumptions not yet verified:
 
 ### Mode dispatch
 
-The script parses all options first, then runs exactly one mode. Each mode is a function that ends in `exit`.
+The script parses all options first, then runs exactly one mode. Each mode other than the audit is a function that ends in `exit`; the audit code follows the dispatch.
 
 1. Set `PATH=/usr/bin:/bin:/usr/sbin:/sbin` and `umask 077`.
 2. Parse the options. An option that needs a value and has none exits 2 with a usage error.
-3. Pick the mode: `help`, `print-sudoers`, `install-sudoers`, `remote`, or `audit`. Conflicting modes exit 2.
-4. Run the mode's function.
+3. Pick the mode: `help`, `--version`, `print-sudoers`, `install-sudoers`, `remote`, or `audit`. Conflicting modes exit 2.
+4. Refuse root, with exit 2, for every mode except a local `install-sudoers`.
+5. Run the mode.
 
-The `audit` mode refuses to run as root, with exit 2 and a message that points to the sudo rules. The `install-sudoers` mode refuses to run without root.
+The `install-sudoers` mode refuses to run without root.
 
 ### Library guard
 
 The functions come first, and the dispatch comes after this line:
 
 ```sh
-[ "${MAC_AUDIT_LIB:-}" = 1 ] && return 0
+[ "${MAC_AUDIT_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 ```
 
 `dev/test.sh` sources the script with `MAC_AUDIT_LIB=1` to load the functions without running a mode. Functions that hold logic worth testing read standard input or arguments and write standard output, with no calls to `dscl`, `sudo`, or the file system inside them:
@@ -101,7 +107,10 @@ The functions come first, and the dispatch comes after this line:
 - `filter_bputil` and `filter_profiles`: the allow-lists.
 - `rc_hits`: the startup-file pattern search, which reports file, line number, and pattern name.
 - `ssh_methods_flag`: decides the SSH authentication flag from the offered methods.
+- `crontab_summary`: reduces crontab lines to schedule and command name.
 - `clean_field`: strips control characters, tabs, pipes, and backticks from report text.
+- `redact_ids`: replaces dashed UUIDs.
+- `chain_writable`: rates the ownership and permissions on a root daemon's paths. It reads the file system, so its fixture test covers only a user-owned file.
 
 ### Check record
 
@@ -118,7 +127,7 @@ The report header and Limitations are built from these records.
 
 1. If `/etc/sudoers.d/mac-audit` does not exist, call `skip LABEL "mac-audit sudo rules not installed"` and stop. No sudo call is made, so nothing is logged. The user can see the file's existence, because `sudoers.d` is mode 755.
 2. Run `/usr/bin/sudo -n -k COMMAND ARGS...`, with standard error sent to a temporary file.
-3. If `classify_refusal` reports a refusal, call `skip LABEL "refused or unavailable"` and print nothing. A refusal is exit status 1 with a standard error line that starts with `sudo:` or contains `is not allowed to execute`.
+3. If `classify_refusal` reports a refusal, call `skip LABEL "refused or unavailable"` and print nothing. A refusal is exit status 1 with a standard error line that starts with `sudo:` or contains `is not allowed to execute` or `may not run sudo`.
 4. Otherwise, record `LABEL` as ran, and append the command's standard error to its output.
 
 `-k` makes sudo ignore cached credentials, so a check runs only through a NOPASSWD rule. `-n` forbids a password prompt.
@@ -128,7 +137,7 @@ The report header and Limitations are built from these records.
 `--print-sudoers` and `--install-sudoers` both call `collect_accounts`, which reads the local users with `dscl` and the `sudoers.d` folder with `ls`, then pass the result to `gen_rules`. Neither step needs root.
 
 ```
-# mac-audit 1.2 read-only rules for USER. Generated YYYY-MM-DD.
+# mac-audit read-only rules for USER, generated by mac-audit.sh VERSION.
 # Undo: sudo rm /etc/sudoers.d/mac-audit
 Cmnd_Alias MACAUDIT = \
     /usr/sbin/lsof -nP -iTCP -sTCP\:LISTEN, \
@@ -188,7 +197,7 @@ The rules list accounts and `sudoers.d` files as they were at install time. Reru
 
 ### Remote mode
 
-- Every remote command uses absolute paths: `/bin/bash -c "$(/usr/bin/printf %s 'B64' | /usr/bin/base64 -D)"`. The remote `PATH` comes from user-writable startup files, so a bare `bash` or `sudo` could run a planted program.
+- Every remote command uses absolute paths: `/bin/bash -c "$(/usr/bin/printf %s 'B64' | /usr/bin/base64 -D)"`. The remote `PATH` comes from user-writable startup files, so a bare `bash` or `sudo` could run a planted program. Absolute paths do not stop an alias or function defined in the remote `~/.zshenv`, which zsh reads before it runs the command. A remote account that is already compromised can therefore capture the sudo password during a remote install, as it can during any interactive sudo.
 - A remote audit runs as the SSH user. Each privileged check runs through `priv` on the remote Mac, so the rules installed there decide what runs.
 - `--host ... --print-sudoers` runs the generator on the remote Mac.
 - `--host ... --install-sudoers[=USER]` runs `/usr/bin/sudo /bin/bash -c ...` with `ssh -t`, so sudo can ask for the password on the terminal. `USER` defaults to the SSH user, because sudo sets `SUDO_USER` on the remote Mac. Nothing is copied to the remote disk.
@@ -200,7 +209,7 @@ The rules list accounts and `sudoers.d` files as they were at install time. Reru
 
 Section 15 always appears. A skipped check prints one line with its reason.
 
-- **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. `NOPASSWD: ALL` is MEDIUM. Another NOPASSWD rule outside the mac-audit file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The mac-audit file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
+- **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. A line that starts with `#` and a digit is a rule for a user ID, not a comment. A NOPASSWD rule whose command list contains `ALL`, after any tags, is MEDIUM. Another NOPASSWD rule outside the mac-audit file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The mac-audit file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
 - **Secure boot policy.** `bputil -d </dev/null`, so the volume prompt cannot block the run. `filter_bputil` keeps only lines that name the security mode, SIP, kernel extensions, or MDM, and drops any line that holds a UUID or a hex string of 32 characters or more. A security mode other than Full is MEDIUM.
 - **Device profiles.** `profiles show -type configuration`. `filter_profiles` keeps only profile name, identifier, and organization lines.
 - **Other accounts and root.** For each account in the rules:
@@ -217,9 +226,10 @@ For each `/Library/LaunchDaemons/*.plist` whose `UserName` is missing or `root`:
 
 1. Read the program path with `plistprog`.
 2. Build the chain: the plist, the program, the program's symlink target (`readlink -f`), and every folder above the program and the target, up to `/`.
-3. Flag HIGH when any item in the chain is owned by an account other than root, or is writable by others, or is writable by the audit user (`[ -w ]`).
+3. When the program is an interpreter (`sh`, `bash`, `zsh`, `python3`, `perl`, `osascript`, and similar), add the script in `ProgramArguments.1` to the chain.
+4. Rate the chain with `chain_writable`: HIGH for another owner, write access for everyone, for a group other than `admin` and `wheel`, or through an ACL; MEDIUM for write access through `admin` only.
 
-The finding names the plist, the program, and the first writable item. Group write by `admin` alone is covered by the audit user test when the audit user is an admin; its severity is confirmed in test T8.
+The finding names the plist, the program, and the worst item found.
 
 ## 1.1 fixes
 
@@ -227,6 +237,9 @@ The finding names the plist, the program, and the first writable item. Group wri
 |---|---|
 | Shell startup matches report file, line number, and pattern name, never the line text | No secrets |
 | The startup scan adds `~/.zlogin`, `/etc/zshenv`, `/etc/zprofile`, `/etc/zlogin`, `/etc/bashrc`, and the patterns `bash -c "$(curl`, `wget ... \| sh`, `\| bash -s` | B1 |
+| The user's crontab shows schedule and command name only (`crontab_summary`) | No secrets |
+| The report replaces dashed UUIDs (`redact_ids`) | No secrets |
+| The signer cells and the login hook pass through `clean_field` | Security Context |
 | `authorized_keys` uses `ssh-keygen -l`, which also fixes the `awk \s` bug that printed the last word of an indented comment | No secrets, B1 |
 | `kmutil` output drops the UUID column | No secrets |
 | `clean_field` strips control characters, tabs, pipes, and backticks from every finding and table cell, so text from the audited Mac cannot add report rows | Security Context |
@@ -252,7 +265,7 @@ The root-mode crontab mix-up (`docs/ISSUES.md`) goes away with root mode.
 
 - With the rules installed, sudo logs each privileged command. Without the rules, the script makes no sudo call.
 - The SSH method check makes one SSH connection as `nobody` to `127.0.0.1`, which sshd logs.
-- The installer, only when the user runs it, writes `/etc/sudoers.d/mac-audit`.
+- The installer, only when the user runs it, writes `/etc/sudoers.d/mac-audit`. A remote install logs the whole script as the sudo command line on the remote Mac.
 - The rules give the granted user password-free access to the listed commands outside the audit as well. Any process that runs as that user gets the same access. Only the sudoers files are shown in full.
 
 ## Out of scope

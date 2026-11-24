@@ -101,12 +101,17 @@ erin ALL = (root) \
     NOPASSWD: ALL
 Cmnd_Alias X = /bin/a, \
     /bin/b
+#501 ALL = (ALL) NOPASSWD: ALL
+frank ALL = (root) NOPASSWD: SETENV: ALL
+gina ALL = (root) NOPASSWD:/bin/ls,ALL
+#includedir /private/etc/sudoers.d
 EOF
 classify_sudoers < "$T/sudoers" > "$T/f6"
-check "F6 three NOPASSWD: ALL rules are MEDIUM" [ "$(grep -c '^MEDIUM' "$T/f6")" -eq 3 ]
+check "F6 six NOPASSWD: ALL rules are MEDIUM" [ "$(grep -c '^MEDIUM' "$T/f6")" -eq 6 ]
+check "F6 a #UID rule is not a comment" has "$T/f6" "#501 ALL = (ALL) NOPASSWD: ALL"
 check "F6 two other NOPASSWD rules are LOW" [ "$(grep -c '^LOW' "$T/f6")" -eq 2 ]
 check "F6 continued line joined" has "$T/f6" "erin ALL = (root) NOPASSWD: ALL"
-check "F6 comments and Defaults ignored" [ "$(wc -l < "$T/f6" | tr -d ' ')" -eq 5 ]
+check "F6 comments, includes and Defaults ignored" [ "$(wc -l < "$T/f6" | tr -d ' ')" -eq 8 ]
 
 # F7: allow-lists keep settings and drop identifiers.
 cat > "$T/bputil" <<'EOF'
@@ -171,6 +176,19 @@ check "F10 text kept" [ "$out" = "evil HIGH Area/xy z" ]
 # F11: dashed UUIDs anywhere in the report are replaced.
 out=$(printf '/Library/SystemExtensions/688AE699-C0FB-4B23-91E1-6ACB69076699/x and abcdefab-cdef-abcd-efab-cdef00000050\n' | redact_ids)
 check "F11 UUIDs replaced" [ "$out" = "/Library/SystemExtensions/<UUID>/x and <UUID>" ]
+
+# F12: crontab lines show the schedule and command name, never arguments or values.
+printf '%s\n' '# comment' 'API_KEY=SECRET_A' '*/5 * * * * /usr/bin/curl -H "Authorization: SECRET_B" https://x' \
+  '@reboot /Users/x/bin/start.sh SECRET_C' '0 3 * * * TOKEN=SECRET_D /bin/run' | crontab_summary > "$T/f12"
+check "F12 no secrets" [ -z "$(grep SECRET "$T/f12" | grep -v 'API_KEY (value hidden)')" ]
+check "F12 variable named without value" has "$T/f12" "environment variable API_KEY (value hidden)"
+check "F12 schedule and command" has "$T/f12" "*/5 * * * *  curl (arguments hidden)"
+check "F12 @reboot entry" has "$T/f12" "@reboot  start.sh (arguments hidden)"
+check "F12 inline variables hidden" has "$T/f12" "0 3 * * *  (command with inline variables) (arguments hidden)"
+
+# F13: a program owned by this user is HIGH.
+touch "$T/prog"
+check "F13 user-owned program is HIGH" [ "$(chain_writable "$T/prog" | cut -f1)" = HIGH ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

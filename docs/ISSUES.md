@@ -11,7 +11,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 ## Planned
 
-- [/] Version 1.2: per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`.
+- [/] Version 1.2 (built and code-reviewed on `feature/sudo-rules`; install tests T5 and T7 to T11 pending): per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`.
 
 Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by value:
 
@@ -34,7 +34,9 @@ Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by 
 
 - [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
-- [ ] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval.
+- [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
+- [ ] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`).
+- [ ] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`.
 
 ## Open questions
 

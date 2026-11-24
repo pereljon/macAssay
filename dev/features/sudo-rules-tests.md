@@ -19,11 +19,14 @@ Two kinds of test cover version 1.2:
 - F3. `gen_rules` skips hostile inputs and warns for each: account names with a space, `,`, `*`, `:`, `=`, `(`, `\`, or a leading `-`; home paths with `..`, or outside `/Users/NAME` and `/var/root`; `sudoers.d` names with a `.`, `*`, `[`, or a space. The output still passes `visudo -c -f`.
 - F4. `gen_rules` refuses a granted user that is root, has a UID below 501, or is missing from the account list.
 - F5. `classify_refusal` reports a refusal for `sudo: a password is required` with exit 1, and for an `is not allowed to execute` message. It reports success for exit 0, and for a command's own failure with a non-sudo message.
-- F6. `classify_sudoers` finds `NOPASSWD: ALL` (MEDIUM) and other NOPASSWD rules (LOW). It ignores comments, ignores the mac-audit file, and handles a `Cmnd_Alias` that spans lines.
+- F6. `classify_sudoers` rates NOPASSWD rules whose command list contains `ALL` MEDIUM, including `NOPASSWD:ALL`, `NOPASSWD: SETENV: ALL`, a list ending in `ALL`, and a `#UID` rule. Other NOPASSWD rules are LOW. It ignores comments, `#includedir`, and Defaults, and joins continued lines.
 - F7. `filter_bputil` and `filter_profiles` keep the allowed lines from a fixture, and drop lines with a dashed UUID or a 32-character hex string.
 - F8. `rc_hits` reports file, line number, and pattern name for each pattern, including the new ones. Its output never contains the fixture's line text or a token planted on the matching line.
 - F9. `ssh_methods_flag` flags `password` and `keyboard-interactive`, and does not flag `publickey` alone.
 - F10. `clean_field` removes newlines, tabs, carriage returns, pipes, and backticks. A finding text with an embedded newline and a severity word yields one report row.
+- F11. `redact_ids` replaces dashed UUIDs in upper and lower case.
+- F12. `crontab_summary` shows schedule and command name, names variables without values, and hides commands with inline variables. No planted secret appears.
+- F13. `chain_writable` rates a program owned by the test user HIGH.
 
 ## Manual runs without rules installed
 
@@ -34,8 +37,8 @@ Two kinds of test cover version 1.2:
   - It finishes without a password prompt and without a privacy prompt.
   - The header says `Privileged checks: 0 ran, N skipped`. Limitations lists each skipped check with the reason "mac-audit sudo rules not installed".
   - `log show --last 5m --predicate 'process == "sudo"'` shows no entry from the run.
-  - No `sudo:` line, no shell startup line text, no UUID, and no 32-character hex string appear in the report.
-  - The root-run program check flags `com.cloudflare.cloudflared.plist` as HIGH.
+  - No `sudo:` line, no shell startup line text, and no dashed UUID appear in the report.
+  - The root-run program check flags `com.cloudflare.cloudflared.plist` as HIGH, and daemons under `/Applications` as MEDIUM.
   - Apart from the expected changes, the flags match the B1 baseline.
 - T5. `sudo ./mac-audit.sh --quick` exits 2 with the message that the audit does not run as root. The user runs this, because sudo asks for the password.
 
@@ -49,8 +52,8 @@ These cases need the rules installed on the Mac mini. The user runs the install,
   - The header says every privileged check ran.
   - Section 15 shows the sudoers contents, the `bputil` lines, the device profiles, the other accounts, the crontab listing, `lsof`, `sshd -T`, and `pf`.
   - The existing NOPASSWD rules in `/etc/sudoers` (`httpd`, `kill`, `killall`) are flagged LOW.
-  - The root-run program check flags cloudflared. Record how many other daemons it flags, and whether admin-group write needs a lower severity.
-  - The UUID and hex checks from T4 pass.
+  - The UUID check from T4 passes.
+  - The raw root output of `profiles show -type configuration` holds no password, PSK, or secret fields (code review finding CR-4).
 - T9. Compare the `bputil -d` and `profiles` lines in the report with the raw output, which the user runs with sudo. Update the F7 fixtures from the real output.
 - T10. A second `sudo ./mac-audit.sh --install-sudoers` prints "already installed" and leaves the file unchanged.
 - T11. Commands outside the rules are refused without a password prompt: `sudo -n -k /bin/cat /etc/master.passwd`, `sudo -n -k /usr/sbin/lsof -nP`, `sudo -n -k /usr/bin/du -h -d 1 -x /`, and `sudo -n -k /bin/ls -ln /var/root`.
@@ -79,6 +82,22 @@ These paths need a broken or unsafe system state, so they are reviewed, not run:
 - The verification warning when a later `/etc/sudoers` line overrides the rule.
 
 ## Review findings
+
+Code review before merge, 2026-11-24 (opus, high effort). Each line gives the finding, the outcome, and the reason.
+
+- CR-1 `#UID` rules hidden, and some `NOPASSWD: ALL` forms rated LOW: fixed. Breaks the design (Sudoers contents) and has a trigger; F6 covers it.
+- CR-2 The user's crontab is copied into the report: fixed. Breaks the No secrets principle; `crontab_summary` and F12.
+- CR-3 Remote mode runs as root: fixed. Breaks decision A1; root is refused for every mode except a local install.
+- CR-4 The standing `profiles show` rule may print payload secrets: asked the user. Critical if confirmed; unverified.
+- CR-5 The rollback message can claim a restore that failed, and a failed backup copy is unchecked: asked the user. Critical impact (sudo lockout path); no realistic trigger beyond an I/O failure.
+- CR-6 Absolute paths do not stop a remote `~/.zshenv` alias from capturing the sudo password: dropped for code, design text corrected. No requirement and not Critical; it needs a compromised remote account.
+- CR-7 Group-writable items rated MEDIUM for any group, some cases missed: fixed. Requirement 12 with a trigger; MEDIUM only for `admin`, ACL and interpreter scripts covered, decision recorded.
+- CR-8 Signer cells and the login hook reach the report uncleaned: fixed. Breaks the design (1.1 fixes) and the Security Context.
+- CR-9 sudo warnings reach the report and can misclassify a run: dropped. No requirement and not Critical.
+- CR-10 sudoers.d names that sudo reads but the rules cannot cover: dropped. No requirement and not Critical.
+- CR-11 A granted user named `ALL` or like a User_Alias passes validation: asked the user. Critical if it happened; no realistic trigger.
+- CR-12 Design text differs from the code: fixed in the design doc.
+- CR-13 A remote install logs the script as the sudo command line: listed as a side effect. Breaks the Read-only rule (every side effect listed).
 
 Architecture review, 2026-11-24 (opus, high effort). Each line gives the finding, the outcome, and the reason.
 
@@ -109,4 +128,15 @@ Architecture review, 2026-11-24 (opus, high effort). Each line gives the finding
 
 ## Results
 
-None yet.
+Run on the Mac mini, 2026-11-24, macOS 27.2.1.
+
+- B1: 1.1 baseline recorded: 41 flags (HIGH 0, MEDIUM 14, LOW 19, INFO 8); ShellCheck 10 findings.
+- F1 to F13: pass (`dev/test.sh`).
+- T1: pass. ShellCheck leaves the 3 historical `ls` findings and nothing new; 3 verified false positives are suppressed inline with reasons.
+- T2, T3, T6, T12 to T16: pass.
+- T4: pass. Privileged checks 0 ran, 18 skipped, each listed in Limitations; no sudo log entry; no `sudo:` line, startup line text, or dashed UUID. Cloudflared HIGH, 9 `/Applications` daemons MEDIUM. Flags otherwise match the baseline; the DDPM listener and SMB share differences came from the Mac's state between runs, confirmed by later runs.
+- T4 privacy prompts: not observed; dialogs are not visible from the session.
+- T17: pass; the fake `awk` never ran.
+- T18: pass; the encoded remote command gives the same report.
+- Full run (all checks): 3 minutes 10 seconds.
+- Not run yet: T5, T7 to T11 (need the user to run sudo), T19 (no second Mac).

@@ -130,13 +130,15 @@ classify_refusal() { [ "$1" -eq 1 ] && grep -qE '^sudo: |is not allowed to execu
 classify_sudoers() {
   awk '
     { sub(/\r$/, "") }
-    cont == "" && /^[[:space:]]*#/ { next }
+    cont == "" && /^[[:space:]]*#/ && !/^[[:space:]]*#[0-9]/ { next }
     { line = cont $0 }
     /\\$/ { sub(/\\$/, "", line); cont = line " "; next }
     { cont = ""; gsub(/[[:space:]]+/, " ", line); sub(/^ /, "", line) }
     line ~ /^Defaults/ { next }
-    line ~ /NOPASSWD ?: ?ALL( |,|$)/ { print "MEDIUM\t" line; next }
-    line ~ /NOPASSWD/ { print "LOW\t" line }'
+    line !~ /NOPASSWD/ { next }
+    { rest = substr(line, index(line, "NOPASSWD") + 8) }
+    rest ~ /(^|[:, ])ALL( |,|$)/ { print "MEDIUM\t" line; next }
+    { print "LOW\t" line }'
 }
 
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
@@ -154,6 +156,15 @@ rc_hits() {
       grep -nE -- "$re" "$f" 2>/dev/null | while IFS=: read -r ln _; do printf '%s:%s: %s\n' "$f" "$ln" "$name"; done
     done
   done | sort -u; }
+
+# stdin: crontab lines. Prints the schedule and command name; arguments and variable values may hold secrets.
+crontab_summary() {
+  awk '
+    /^[[:space:]]*(#|$)/ { next }
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=/ { n = $0; sub(/=.*/, "", n); gsub(/[[:space:]]/, "", n); print "environment variable " n " (value hidden)"; next }
+    { if ($1 ~ /^@/) { s = $1; c = $2 } else { s = $1 " " $2 " " $3 " " $4 " " $5; c = $6 }
+      if (c ~ /=/) c = "(command with inline variables)"; else sub(/.*\//, "", c)
+      print s "  " c " (arguments hidden)" }'; }
 
 # ssh_methods_flag METHODS: succeeds when the offered methods accept a password.
 ssh_methods_flag() { case "$1" in *password*|*keyboard-interactive*) return 0 ;; esac; return 1; }
@@ -209,10 +220,10 @@ sig()  { # signer summary for a path
   esac; }
 plistprog(){ plutil -extract Program raw -o - "$1" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$1" 2>/dev/null; }
 # chain_writable PATH...: prints "SEVERITY<TAB>reason" for the worst item on the paths, or a folder above
-# them, that a non-root account can change. HIGH: another owner, writable by everyone, or by this user
-# directly; MEDIUM: writable only through a group, such as admin on /Applications.
+# them, that a non-root account can change. MEDIUM only for write access through the admin group;
+# group wheel holds only root on macOS.
 chain_writable() {
-  local p d o perm grp hit="" sev=""
+  local p d o perm grp hit=""
   for p in "$@"; do
     [ -n "$p" ] || continue
     d="$p"
@@ -225,18 +236,20 @@ chain_writable() {
         esac
         if [ ! -L "$d" ]; then
           [ "${perm:8:1}" = w ] && { printf 'HIGH\t%s is writable by everyone\n' "$d"; return 0; }
-          if [ -w "$d" ]; then
-            if [ "${perm:5:1}" = w ]; then
-              [ -z "$hit" ] && { sev=MEDIUM; hit="$d is writable by $(id -un) through group $grp"; }
-            else printf 'HIGH\t%s is writable by %s\n' "$d" "$(id -un)"; return 0; fi
-          fi
+          if [ "${perm:5:1}" = w ]; then
+            case "$grp" in
+              wheel) ;;
+              admin) [ -z "$hit" ] && hit="$d is writable by the admin group" ;;
+              *) printf 'HIGH\t%s is writable by group %s\n' "$d" "$grp"; return 0 ;;
+            esac
+          elif [ -w "$d" ]; then printf 'HIGH\t%s is writable by %s through an ACL\n' "$d" "$(id -un)"; return 0; fi
         fi
       fi
       [ "$d" = / ] && break
       d=$(dirname "$d")
     done
   done
-  [ -n "$hit" ] && printf '%s\t%s\n' "$sev" "$hit"; }
+  [ -n "$hit" ] && printf 'MEDIUM\t%s\n' "$hit"; }
 
 # ---------- modes other than the audit ----------
 print_sudoers_mode() {
@@ -332,6 +345,9 @@ done
 TMP=$(mktemp -d /tmp/mac-audit.XXXXXX) || exit 1
 trap 'rm -rf "$TMP"' EXIT
 
+if [ "$(id -u)" -eq 0 ] && { [ "$MODE" != install-sudoers ] || [ -n "$RHOST" ]; }; then
+  die "mac-audit.sh runs as root only for --install-sudoers on this Mac. Run the audit as a normal user; privileged checks use the mac-audit sudo rules (see -h)." 2
+fi
 if [ -n "$RHOST" ]; then remote_mode; fi
 case "$MODE" in
   print-sudoers) print_sudoers_mode ;;
@@ -339,7 +355,6 @@ case "$MODE" in
 esac
 
 # ---------- audit ----------
-[ "$(id -u)" -eq 0 ] && die "The audit does not run as root. Run it as a normal user; privileged checks use the mac-audit sudo rules (see -h)." 2
 HOST=$(scutil --get LocalHostName 2>/dev/null || hostname -s)
 NOW=$(date "+%Y-%m-%d %H:%M %Z")
 [ -n "$OUT" ] || OUT="./mac-audit-${HOST}-$(date +%Y%m%d-%H%M).md"
@@ -441,7 +456,7 @@ say ""; say "| Rule | Path | Signer |"; say "|---|---|---|"
 $FW --listapps 2>/dev/null | awk '/^[0-9]+ :/{sub(/^[0-9]+ : /,""); sub(/ +$/,""); app=$0; next} /incoming/{r=($0 ~ /Allow/)?"Allow":"Block"; print r "|" app}' > "$TMP/fw"
 NALLOW=0
 while IFS='|' read -r r p; do
-  s=$(sig "$p"); say "| $r | \`$(mdesc "$p")\` | $s |"
+  s=$(sig "$p"); say "| $r | \`$(mdesc "$p")\` | $(mdesc "$s") |"
   if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in "ad hoc"|unsigned|missing) flag MEDIUM Firewall "Allow rule for a program that is $s: $p";; esac; fi
 done < "$TMP/fw"
 say ""; say "- Entries: $(wc -l < "$TMP/fw" | tr -d ' '), Allow: $NALLOW"
@@ -505,7 +520,7 @@ while read -r addr proc; do
   s=$(sig "$path")
   tgt="$host"; [ "$host" = "*" ] && tgt="$LANIP"; case "$tgt" in *:*) tgt="[$tgt]";; esac
   code=000; [ -n "$tgt" ] && code=$(/usr/bin/curl -q -s -o /dev/null -m 3 -w '%{http_code}' "http://$tgt:$port/" 2>/dev/null)
-  say "| \`$(mdesc "$addr")\` | \`$(mdesc "$path")\` | $(mdesc "$pid") | $s | $code |"
+  say "| \`$(mdesc "$addr")\` | \`$(mdesc "$path")\` | $(mdesc "$pid") | $(mdesc "$s") | $code |"
   case "$s" in Apple) ;; *)
     case "$code" in 200) flag MEDIUM Network "Non-Apple listener answers HTTP 200 without a login on $addr ($path). Check whether it needs authentication.";;
                     *) [ "$host" = "*" ] && flag INFO Network "Non-Apple listener on all interfaces: $addr ($(basename "$path"), HTTP $code)." ;; esac ;;
@@ -521,7 +536,7 @@ say "| Location | Label file | Program | Signer | Modified |"; say "|---|---|---
 for d in /Library/LaunchDaemons /Library/LaunchAgents "$THOME/Library/LaunchAgents"; do
   for f in "$d"/*.plist; do [ -e "$f" ] || continue
     prog=$(plistprog "$f"); s=$(sig "$prog"); m=$(stat -f %Sm -t %Y-%m-%d "$f")
-    say "| \`$d\` | $(mdesc "$(basename "$f")") | \`$(mdesc "${prog:-?}")\` | $s | $m |"
+    say "| \`$d\` | $(mdesc "$(basename "$f")") | \`$(mdesc "${prog:-?}")\` | $(mdesc "$s") | $m |"
     case "$prog" in /tmp/*|/private/tmp/*|/Users/Shared/*|*/.[!.]*/*) flag HIGH Persistence "Startup item runs from an unusual path: $f -> $prog";; esac
     [ "$s" = missing ] && [ -n "$prog" ] && case "$prog" in /*) flag LOW Persistence "Startup item points to a missing program: $f -> $prog";; esac
     if [ -n "$(find "$f" -mtime -14 2>/dev/null)" ]; then case "$s" in unsigned|"ad hoc") case "$prog" in /opt/homebrew/*|/usr/local/*) sv=LOW;; *) sv=MEDIUM;; esac
@@ -533,18 +548,20 @@ NRW=0
 for f in /Library/LaunchDaemons/*.plist; do [ -e "$f" ] || continue
   u=$(plutil -extract UserName raw -o - "$f" 2>/dev/null); [ -z "$u" ] || [ "$u" = root ] || continue
   prog=$(plistprog "$f"); case "$prog" in /*) ;; *) continue ;; esac
-  tgt=$(readlink -f "$prog" 2>/dev/null)
-  w=$(chain_writable "$f" "$prog" "$tgt")
+  tgt=$(readlink -f "$prog" 2>/dev/null); script=""
+  case "${prog##*/}" in sh|bash|zsh|dash|ksh|python|python3|perl|ruby|osascript|node)
+    script=$(plutil -extract ProgramArguments.1 raw -o - "$f" 2>/dev/null); case "$script" in /*) ;; *) script="" ;; esac ;; esac
+  w=$(chain_writable "$f" "$prog" "$tgt" "$script")
   if [ -n "$w" ]; then
-    NRW=$((NRW+1)); flag "${w%%$'\t'*}" Persistence "Root daemon $(basename "$f") runs $prog, and ${w#*$'\t'}. That account can replace what runs as root."
+    NRW=$((NRW+1)); flag "${w%%$'\t'*}" Persistence "Root daemon $(basename "$f") runs $prog${script:+ $script}, and ${w#*$'\t'}. Whoever can change it can replace what runs as root."
   fi
 done
 say ""; say "- Root daemons with a program or folder that a non-root account can change: $NRW"
 ls -l /Library/PrivilegedHelperTools 2>/dev/null | tail -n +2 | while read -r l; do f="/Library/PrivilegedHelperTools/${l##* }"; echo "$l  [$(sig "$f")]"; done | block "Privileged helper tools"
 LH=$(defaults read com.apple.loginwindow LoginHook 2>/dev/null; defaults read /Library/Preferences/com.apple.loginwindow LoginHook 2>/dev/null)
-say "- Login hook: ${LH:-none}"; [ -n "$LH" ] && flag HIGH Persistence "A login hook is set: $LH"
+say "- Login hook: $(mdesc "${LH:-none}")"; [ -n "$LH" ] && flag HIGH Persistence "A login hook is set: $LH"
 CT=$(crontab -l 2>/dev/null | grep -vE '^\s*(#|$)')
-say "- User crontab entries: $(printf '%s' "$CT" | grep -c . )"; [ -n "$CT" ] && echo "$CT" | block "crontab"
+say "- User crontab entries: $(printf '%s' "$CT" | grep -c . )"; [ -n "$CT" ] && echo "$CT" | crontab_summary | block "crontab (schedule and command name; arguments hidden)"
 ls /etc/periodic/daily /etc/periodic/weekly /etc/periodic/monthly 2>/dev/null | grep -vE '^[0-9]{3}\.|^$|:$' | block "Non-standard periodic scripts"
 ls -l /etc/sudoers.d 2>&1 | block "/etc/sudoers.d"
 OTHERSD=$(for f in /etc/sudoers.d/*; do [ -e "$f" ] && [ "${f##*/}" != mac-audit ] && echo "${f##*/}"; done | paste -sd, -)
@@ -576,7 +593,7 @@ run "Recent logins" sh -c 'last -25 | grep -v "^$"'
 h2 "11. Running programs outside standard locations"
 say "| Program | Signer |"; say "|---|---|"
 ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
-  s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $s |"
+  s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
   case "$p" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) flag HIGH Processes "Program running from a temporary or shared folder: $p ($s)";; esac
 done
 
@@ -651,7 +668,7 @@ if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.we
 h2 "15. Privileged checks"
 [ -e "$RULES" ] || say "The mac-audit sudo rules are not installed, so these checks are skipped. Review them with \`./mac-audit.sh --print-sudoers\` and install them with \`sudo ./mac-audit.sh --install-sudoers\`."
 h3 "Sudo configuration"
-noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#include/ {next} {print}'; }
+noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#(include|[0-9])/ {next} {print}'; }
 sudo_file(){ # LABEL PATH
   if priv "$1" /bin/cat "$2" > "$TMP/sud" 2>/dev/null; then
     noncomment < "$TMP/sud" | block "$2 (non-comment lines)"
