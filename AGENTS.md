@@ -25,6 +25,7 @@
 ## Workflow
 
 - Check syntax with `bash -n mac-audit.sh`.
+- Lint with `shellcheck mac-audit.sh`. ShellCheck comes from Homebrew and is a development tool only; the script still uses stock tools. Version 1.1 has 10 historical findings; compare against the base branch to find the ones a diff adds.
 - Test run: `./mac-audit.sh -o <path in the session temp folder>`, then review the report. A full local run takes about 2 minutes; `--quick --offline --skip-du` is faster.
 - Do not commit generated reports. They describe a real Mac.
 

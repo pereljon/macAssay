@@ -5,6 +5,8 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 ## Bugs
 
 - [ ] The usage line in the header says `scripts/mac-audit.sh`; the script now lives at the repo root.
+- [ ] Root mode shows root's crontab as the user's when the user has none: `crontab -u USER -l || crontab -l` falls through (`mac-audit.sh:273`, ShellCheck SC2015).
+- [ ] The home-folder `du` glob passes file names that start with `-` to `du` as options (`mac-audit.sh:327`, ShellCheck SC2035). File names on the audited Mac are untrusted input.
 
 ## Planned
 

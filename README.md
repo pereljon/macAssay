@@ -27,4 +27,4 @@ Remote mode sends the script inside the SSH command. Nothing is copied to the re
 
 ## Development
 
-Check syntax with `bash -n mac-audit.sh`. The project history and verified facts are in `dev/HANDOFF.md`.
+Check syntax with `bash -n mac-audit.sh`, and lint with `shellcheck mac-audit.sh` (ShellCheck from Homebrew, for development only). The project history and verified facts are in `dev/HANDOFF.md`.
