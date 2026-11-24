@@ -21,7 +21,7 @@ Remote mode sends the script inside the SSH command. Nothing is copied to the re
 
 ### Privileged checks
 
-Some checks need root: all listeners, effective `sshd` settings, the packet filter, background items, sudoers contents, the secure boot policy, device profiles, and other accounts' keys, LaunchAgents, startup files, and crontabs. They run only through sudo rules that allow fixed read-only command lines. Without the rules, the report lists these checks as skipped.
+Some checks need root: all listeners, the packet filter, background items, sudoers contents, the secure boot policy, device profiles, and other accounts' keys, LaunchAgents, startup files, and crontabs. They run only through sudo rules that allow fixed read-only command lines. Without the rules, the report lists these checks as skipped.
 
 1. Review the rules: `./macassay --print-sudoers`
 2. Install them: `sudo ./macassay --install-sudoers`

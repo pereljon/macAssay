@@ -20,7 +20,7 @@ A normal-user run, local or remote, gets the privileged checks without full root
 2. An install command, run with sudo, adds the rules when they are not already present (`dev/HANDOFF.md`, Requirements).
 3. Remote mode gets the privileged checks without copying the script to the remote disk (`dev/HANDOFF.md`, Requirements and Design constraints).
 4. `-h` prints the whole header comment block, with examples and the install steps (`dev/HANDOFF.md`, Pending item 1).
-5. New checks: other accounts and root, sudoers contents, `bputil -d`, root `profiles show -type configuration` (Pending item 2).
+5. New checks: other accounts and root, sudoers contents, `bputil -d`, root `profiles list -type configuration` (Pending item 2; `show` replaced by `list`, see Decisions).
 6. The remote `--sudo` option is removed (Pending item 3).
 7. The report lists the checks that ran and the ones that were skipped (Pending item 4).
 8. The installer has the safeguards in `dev/HANDOFF.md` (Pending item 5).
@@ -46,6 +46,10 @@ A normal-user run, local or remote, gets the privileged checks without full root
 - 2026-11-24: The report replaces every dashed UUID with `<UUID>`. Version 1.1 already printed install-folder UUIDs from system extension paths and group records. It follows the No secrets principle.
 - 2026-11-24: The script answers `--version`, per the development `AGENTS.md` (Releases).
 - 2026-11-24: The sudoers check keeps the handoff's severities in 1.2 (`NOPASSWD: ALL` MEDIUM, other NOPASSWD LOW). Stronger sudoers checks are planned for 1.3.
+- 2026-11-24: Effective SSH settings come from `sshd -G`, run as the user, and the `sshd -T` rule is dropped. Conviction: `ok`. `-G` prints the same keys without loading the host keys, so it needs no root, and the settings appear without the rules. Rejected: keeping `sshd -T`, a standing root rule for data that needs no root.
+- 2026-11-24: The device profiles rule is `profiles list -type configuration` instead of `profiles show` (code review finding CR-4). Conviction: `ok`. `list` prints names and identifiers, so payload contents never reach the audit's temporary files. Rejected: keeping `show` and testing it with an installed test profile; dropping the check. That `list` prints no payload contents is not yet verified on a Mac with a device profile.
+- 2026-11-24: The installer stops before writing when the backup copy of the old rules fails. After a failed rollback, it says so and prints a recovery command that does not use sudo (code review finding CR-5). Conviction: `ok`.
+- 2026-11-24: The granted user name must not look like a sudoers alias or `ALL` (code review finding CR-11). Conviction: `ok`. A rule for user `ALL` grants the commands to every account.
 
 ## Verified facts
 
@@ -63,6 +67,8 @@ These were checked on the Mac mini on 2026-11-24.
 - `/usr/lib/cron` links to `/var/at`. `/var/at/tabs` is `root:wheel 700`.
 - `ssh-keygen -l -f ~/.ssh/authorized_keys` prints bits, fingerprint, comment, and key type, and never prints key data.
 - `/usr/bin/readlink -f` resolves a symlink chain.
+- `/usr/sbin/sshd -G` runs as the user and prints `Port`, `UsePAM`, `PermitRootLogin`, `PubkeyAuthentication`, `PasswordAuthentication`, and `KbdInteractiveAuthentication`, with capitalized key names. `sshd -T` prints lowercase names and needs root to load the host keys.
+- `profiles list -type configuration` run as the user prints "There are no configuration profiles installed for user 'USER'" on this Mac.
 - `/var/root` is `root:wheel 750`. `/Users` is `root:admin 755`. `/usr/local/bin` is `root:wheel 755`.
 - The macOS `awk` (20200816) does not support `\s`.
 - `./macassay -o` with no value loops forever: `shift 2` fails with one argument left.
@@ -73,7 +79,8 @@ These were checked on the Mac mini on 2026-11-24.
 Assumptions not yet verified:
 
 - `/etc/sudoers` contains an `includedir` line for `sudoers.d`. The installer checks it as root and warns when it is missing.
-- The output formats of `bputil -d` and root `profiles show -type configuration` are unknown, because both need root. Test T9 confirms the allow-lists.
+- The output formats of `bputil -d` and root `profiles list -type configuration` are unknown, because both need root. Test T9 confirms the allow-lists.
+- `osascript -e 'do shell script "..." with administrator privileges'` authorizes through Authorization Services, not sudo, so it works when a sudoers file fails to parse (training knowledge; not tested here).
 - The root-run program check may also flag root daemons inside `/Applications` app bundles, because `/Applications` is `root:admin 775`. The first run on this Mac shows how many fire (test T8), and the severity for admin-group write is settled then.
 - `du` over protected home folders may raise privacy prompts for a terminal without Full Disk Access. Test T4 checks for prompts.
 
@@ -142,13 +149,12 @@ The report header and Limitations are built from these records.
 Cmnd_Alias MACASSAY = \
     /usr/sbin/lsof -nP -iTCP -sTCP\:LISTEN, \
     /usr/sbin/lsof -nP -d txt -Fpn, \
-    /usr/sbin/sshd -T, \
     /sbin/pfctl -s info, \
     /sbin/pfctl -s rules, \
     /usr/bin/sfltool dumpbtm, \
     /usr/bin/du -h -d 1 -x /Users, \
     /usr/bin/du -sh -x /Library /Applications /opt /private/var, \
-    /usr/bin/profiles show -type configuration, \
+    /usr/bin/profiles list -type configuration, \
     /usr/bin/bputil -d, \
     /bin/cat /etc/sudoers, \
     /bin/cat /etc/sudoers.d/FILE, \                  (one line per file present, and macassay)
@@ -168,6 +174,7 @@ USER ALL = (root) NOPASSWD: MACASSAY
 - `bputil -d` is left out on Intel Macs.
 - Validation, applied before any value goes into a rule:
   - The granted user must exist, must not be root, and must have a UID of 501 or above.
+  - The granted user name must not match `^[A-Z][A-Z0-9_]*$`. Such a name reads as a sudoers alias, and `ALL` matches every user.
   - Each account name must match `^[A-Za-z0-9_][A-Za-z0-9_.-]*$`.
   - Each home path must be `/var/root` or `/Users/NAME`, where `NAME` passes the account name test.
   - Each `sudoers.d` file name must match `^[A-Za-z0-9_-]+$`. sudo ignores names with a `.`, so the rule set never needs them.
@@ -183,8 +190,8 @@ USER ALL = (root) NOPASSWD: MACASSAY
 3. Generate the rules into `$TMP`, and validate the file with `visudo -c -f`.
 4. Check that the granted user cannot write any folder on the path to a file that a rule names. The check runs `sudo -u USER /bin/test -w FOLDER` for each folder from the parent up to `/`. If any folder is writable, stop and name it.
 5. If `/etc/sudoers.d/macassay` exists with identical content, print "already installed" and stop. If it differs, print the differences.
-6. Copy the old file, if any, to `$TMP`. Write the new file to `/etc/sudoers.d/.macassay.new` with owner root:wheel and mode 0440, then rename it to `macassay`.
-7. Run `visudo -c`. If it fails, restore the old file or remove the new one, and exit with an error.
+6. Copy the old file, if any, to `$TMP`, and stop if the copy fails. Write the new file to `/etc/sudoers.d/.macassay.new` with owner root:wheel and mode 0440, then rename it to `macassay`.
+7. Run `visudo -c`. If it fails, restore the old file or remove the new one, then run `visudo -c` again. If that passes, exit with an error that says the previous state was restored. If it fails, say that sudo may refuse every command, and print the recovery command `osascript -e 'do shell script "rm /etc/sudoers.d/macassay" with administrator privileges'`.
 8. Verify from the granted user with `sudo -u USER /usr/bin/sudo -n -k /sbin/pfctl -s info >/dev/null`. This runs one read-only rule for real; the `-l` form would pass without the rule. It also fails when a later line in `/etc/sudoers` overrides the rule, because sudo applies the last matching entry. On failure, keep the file and print a warning, since the file is valid.
 9. Warn when `/etc/sudoers` has no `#includedir` or `@includedir` line for `/private/etc/sudoers.d` or `/etc/sudoers.d`.
 10. Print the undo command: `sudo rm /etc/sudoers.d/macassay`.
@@ -211,14 +218,14 @@ Section 15 always appears. A skipped check prints one line with its reason.
 
 - **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. A line that starts with `#` and a digit is a rule for a user ID, not a comment. A NOPASSWD rule whose command list contains `ALL`, after any tags, is MEDIUM. Another NOPASSWD rule outside the macassay file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The macassay file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
 - **Secure boot policy.** `bputil -d </dev/null`, so the volume prompt cannot block the run. `filter_bputil` keeps only lines that name the security mode, SIP, kernel extensions, or MDM, and drops any line that holds a UUID or a hex string of 32 characters or more. A security mode other than Full is MEDIUM.
-- **Device profiles.** `profiles show -type configuration`. `filter_profiles` keeps only profile name, identifier, and organization lines.
+- **Device profiles.** `profiles list -type configuration`. `filter_profiles` keeps only profile name, identifier, and organization lines.
 - **Other accounts and root.** For each account in the rules:
   - `authorized_keys`: `ssh-keygen -l` output (bits, fingerprint, comment, type).
   - LaunchAgents: names, owners, and dates.
   - Shell startup files: owner, size, and date. A file owned by another account, or writable by group or others, is MEDIUM.
 - **Crontabs.** `ls -ln /var/at/tabs`: one INFO flag per account with a crontab, with its date.
 
-The existing root-only checks move to `priv`: `lsof` listeners, `sshd -T`, and `pf` in section 15, `sfltool dumpbtm` in section 9, and the two `du` lines in section 13. The per-PID `lsof -p` lookup in section 8 becomes one `lsof -nP -d txt -Fpn` map, built only when a listener has no absolute path. Without the rules, section 8 uses the user's own `lsof`, as now.
+The existing root-only checks move to `priv`: `lsof` listeners and `pf` in section 15, `sfltool dumpbtm` in section 9, and the two `du` lines in section 13. The effective `sshd` settings move to section 7 and come from `sshd -G`, which needs no root. The per-PID `lsof -p` lookup in section 8 becomes one `lsof -nP -d txt -Fpn` map, built only when a listener has no absolute path. Without the rules, section 8 uses the user's own `lsof`, as now.
 
 ### New check in section 9: root-run programs that a user can write
 
@@ -244,7 +251,7 @@ The finding names the plist, the program, and the worst item found.
 | `kmutil` output drops the UUID column | No secrets |
 | `clean_field` strips control characters, tabs, pipes, and backticks from every finding and table cell, so text from the audited Mac cannot add report rows | Security Context |
 | Limitations says that evidence holds text from the audited Mac, to be treated as data, not instructions | Security Context |
-| The SSH flag fires on `keyboard-interactive` as well as `password`; with the rules, it uses the `sshd -T` values | B1 |
+| The SSH flag fires on `keyboard-interactive` as well as `password`; when `sshd -G` runs, it uses those values | B1 |
 | An option without its value exits 2 instead of looping | B1 |
 | The home `du` passes `--` before the globs, so a file name that starts with `-` is not an option | Security Context, B1 |
 | Truncated blocks end with "(truncated after N lines)" | B1 |

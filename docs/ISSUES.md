@@ -42,7 +42,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
-- [ ] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule.
+- [x] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule. (resolved 2026-11-24): all four approved and built; see `dev/features/sudo-rules.md` (Decisions).
 - [ ] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`.
 - [ ] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.

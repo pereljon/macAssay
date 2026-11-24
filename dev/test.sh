@@ -75,6 +75,11 @@ for u in root _www nosuch "bad name"; do
   printf '%s\n' "$ACCTS" | gen_rules "$u" arm64 > /dev/null 2>&1
   check "F4 refuses granted user '$u'" [ $? -ne 0 ]
 done
+# A name that reads as a sudoers alias, or ALL, would widen the grant line.
+for u in ALL ADMIN_1; do
+  printf '%s\naccount %s 503 /Users/%s\n' "$ACCTS" "$u" "$u" | gen_rules "$u" arm64 > /dev/null 2>&1
+  check "F4 refuses alias-like user '$u'" [ $? -ne 0 ]
+done
 
 # F5: sudo refusals are told apart from a command's own failure.
 printf 'sudo: a password is required\n' > "$T/e1"
@@ -189,6 +194,17 @@ check "F12 inline variables hidden" has "$T/f12" "0 3 * * *  (command with inlin
 # F13: a program owned by this user is HIGH.
 touch "$T/prog"
 check "F13 user-owned program is HIGH" [ "$(chain_writable "$T/prog" | cut -f1)" = HIGH ]
+
+# F14: a failed install rollback is reported, not claimed as restored.
+mkdir "$T/sd"
+sudoers_ok() { ! grep -qs BAD "$RULES"; }
+( RULES="$T/sd/macassay"; TMP="$T/r1"; mkdir "$TMP"; echo BAD > "$RULES"
+  rollback_rules && [ ! -e "$RULES" ] ) 2>/dev/null
+check "F14 no backup: bad file removed, rollback succeeds" [ $? -eq 0 ]
+( RULES="$T/sd/macassay"; TMP="$T/r2"; mkdir "$TMP"; echo BAD > "$RULES"; echo good > "$TMP/old"
+  rollback_rules ) 2>/dev/null
+check "F14 backup not installable: rollback fails" [ $? -ne 0 ]
+check "F14 no .macassay.new left behind" [ ! -e "$T/sd/.macassay.new" ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

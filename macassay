@@ -66,6 +66,8 @@ die() { echo "$1" >&2; exit "${2:-1}"; }
 # Strip control characters, tabs, pipes and backticks so text from the audited Mac stays in one table cell.
 clean_field() { LC_ALL=C tr '\t\n\r|' '   /' | LC_ALL=C tr -d '`\000-\010\013-\037\177' | sed 's/ *$//'; }
 valid_name() { local re='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'; [[ $1 =~ $re ]]; }
+# sudoers reads an all-capitals name as an alias, and ALL as every user.
+alias_name() { local re='^[A-Z][A-Z0-9_]*$' LC_ALL=C; [[ $1 =~ $re ]]; }
 valid_sudoersd() { local re='^[A-Za-z0-9_-]+$'; [[ $1 =~ $re ]]; }
 valid_home() { # NAME HOME
   local re='^/Users/[A-Za-z0-9_][A-Za-z0-9_.-]*$'
@@ -88,6 +90,7 @@ gen_rules() {
   local user="$1" arch="$2" input guid cmds
   input=$(cat)
   valid_name "$user" || { echo "Not a valid user name: $user" >&2; return 1; }
+  alias_name "$user" && { echo "User name $user reads as a sudoers alias or ALL; rules cannot name it." >&2; return 1; }
   guid=$(printf '%s\n' "$input" | awk -v u="$user" '$1=="account" && $2==u {print $3; exit}')
   [ -n "$guid" ] || { echo "User $user does not exist." >&2; return 1; }
   case "$guid" in *[!0-9]*) echo "User $user has an unreadable UID." >&2; return 1 ;; esac
@@ -95,13 +98,12 @@ gen_rules() {
   cmds=$(
     echo '/usr/sbin/lsof -nP -iTCP -sTCP\:LISTEN'
     echo '/usr/sbin/lsof -nP -d txt -Fpn'
-    echo '/usr/sbin/sshd -T'
     echo '/sbin/pfctl -s info'
     echo '/sbin/pfctl -s rules'
     echo '/usr/bin/sfltool dumpbtm'
     echo '/usr/bin/du -h -d 1 -x /Users'
     echo '/usr/bin/du -sh -x /Library /Applications /opt /private/var'
-    echo '/usr/bin/profiles show -type configuration'
+    echo '/usr/bin/profiles list -type configuration'
     [ "$arch" = arm64 ] && echo '/usr/bin/bputil -d'
     echo '/bin/cat /etc/sudoers'
     printf '%s\n' "$input" | while read -r kind f; do
@@ -255,11 +257,21 @@ chain_writable() {
 print_sudoers_mode() {
   collect_accounts | gen_rules "${SUSER:-$(id -un)}" "$(uname -m)"; exit $?; }
 
+sudoers_ok() { /usr/sbin/visudo -c >/dev/null 2>&1; }
+
+# Puts back $TMP/old as $RULES, or removes $RULES when there was none. Fails when sudo still does not parse.
+rollback_rules() {
+  local new; new="$(dirname "$RULES")/.macassay.new"
+  if [ -f "$TMP/old" ]; then
+    { /usr/bin/install -o root -g wheel -m 0440 "$TMP/old" "$new" && mv -f "$new" "$RULES"; } 2>/dev/null || rm -f "$new"
+  else rm -f "$RULES"; fi
+  sudoers_ok; }
+
 install_mode() {
   local user="${SUSER:-$SUDO_USER}" d
   [ "$(id -u)" -eq 0 ] || die "--install-sudoers needs root. Run: sudo $0 --install-sudoers"
   [ -n "$user" ] || die "Name the user to grant: --install-sudoers=USER" 2
-  /usr/sbin/visudo -c >/dev/null 2>&1 || die "visudo -c fails on the current sudo configuration. Fix it before installing."
+  sudoers_ok || die "visudo -c fails on the current sudo configuration. Fix it before installing."
   collect_accounts | gen_rules "$user" "$(uname -m)" > "$TMP/rules" || exit 1
   /usr/sbin/visudo -c -f "$TMP/rules" >/dev/null || die "The generated rules fail visudo -c -f; nothing was installed."
   # A folder the user can write on a rule path would let a symlink point the rule at another file.
@@ -269,13 +281,13 @@ install_mode() {
   [ -s "$TMP/writable" ] && die "$user can write these folders on rule paths; nothing was installed:
 $(cat "$TMP/writable")"
   if [ -f "$RULES" ] && cmp -s "$TMP/rules" "$RULES"; then echo "The macassay rules are already installed for $user."; exit 0; fi
-  if [ -f "$RULES" ]; then echo "Replacing $RULES. Changes:"; diff "$RULES" "$TMP/rules"; cp "$RULES" "$TMP/old"; fi
+  if [ -f "$RULES" ]; then echo "Replacing $RULES. Changes:"; diff "$RULES" "$TMP/rules"; cp "$RULES" "$TMP/old" || die "Could not back up $RULES; nothing was installed."; fi
   /usr/bin/install -o root -g wheel -m 0440 "$TMP/rules" /etc/sudoers.d/.macassay.new || die "Could not write /etc/sudoers.d/.macassay.new"
   mv -f /etc/sudoers.d/.macassay.new "$RULES" || { rm -f /etc/sudoers.d/.macassay.new; die "Could not install $RULES"; }
-  if ! /usr/sbin/visudo -c >/dev/null 2>&1; then
-    if [ -f "$TMP/old" ]; then /usr/bin/install -o root -g wheel -m 0440 "$TMP/old" /etc/sudoers.d/.macassay.new && mv -f /etc/sudoers.d/.macassay.new "$RULES"
-    else rm -f "$RULES"; fi
-    die "visudo -c failed after the install, so the previous state was restored."
+  if ! sudoers_ok; then
+    rollback_rules && die "visudo -c failed after the install, so the previous state was restored."
+    die "visudo -c failed after the install, and restoring the previous state also failed. sudo may refuse every command. Recover without sudo:
+osascript -e 'do shell script \"rm $RULES\" with administrator privileges'"
   fi
   echo "Installed $RULES for $user."
   if sudo -u "$user" /usr/bin/sudo -n -k /sbin/pfctl -s info >/dev/null 2>&1; then echo "Verified: $user can run a macassay rule without a password."
@@ -365,7 +377,7 @@ BODY="$TMP/body.md"; FIND="$TMP/findings.tsv"; SKIPS="$TMP/skipped.tsv"
 LANIF=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
 LANIP=$(ipconfig getifaddr "${LANIF:-en0}" 2>/dev/null)
 priv "lsof listeners" /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN > "$TMP/lsofl" 2>/dev/null && LSOFL=1 || LSOFL=0
-priv "sshd -T" /usr/sbin/sshd -T > "$TMP/sshdt" 2>/dev/null && SSHDT=1 || SSHDT=0
+if /usr/sbin/sshd -G > "$TMP/sshdg" 2>/dev/null; then SSHDG=1; else SSHDG=0; skip "Effective sshd settings" "sshd -G failed"; fi
 
 # ---------- 1. System and hardware ----------
 h2 "1. System and hardware"
@@ -483,13 +495,17 @@ fi
 if listening 22; then
   AM=$(/usr/bin/ssh -F /dev/null -o PreferredAuthentications=none -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 nobody@127.0.0.1 true </dev/null 2>&1 | grep -o '([^)]*)' | tail -1)
   say "- SSH offers: ${AM:-unknown}"
-  if [ "$SSHDT" -eq 1 ]; then
-    PWA=$(grep -Ei '^(passwordauthentication|kbdinteractiveauthentication) yes' "$TMP/sshdt" | paste -sd, -)
-    [ -n "$PWA" ] && flag MEDIUM Sharing "SSH accepts passwords (sshd -T: $PWA)."
+  if [ "$SSHDG" -eq 1 ]; then
+    PWA=$(grep -Ei '^(passwordauthentication|kbdinteractiveauthentication) yes' "$TMP/sshdg" | paste -sd, -)
+    [ -n "$PWA" ] && flag MEDIUM Sharing "SSH accepts passwords (sshd -G: $PWA)."
   elif ssh_methods_flag "$AM"; then flag MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
   if dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then say "- SSH access group: $(dscl . -read /Groups/com.apple.access_ssh GroupMembership 2>/dev/null | cut -d: -f2)"
   else say "- SSH access group: absent (every local user may sign in)"; flag LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
   cat /etc/ssh/sshd_config.d/* 2>/dev/null | grep -vE '^\s*(#|$)' | block "sshd_config.d (non-comment lines)"
+  if [ "$SSHDG" -eq 1 ]; then
+    grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam) " "$TMP/sshdg" | block "Effective sshd settings (sshd -G)"
+    grep -qi '^permitrootlogin yes' "$TMP/sshdg" && flag HIGH Sharing "sshd permits root login."
+  else say "- Effective sshd settings: skipped ($(skip_reason "Effective sshd settings"))"; fi
 fi
 dscl . -read /Groups/com.apple.access_screensharing GroupMembership NestedGroups 2>/dev/null | block "Screen Sharing access group"
 sharing -l 2>/dev/null | grep -E '^name:|path:' | block "File shares"
@@ -689,8 +705,8 @@ elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; th
   [ -n "$BPM" ] && flag MEDIUM Security "Secure boot policy is not Full Security: $BPM"
 else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
 h3 "Device configuration profiles"
-if priv "profiles (device)" /usr/bin/profiles show -type configuration > "$TMP/prof" 2>/dev/null; then
-  filter_profiles < "$TMP/prof" | block "profiles show -type configuration (names and identifiers only)"
+if priv "profiles (device)" /usr/bin/profiles list -type configuration > "$TMP/prof" 2>/dev/null; then
+  filter_profiles < "$TMP/prof" | block "profiles list -type configuration (names and identifiers only)"
 else say "- Device profiles: skipped ($(skip_reason "profiles (device)"))"; fi
 h3 "Other accounts and root"
 collect_accounts | other_accounts "$TUSER" 2>/dev/null > "$TMP/others"
@@ -711,13 +727,9 @@ if priv "crontabs" /bin/ls -ln /var/at/tabs > "$TMP/tabs" 2>/dev/null; then
   grep -v '^total' "$TMP/tabs" | awk '$1 ~ /^-/ {print $NF, $6, $7, $8}' | while read -r cu cd1 cd2 cd3; do
     [ "$cu" = "$TUSER" ] || flag INFO Persistence "Account $cu has a crontab (changed $cd1 $cd2 $cd3)."; done
 else say "- Crontabs: skipped ($(skip_reason "crontabs"))"; fi
-h3 "Listeners, sshd and packet filter"
+h3 "Listeners and packet filter"
 if [ "$LSOFL" -eq 1 ]; then awk '{print $1, $2, $3, $9}' "$TMP/lsofl" | sort -u | block "All TCP listeners (lsof)"
 else say "- All TCP listeners (lsof): skipped ($(skip_reason "lsof listeners"))"; fi
-if [ "$SSHDT" -eq 1 ]; then
-  grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam) " "$TMP/sshdt" | block "Effective sshd settings"
-  grep -qi '^permitrootlogin yes' "$TMP/sshdt" && flag HIGH Sharing "sshd permits root login."
-else say "- Effective sshd settings: skipped ($(skip_reason "sshd -T"))"; fi
 : > "$TMP/pf"
 priv "pfctl -s info" /sbin/pfctl -s info 2>/dev/null | head -5 >> "$TMP/pf"
 priv "pfctl -s rules" /sbin/pfctl -s rules 2>/dev/null | head -30 >> "$TMP/pf"
