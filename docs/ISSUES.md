@@ -20,6 +20,8 @@ Version 1.2, from `dev/HANDOFF.md` (Pending work requested by the user):
 
 ## Next steps
 
+- [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
+
 - [ ] Ask the user to choose sudo approach A or B, then write the design doc and test plan.
 
 ## Open questions
@@ -27,6 +29,9 @@ Version 1.2, from `dev/HANDOFF.md` (Pending work requested by the user):
 - [ ] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? network-manager recommended A. Trade-offs are in `dev/HANDOFF.md`.
 - [ ] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script?
 - [ ] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root.
+- [ ] Continue mac-audit rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of mac-audit's host checks; evidence is in `dev/prior-art.md`.
+- [ ] Project name: pick one that does not overlap with the projects in `dev/prior-art.md` (several use `macaudit` or `mac-security-audit`).
+- [ ] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel.
 
 ## Decisions
 
