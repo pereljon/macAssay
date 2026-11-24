@@ -10,7 +10,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 Version 1.2, from `dev/HANDOFF.md` (Pending work requested by the user):
 
-- [ ] Grant privileged checks through sudo, by approach A or B (see Open questions).
+- [/] Grant privileged checks through per-command sudo rules (approach B). Design: `dev/features/sudo-rules.md`.
 - [ ] Print the whole header comment block for `-h`, with examples and the install steps.
 - [ ] Add optional checks: other users and root (`authorized_keys`, LaunchAgents, crontabs, shell startup patterns), sudoers contents, `bputil -d`, root `profiles show -type configuration`.
 - [ ] Replace the remote `--sudo` option.
@@ -20,11 +20,12 @@ Version 1.2, from `dev/HANDOFF.md` (Pending work requested by the user):
 
 ## Next steps
 
-- [ ] Ask the user to choose sudo approach A or B, then write the design doc and test plan.
+- [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.
+- [ ] The user reviews `dev/features/sudo-rules-tests.md` and the design doc; code starts after approval.
 
 ## Open questions
 
-- [ ] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? network-manager recommended A. Trade-offs are in `dev/HANDOFF.md`.
+- [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [ ] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script?
 - [ ] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root.
 
