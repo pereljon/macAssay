@@ -410,6 +410,8 @@ recent_installs() {
     /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " n (v != "" ? " " v : "") }'; }
 # boot_args_sev ARGS: prints HIGH for boot arguments that turn off code-signing enforcement, LOW for others.
 boot_args_sev() { case "$1" in '') ;; *amfi_*|*cs_enforcement_disable*) echo HIGH ;; *) echo LOW ;; esac; }
+# cups_shared FILE: succeeds when cupsd.conf listens beyond localhost, which printer sharing turns on.
+cups_shared() { awk 'tolower($1) == "port" {f = 1} tolower($1) == "listen" && $2 !~ /^(localhost|127\.0\.0\.1|\[::1\]):/ && $2 !~ /^\// {f = 1} END {exit !f}' "$1" 2>/dev/null; }
 # screen_lock_sev TEXT: prints "SEVERITY<TAB>description" for a screen lock that is off or slow, from sysadminctl -screenLock status.
 screen_lock_sev() {
   local s
@@ -705,12 +707,42 @@ if listening 22; then
   else say "- SSH access group: absent (every local user may sign in)"; finding MA-SHARING-008 LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
   cat /etc/ssh/sshd_config.d/* 2>/dev/null | grep -vE '^\s*(#|$)' | block "sshd_config.d (non-comment lines)"
   if [ "$SSHDG" -eq 1 ]; then
-    grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam) " "$TMP/sshdg" | block "Effective sshd settings (sshd -G)"
+    grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam|permituserenvironment|gatewayports|hostbasedauthentication|x11forwarding|maxauthtries) " "$TMP/sshdg" | block "Effective sshd settings (sshd -G)"
     grep -qi '^permitrootlogin yes' "$TMP/sshdg" && finding MA-SHARING-009 HIGH Sharing "sshd permits root login."
+    sshdv() { awk -v k="$1" 'tolower($1) == k {print $2; exit}' "$TMP/sshdg"; }
+    v=$(sshdv permituserenvironment); [ -n "$v" ] && [ "$v" != no ] && finding MA-SHARING-014 MEDIUM Sharing "sshd lets clients set environment variables (PermitUserEnvironment $v)."
+    v=$(sshdv gatewayports); [ -n "$v" ] && [ "$v" != no ] && finding MA-SHARING-015 MEDIUM Sharing "sshd lets forwarded ports listen on all interfaces (GatewayPorts $v)."
+    v=$(sshdv hostbasedauthentication); [ "$v" = yes ] && finding MA-SHARING-016 MEDIUM Sharing "sshd accepts host-based authentication."
+    v=$(sshdv x11forwarding); [ "$v" = yes ] && finding MA-SHARING-017 LOW Sharing "sshd allows X11 forwarding."
+    v=$(sshdv maxauthtries); [ -n "$v" ] && [ "$v" -gt 6 ] 2>/dev/null && finding MA-SHARING-018 LOW Sharing "sshd allows $v authentication attempts per connection (MaxAuthTries)."
   else say "- Effective sshd settings: skipped ($(skip_reason "Effective sshd settings"))"; fi
 fi
 dscl . -read /Groups/com.apple.access_screensharing GroupMembership NestedGroups 2>/dev/null | block "Screen Sharing access group"
 sharing -l 2>/dev/null | grep -E '^name:|path:' | block "File shares"
+h3 "More sharing services"
+if launchctl print system/com.apple.AEServer >/dev/null 2>&1; then say "- Remote Apple Events: on"; finding MA-SHARING-019 LOW Sharing "Remote Apple Events is on (TCP 3031)."; else say "- Remote Apple Events: off"; fi
+NATE=$(plutil -extract NAT.Enabled raw -o - /Library/Preferences/SystemConfiguration/com.apple.nat.plist 2>/dev/null)
+default_line "Internet Sharing (NAT Enabled)" "$NATE" "off"
+case "$NATE" in 1|true) finding MA-SHARING-010 MEDIUM Sharing "Internet Sharing is on; this Mac routes traffic for other devices." ;; esac
+SMBG=$(plutil -extract AllowGuestAccess raw -o - /Library/Preferences/SystemConfiguration/com.apple.smb.server.plist 2>/dev/null)
+default_line "SMB guest access (AllowGuestAccess)" "$SMBG" "off"
+case "$SMBG" in 1|true) finding MA-SHARING-011 MEDIUM Sharing "SMB file sharing allows guest access without a password." ;; esac
+if launchctl print system/org.apache.httpd >/dev/null 2>&1; then say "- Apache web server: loaded"; finding MA-SHARING-020 LOW Sharing "The built-in Apache web server (org.apache.httpd) is loaded."; else say "- Apache web server: not loaded"; fi
+if [ -f /etc/exports ] && grep -qvE '^[[:space:]]*(#|$)' /etc/exports; then say "- NFS exports: present"; finding MA-SHARING-012 MEDIUM Sharing "NFS exports are configured in /etc/exports."; else say "- NFS exports: none"; fi
+if cups_shared /etc/cups/cupsd.conf; then say "- Printer sharing: on"; finding MA-SHARING-021 LOW Sharing "Printer sharing is on (cupsd listens beyond localhost)."; else say "- Printer sharing: off"; fi
+AD=$(defaults read com.apple.sharingd DiscoverableMode 2>/dev/null)
+default_line "AirDrop discoverable by (DiscoverableMode)" "$AD" "Contacts Only"
+[ "$AD" = Everyone ] && finding MA-SHARING-022 LOW Sharing "AirDrop is discoverable by everyone."
+if lsof -nP -a -c ControlCenter -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}' | grep -qE ':(5000|7000)$'; then say "- AirPlay receiver: listening"; finding MA-SHARING-023 LOW Sharing "The AirPlay receiver is listening (TCP 5000 or 7000)."; else say "- AirPlay receiver: not listening"; fi
+MSH=$(defaults read com.apple.amp.mediasharingd home-sharing-enabled 2>/dev/null)
+default_line "Media sharing (home-sharing-enabled)" "$MSH" "0, off"
+[ "$MSH" = 1 ] && finding MA-SHARING-024 LOW Sharing "Media sharing (Home Sharing) is on."
+ACA=$(defaults read /Library/Preferences/com.apple.AssetCache Activated 2>/dev/null)
+default_line "Content caching (AssetCache Activated)" "$ACA" "0, off"
+[ "$ACA" = 1 ] && finding MA-SHARING-025 LOW Sharing "Content caching is on."
+RST=$(ps -axo comm= | awk -F/ '{print $NF}' | grep -iE 'teamviewer|anydesk|rustdesk|screenconnect|splashtop|beyondtrust|bomgar|logmein|realvnc|vncserver|tigervnc|jumpcloud.?assist' | sort -u | paste -sd, -)
+say "- Remote-support tools running: $(mdesc "${RST:-none}")"
+[ -n "$RST" ] && finding MA-SHARING-013 MEDIUM Sharing "A remote-support tool is running: $RST"
 [ -f "$THOME/.ssh/authorized_keys" ] && ssh-keygen -l -f "$THOME/.ssh/authorized_keys" 2>&1 | block "SSH authorized_keys (bits, fingerprint, comment, type)"
 
 # ---------- 7. Network exposure ----------

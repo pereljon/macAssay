@@ -358,5 +358,13 @@ check "G10 no boot arguments" [ -z "$(boot_args_sev '')" ]
 check "G10 -v is LOW" [ "$(boot_args_sev '-v')" = LOW ]
 check "G10 amfi argument is HIGH" [ "$(boot_args_sev 'amfi_get_out_of_my_way=1')" = HIGH ]
 
+# G19: printer sharing from cupsd.conf.
+printf 'Listen localhost:631\nListen /private/var/run/cupsd\n' > "$T/cups1"
+printf 'Port 631\nListen /private/var/run/cupsd\n' > "$T/cups2"
+printf 'Listen *:631\n' > "$T/cups3"
+check "G19 localhost only is off" not cups_shared "$T/cups1"
+check "G19 Port line is on" cups_shared "$T/cups2"
+check "G19 Listen on all addresses is on" cups_shared "$T/cups3"
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
