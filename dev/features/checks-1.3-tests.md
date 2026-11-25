@@ -153,3 +153,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 9 review, Important 1: the vncserver pattern matched Apple's AppleVNCServer: fixed with remote_support_names and G23.
 - Task 9 review, Minor 2: an unreadable cupsd.conf was reported as printer sharing off: fixed; root AGENTS.md (unread input).
 - Task 9 review, Minor 3: the Listen localhost exclusion is case-sensitive: dropped; CUPS writes lowercase, no requirement.
+- Task 12 review, Important 1: a command with its own Runas spec after the first NOPASSWD item was missed: fixed in classify_sudoers with G7 cases; design (one rule, one finding at its highest severity).
+- Task 12 review, Important 2: commands after a PASSWD tag counted as passwordless: fixed with Important 1 (same loop); requirement 8 (severities).
+- Task 12 review, Minor 3: a wildcard command such as /usr/bin/* stays LOW: dropped; same as 1.2, no requirement.
+- Task 12 review, Minor 4: an inline # comment containing NOPASSWD is not stripped: dropped; no wrong severity seen, no requirement.
