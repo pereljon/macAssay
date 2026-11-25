@@ -1,29 +1,40 @@
 # macassay
 
-`macassay` is a read-only health and security audit for macOS that writes one Markdown report.
+`macassay` checks the health and security of a Mac and writes the results to one Markdown report. It only reads: it changes no settings and fixes nothing.
 
 ## Why
 
-The script turns a manual review of a Mac into a repeatable run. The report opens with a findings table sorted by severity (HIGH, MEDIUM, LOW, INFO), then a Limitations section that lists every check that could not run, then the evidence for each check in 14 themed sections. A person or an LLM can review it.
+Checking a Mac by hand takes many commands, settings panes, and log searches, and it is easy to skip one. macassay runs the same checks every time and judges each result. A judged result is a finding, rated HIGH, MEDIUM, LOW, or INFO. You can read the report yourself or give it to an LLM to review. macassay is for people who audit their own Macs, on the Mac itself or from another Mac over SSH.
 
-## Usage
+## Quick start
 
-The script needs only stock macOS: `/bin/bash` 3.2 and built-in tools. Run it as a normal user; it refuses to audit as root.
+macassay uses only what ships with macOS: `/bin/bash` 3.2 and built-in tools. There is nothing to install.
+
+1. Get a copy of this repository.
+2. In Terminal, go to the repository folder and run `./macassay` as your normal user. It refuses to run as root.
+3. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
+
+A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the update checks, and the disk usage scans.
 
 ```sh
-./macassay                      # audit this Mac, write ./macassay-<host>-<date>.md
-./macassay --quick --offline    # skip log searches and update checks
-./macassay --host HOST --user USER --key ~/.ssh/KEY   # audit a remote Mac over SSH
-./macassay -h                   # all options, examples, and install steps
+./macassay -o ~/Desktop/report.md                       # choose the report file
+./macassay --host HOST --user USER --key ~/.ssh/KEY     # audit another Mac over SSH
+./macassay -h                                           # list every option
 ```
 
-Remote mode sends the script inside the SSH command. Nothing is copied to the remote disk, and the report is saved on the local Mac.
+Remote mode sends the script inside the SSH command. Nothing is copied to the other Mac, and the report is saved on your Mac.
 
-### Report layout
+Some checks need root, and macassay skips them until you install its sudo rules. See [Privileged checks](#privileged-checks-optional).
 
-The report has three parts, in this order: the Findings table, the Limitations list, and the evidence in 14 numbered sections. Each finding row shows a severity, an ID, a section label, and the finding text.
+## What the report contains
 
-A finding ID has the form `MA-<LABEL>-NNN`, such as `MA-PLATFORM-006`. The label names the section whose check gave the finding, in capitals. An ID names one risk and never changes, so you can track the same finding across runs and Macs. Section 5 has no findings yet, so no ID uses its label.
+The report has three parts, in this order:
+
+1. Findings: a table of every finding, most severe first. Each row shows the severity, the finding ID, the section label, and what was found.
+2. Limitations: every check that could not run, and the reason.
+3. Evidence: what each check found, in 14 numbered sections.
+
+A finding ID has the form `MA-<LABEL>-NNN`, such as `MA-PLATFORM-006`. The label is the section label of the check, in capitals. An ID names one kind of risk and never changes, so you can track a finding across runs and across Macs. Section 5 has no findings yet, so no ID uses its label.
 
 | # | Section | Label |
 |---|---|---|
@@ -42,23 +53,40 @@ A finding ID has the form `MA-<LABEL>-NNN`, such as `MA-PLATFORM-006`. The label
 | 13 | Trust and privacy | Trust |
 | 14 | Security events from the logs | Events |
 
-The credential checks report only whether a credential file exists, its mode, and whether it holds a secret, never the secret. The report replaces UUIDs with `<UUID>`, masks long hex strings in certificate and drive names, and leaves out serial numbers.
+The report keeps secrets out. For a credential file, it reports only whether the file exists, its permissions, and whether it holds a secret, never the secret itself. It replaces UUIDs with `<UUID>`, masks long hex strings in certificate and drive names, and leaves out serial numbers.
 
-### Privileged checks
+## Privileged checks (optional)
 
-Some checks need root: all listeners, the packet filter, background items, sudoers contents, the secure boot policy, device profiles, and other accounts' keys, LaunchAgents, startup files, and crontabs. Each one reports in the section of its topic. They run only through sudo rules that allow fixed read-only command lines. Without the rules, the report lists these checks as skipped.
+A privileged check is a check that needs root, because macOS lets only root read the information. These checks cover all network listeners, the packet filter, background items, the sudoers files, the secure boot policy, device profiles, and other accounts' SSH keys, LaunchAgents, shell startup files, and crontabs. Each one reports in the section of its topic.
 
-1. Review the rules: `./macassay --print-sudoers`
-2. Install them: `sudo ./macassay --install-sudoers`
+macassay never runs as root. Instead, you can install a sudoers file, `/etc/sudoers.d/macassay`. That file lets your account run a fixed list of read-only commands as root without a password. Without it, macassay skips the privileged checks and lists them under Limitations.
+
+Know the trade-off before you install the file:
+
+- While the file exists, your account can run the listed commands as root without a password, at any time, not only during an audit.
+- Any program that runs as your account can do the same, such as a script, an app, or malware.
+- The commands cannot change the Mac. They do let such a program read information that is normally root-only. That includes the full sudoers files, the fingerprints of other accounts' SSH keys, and the names and permissions of other accounts' LaunchAgents, startup files, and crontabs. It also includes the output of the listener, packet filter, background item, disk usage, profile, and boot policy commands.
+- To limit this, install the file before an audit and remove it afterward.
+
+To install the file:
+
+1. Review the commands it allows: `./macassay --print-sudoers`
+2. Install it: `sudo ./macassay --install-sudoers`
 3. Run the audit as usual.
+4. To remove it: `sudo rm /etc/sudoers.d/macassay`
 
-The installer writes `/etc/sudoers.d/macassay` and checks it with `visudo` before and after. Undo it with `sudo rm /etc/sudoers.d/macassay`. Install again after you add a user or a `sudoers.d` file. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
+The installer checks the file with `visudo` before and after it writes it. The file names each account's files and each `sudoers.d` file by path, so install it again after you add a user or a `sudoers.d` file. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
 
 ## Limits
 
-- The audit makes no changes, with these side effects: a temporary folder under `/tmp` that is removed on exit; a refresh of Apple's update catalog cache and a Homebrew auto-update that changes no installed package (skip both with `--offline`); one HTTP GET to each local network listener; `nc -z` connect tests to the sharing ports; one SSH connection as `nobody` to this Mac; with the rules installed, sudo logs each privileged command.
-- The rules let the granted user, and any process running as that user, run the listed commands without a password at any time. Only the sudoers files are shown in full; the other rules show fingerprints and file metadata.
-- The system privacy (TCC) database is not checked: it needs Full Disk Access as well as root.
+- The audit changes nothing on the Mac, apart from these side effects:
+  - A temporary folder under `/tmp`, removed when the run ends.
+  - A refresh of Apple's update catalog cache, and Homebrew's auto-update, which updates Homebrew and its package lists but no installed package. `--offline` skips both.
+  - One HTTP GET to each of the Mac's own network listeners, to see which ones ask for a login.
+  - `nc -z` connection tests to the sharing ports.
+  - One SSH connection as `nobody` to the Mac itself, which the SSH server logs.
+  - With the sudoers file installed, sudo logs each privileged command.
+- macassay does not check the privacy permissions database (TCC), which records the apps allowed to use the camera, files, and other protected data. Reading it needs Full Disk Access as well as root.
 - Remote mode has not been tested against a second Mac.
 
 ## Development
@@ -66,3 +94,4 @@ The installer writes `/etc/sudoers.d/macassay` and checks it with `visudo` befor
 - Check syntax with `bash -n macassay`, and lint with `shellcheck macassay` (ShellCheck from Homebrew, for development only).
 - Run the fixture tests with `dev/test.sh`. They need no root and no network.
 - The design of the sudo rules is in `dev/features/sudo-rules.md`, and the design of the report sections and checks is in `dev/features/checks-1.3.md`. The project history and verified facts are in `dev/HANDOFF.md`.
+- Release history is in `CHANGELOG.md`, and open work is in `docs/ISSUES.md`.
