@@ -496,6 +496,14 @@ if [ "$SKIPDU" -eq 0 ]; then
 else say "Skipped (--skip-du)."; skip "Disk usage" "--skip-du"; fi
 h3 "Power"
 run "Power and sleep" pmset -g
+if pmset -g batt 2>/dev/null | grep -q InternalBattery; then
+  system_profiler SPPowerDataType 2>/dev/null | grep -E '^[[:space:]]*(Condition|Maximum Capacity):' | sed 's/^[[:space:]]*//' > "$TMP/bat"
+  block "Battery" < "$TMP/bat"
+  BCAP=$(awk -F': ' '/^Maximum Capacity/ {gsub("%", "", $2); print $2 + 0; exit}' "$TMP/bat")
+  BCOND=$(awk -F': ' '/^Condition/ {print $2; exit}' "$TMP/bat")
+  if { [ -n "$BCAP" ] && [ "$BCAP" -lt 80 ]; } || { [ -n "$BCOND" ] && [ "$BCOND" != Normal ]; }; then
+    finding MA-HEALTH-006 LOW Health "Battery health: condition ${BCOND:-unknown}, maximum capacity ${BCAP:-unknown}%."; fi
+else say "- Battery: none"; fi
 
 # ---------- 2. Backups ----------
 h2 "2. Backups"
