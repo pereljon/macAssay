@@ -380,5 +380,12 @@ check "G15 unsigned plugin is MEDIUM" [ "$(auth_plugin_finding unsigned '')" = $
 check "G15 plugin signed by a developer is LOW" [ "$(auth_plugin_finding 'Team ABCDE12345' '')" = $'MA-PERSISTENCE-014\tLOW' ]
 check "G15 Apple plugin gives nothing" [ -z "$(auth_plugin_finding Apple '')" ]
 
+# G23: remote-support tool names from ps paths.
+rs() { printf '%s\n' "$1" | remote_support_names; }
+check "G23 AppleVNCServer gives nothing" [ -z "$(rs /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/MacOS/AppleVNCServer)" ]
+check "G23 TeamViewer is listed" [ "$(rs /Applications/TeamViewer.app/Contents/MacOS/TeamViewer)" = TeamViewer ]
+check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = vncserver ]
+check "G23 sshd gives nothing" [ -z "$(rs /usr/sbin/sshd)" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

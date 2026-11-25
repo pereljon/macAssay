@@ -46,6 +46,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 - G17. User trust: a `TrustRoot` entry, an entry with no result type, and a certificate with zero trust settings count; `Deny` and `Unspecified` entries do not. The admin-domain parser gives the same counts.
 - G20. `chain_writable` and NOPASSWD: an admin-writable folder under `/Applications` gives MEDIUM and one under `/Library` gives HIGH; a NOPASSWD rule for a script in a user-writable folder gives HIGH; a home folder and an rc file writable by `staff` give HIGH.
 - G21. Recent installs: an install by softwareupdated and an install older than the cutoff are skipped; a nested package list does not break the entry.
+- G23. Remote-support tools: Apple's screen sharing server (AppleVNCServer) does not count; TeamViewer and vncserver do; sshd does not.
 - G14. Hidden accounts: a hidden admin and a hidden non-admin fixture give MEDIUM and LOW; system accounts under UID 500 are ignored.
 
 ## Manual runs (no sudo rules)
@@ -144,3 +145,10 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 4 review, Minor 2: a PASSWD-tagged item after NOPASSWD joins the programs list, so a writable program there can raise the finding: dropped; it over-reports and no requirement is broken; Task 12 replaces the parser.
 - Task 4 review, Minor 3: group_has_others reads only the first group with a given GID: dropped; two groups sharing a GID is unusual, no requirement.
 - Task 4 review, Minor 4: G20 mocks group_has_others and stat, so the real dscl path has no fixture: dropped; the reviewer ran it by hand, no requirement.
+- Tasks 5 and 6 review, Minor 1: the Time Machine exclusion value is printed through say without mdesc: dropped; it is the first word of tmutil output, like the TMENC and LASTBK lines beside it, no requirement.
+- Tasks 5 and 6 review, Minor 2: an odd Maximum Capacity value reads as 0% and an absent one as "unknown%": dropped; no requirement, L1 verifies the fields on a laptop.
+- Task 8 review, Minor 1: screen_lock_sev treats any text containing "off" as off: dropped; same as the 1.2 check, no requirement.
+- Task 8 review, Minor 2: the csrutil "disabled" match is loose on older macOS: dropped; no false HIGH on this macOS, no requirement.
+- Task 9 review, Important 1: the vncserver pattern matched Apple's AppleVNCServer: fixed with remote_support_names and G23.
+- Task 9 review, Minor 2: an unreadable cupsd.conf was reported as printer sharing off: fixed; root AGENTS.md (unread input).
+- Task 9 review, Minor 3: the Listen localhost exclusion is case-sensitive: dropped; CUPS writes lowercase, no requirement.
