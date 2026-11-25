@@ -18,7 +18,9 @@ Two kinds of test cover version 1.3:
 - R2. The report has the 14 sections of the outline, in order, then the Summary and Limitations. No "Privileged checks" section. Every `h3`, `block`, and `run` label appears under the section that the placement table names.
 - R3. Every finding category is one of the 14 labels. A test in `dev/test.sh` greps `macassay` for `flag (HIGH|MEDIUM|LOW|INFO) ` and checks each category against the label list.
 - R4. No finding text cites a section number that no longer holds the cited content.
-- R5. A list of every finding text with its new label is reviewed by hand before commit 1.
+- R5. A list of every finding text with its new label and ID is reviewed by hand before commit 1.
+- R6. Every `finding` call has an ID matching `MA-<LABEL>-[0-9]{3}`, where LABEL is one of the 14 labels in capitals. Two call sites share an ID only when they are the same check (reviewed in R5).
+- R7. Commit 3 (changes to 1.2 findings): each change in the design list gives its new severity on a fixture or a manual case; the 1.2 screen lock finding is gone.
 
 ## dev/test.sh (fixture tests)
 
@@ -45,7 +47,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 ## Manual runs (no sudo rules)
 
 - M1. Full run: every new check runs or prints a skip reason; no new privacy prompt; run time within 30 s of the B1 run.
-- M2. Expected findings on this Mac: set after the severity decisions; the list in the review findings (A-SEV) is the draft. Native-messaging hosts under `~/.claude` and `~/.codex` give no finding.
+- M2. Expected new or changed findings on this Mac: Codex authorization plugin LOW if signed with a team ID; hidden admin account MEDIUM; FileMaker Pro world-writable MEDIUM; user-domain trusted certificates MEDIUM; private keys without a passphrase LOW; screen lock 15 minutes LOW; `StrictHostKeyChecking no` from the colima include LOW (specific hosts) or MEDIUM (every host); swap LOW instead of MEDIUM; Reduced Security stays MEDIUM; cloudflared LOW. Native-messaging hosts under `~/.claude` and `~/.codex` give no finding.
 - M3. Privacy: grep the report for `AutoInstallProductKeys`, AirDrop UUID values, the destination ID from `tmutil`, any 32-character hex run, any IP address from the user trust settings, and every credential file's secret key names with values. None may appear.
 - M4. Battery line reads `none` on this desktop.
 
@@ -72,7 +74,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 
 Architecture review of the design, 2026-11-24 (opus, high effort). Triage per the development `AGENTS.md`.
 
-- A-SEV The severity review recommends 26 changes to existing and new severities: asked the user. Severities are an approved design decision.
+- A-SEV The severity review recommends 26 changes to existing and new severities: asked the user; all adopted (decisions A1 to A10, B1 to B14, C1), see the design doc.
 - A2-1 Decoding line 2 of a one-line OpenSSH key decodes private material: fixed in the design (fixed-prefix compare); requirement 7.
 - A2-2 Splitting `comm=,command=` can print arguments: fixed (PID-based lookup); requirement 7.
 - A2-3 `ssh-keygen -l` prints the key comment: fixed (bits and type only); `AGENTS.md` No secrets. Key file names stay in the report, with the reason recorded.
@@ -91,7 +93,7 @@ Architecture review of the design, 2026-11-24 (opus, high effort). Triage per th
 - A5-3 Normalizing categories hides a wrong label: fixed (R5 hand review); requirement 2.
 - A5-4 Sorting hides misplacement: fixed (placement table in R2); requirement 1.
 - A6 Test plan gaps (G1 split, cases for G3, G4, G5, G7, G8, G13, one-finding-per-risk, X1 differences): fixed.
-- Running from `/private/var/folders` is HIGH for App Translocation paths, a normal Gatekeeper location: asked the user (1.2 behavior, outside the approved scope).
+- Running from `/private/var/folders` is HIGH for App Translocation paths, a normal Gatekeeper location: asked the user; fixed by decision A10.
 
 ## Results
 

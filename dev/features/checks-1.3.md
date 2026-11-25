@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: designing
-status: 2026-11-24 scope, outline, secret handling, and severities approved by the user; design doc drafted; architecture review next
+status: 2026-11-24 scope, outline, secret handling, and severities approved; architecture review done and decided; user review of the doc next
 ---
 
 # Report by theme and new checks (version 1.3)
@@ -27,6 +27,7 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 7. No secret value reaches the report, the temporary folder, or the terminal. Source: `AGENTS.md` (No secrets), user approval of design part 2.
 8. Severities follow "Severities". Source: user approval of design part 3.
 9. Stock tools under `/bin/bash` 3.2 only. Source: `AGENTS.md` (Stock macOS only).
+10. Each check that can give a finding has a stable ID, shown with the finding. Source: user decision (E1, E2).
 
 ## Decisions
 
@@ -38,6 +39,10 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 - 2026-11-24: Secret presence is decided from key names and file headers only (design part 2).
 - 2026-11-24: Severities as in "Severities", with three raised to HIGH after comparison with the 1.2 scale: quarantine off, locally set forced browser extensions, and a user-writable authorization plugin or PAM module.
 - 2026-11-24: The architecture review of this design must review every severity, existing and new, for consistency and correctness. Source: the user.
+- 2026-11-24: The review's severity recommendations are adopted (architecture review A-SEV, user decisions A1 to A10, B1 to B14, C1). "Severities" and "Changes to 1.2 findings" show the result. This supersedes the earlier severity decision where they differ; for forced extensions, the user's HIGH stays for managed preferences on a Mac without MDM enrollment.
+- 2026-11-24: Scale rule for passwordless root: HIGH when someone configured the grant (`NOPASSWD: ALL`, NOPASSWD for a code-loading program); MEDIUM when it comes from default macOS permissions, such as a root daemon in an admin-writable folder under `/Applications` (decision C1). Rejected: HIGH for both, which gives 9 HIGH findings on this Mac for Apple's default layout.
+- 2026-11-24: Each check gets a stable ID, `MA-<LABEL>-NNN`, where LABEL is the section label in capitals (decisions E1, E2). An ID names the check, not one occurrence; it never changes and is never reused. A standard export can build a per-run ID from the check ID, the host, and the date. Rejected: standard catalogs as IDs; CCE changes with each macOS version, NIST 800-53 controls are too coarse, and CIS numbers change between benchmark versions. References to mSCP rules, NIST 800-53 controls, and ATT&CK techniques come later (register I076, decision E3).
+- 2026-11-24: The script's `flag` function is renamed `finding`, per the project terminology in `AGENTS.md`.
 
 ## Verified facts
 
@@ -106,14 +111,17 @@ Five 1.2 items from section 14 move as follows: the guest account to Accounts; `
 
 ## Build order
 
-1. Commit 1 moves blocks into the outline, renames categories, and folds the privileged checks into topic sections. It adds no check and changes no check logic. Verification, in three parts:
+1. Commit 1 moves blocks into the outline, renames categories, folds the privileged checks into topic sections, renames `flag` to `finding`, and assigns IDs to the 1.2 checks. It adds no check and changes no check logic or severity. The comparisons below strip IDs along with headings and categories. Verification, in three parts:
    - Script check: sort the non-heading lines of the 1.2 script and the commit 1 script, apply the category map, and diff. This covers blocks that a quick run skips.
    - Report check: run 1.2 twice to measure run-to-run noise, then run 1.2 and commit 1 with the same flags, normalize headings and categories, sort, and diff. Differences beyond the measured noise fail.
    - Placement check: a table of every `h3`, `block`, and `run` label with its expected section, checked against the commit 1 report; and a list of every finding text with its new label, reviewed by hand.
 2. Commit 2 adds hex masking.
-3. Later commits add the new checks, one section per commit, with fixture tests for each parser.
+3. Commit 3 applies "Changes to 1.2 findings".
+4. Later commits add the new checks, one section per commit, with fixture tests for each parser.
 
 ## Shared helpers
+
+- `finding ID SEVERITY LABEL TEXT` replaces `flag SEVERITY CATEGORY TEXT`. The findings file gains an ID column, and the Summary shows the ID with each finding. Commit 1 assigns IDs to the 1.2 checks; each new check gets its ID when it is built.
 
 - `mask_hex`: replaces runs of 32 or more hex characters with `<ID>`. Applied to certificate labels in section 13 (both trust checks and the System keychain list).
 - `default_line LABEL VALUE DEFAULT`: prints `- LABEL: VALUE`, or `- LABEL: not set (macOS default: DEFAULT)` when VALUE is empty.
@@ -184,33 +192,50 @@ Each check runs as the user. Severity labels follow "Severities".
 
 ### 12. Shell, developer and AI tools
 
-- Git settings: read `~/.gitconfig` and `~/.config/git/config` for `hooksPath` (the path is printed) and `helper = store`. Never run `git`.
+- Git settings: read `~/.gitconfig` and `~/.config/git/config` for `hooksPath` (the path is printed). Never run `git`.
 
 ### 13. Trust and privacy
 
 - User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. Only certificates with a `TrustRoot` or `TrustAsRoot` result count toward the finding, so a "Never Trust" entry does not raise it.
 
+## Changes to 1.2 findings
+
+Decided by the user on 2026-11-24 (A1 to A10). Commit 1 keeps 1.2 severities so that its comparison stays exact; these changes come in their own commit after it.
+
+- Swap over 75%: MEDIUM to LOW.
+- Application firewall off: HIGH to MEDIUM.
+- Time Machine backup not encrypted: LOW to MEDIUM.
+- Auto-login: LOW to MEDIUM.
+- Another account's shell startup file owned by another account or writable by others: MEDIUM to HIGH; MEDIUM when only its group can write it.
+- Shell startup patterns: download-and-run, `/dev/tcp`, and `nc -e` stay HIGH; `base64` decoding and `osascript -e` become MEDIUM.
+- Firewall allow rule for a program that no longer exists: MEDIUM to LOW; unsigned and ad hoc programs stay MEDIUM.
+- Secure boot policy: Permissive is HIGH; Reduced stays MEDIUM.
+- Tunnels: cloudflared INFO to LOW; ngrok and frpc processes give the same LOW finding.
+- Programs running from `/private/var/folders`: paths containing `/AppTranslocation/` are left out of the HIGH finding.
+- `NOPASSWD: ALL`: MEDIUM to HIGH.
+- The 1.2 screen lock finding is removed; the new screen lock check replaces it.
+
 ## Severities
 
 New findings, by section. Repeated findings give one finding with a count, and one risk gives one finding.
 
-The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a real weakening, LOW for hygiene, INFO for inventory. Health findings (disk space, SMART status, kernel panics, memory) use a separate scale: HIGH means data loss or failure is likely soon.
+The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a real weakening, LOW for hygiene, INFO for inventory. For passwordless root, see the C1 rule in Decisions. Health findings (disk space, SMART status, kernel panics, memory) use a separate scale: HIGH means data loss or failure is likely soon.
 
 | Section | HIGH | MEDIUM | LOW | INFO |
 |---|---|---|---|---|
 | Health | | | Battery health below 80% or a service condition | |
 | Backups | | AutoBackup off with a destination; home folder excluded | | |
-| Updates | | Checks off or last full check over 30 days; critical responses or data updates off; XProtect over 60 days old | Automatic download, macOS auto-install, or App Store auto-update off | Recent non-Apple installs |
-| Platform | Signed system volume off; boot arguments with `amfi_` or `cs_enforcement_disable`; quarantine off | Other boot arguments; library validation off; world-writable app; screen lock over 1 hour or off | Screen lock over 5 minutes; world-writable `/Library` folder without the sticky bit | |
-| Sharing | | Remote Apple Events, Internet Sharing, SMB guest, Apache, NFS; remote-support tool running; `PermitUserEnvironment`, `GatewayPorts`, or `HostbasedAuthentication` on | Printer sharing, AirDrop to everyone, AirPlay receiver, media sharing, content caching; `X11Forwarding` on; `MaxAuthTries` over 6 | |
-| Persistence | Authorization plugin or PAM module the user can write | Non-Apple authorization plugin; PAM module outside `/usr/lib/pam`; any StartupItem, ScriptingAddition, or directory service plug-in | | Audio plug-ins; login items in apps |
-| Apps | Program running with a debug port; forced extensions set locally | Debug port in a launch item; native-messaging host in an unusual path | | Forced extensions set by MDM; native-messaging host count |
-| Accounts | Extra UID 0; home folder writable by others; sudoers file or `sudo` with wrong owner or writable by others; `NOPASSWD: ALL`; `!authenticate` | Hidden admin account; NOPASSWD for a code-loading program; weak `Defaults` | Hidden non-admin account; no `secure_path` | |
-| Credentials | Credential file with an inline secret, or a private key, readable by group or others | Weak SSH key; `ForwardAgent yes` or `StrictHostKeyChecking no` under `Host *` | Private keys without a passphrase; owner-only credential files with inline secrets; the same SSH options for specific hosts | |
-| Developer | | | Global `hooksPath`; `credential.helper store` | |
+| Updates | | Checks off or last full check over 30 days; critical responses or data updates off; XProtect over 60 days old | Automatic download or App Store auto-update off | macOS auto-install off; recent non-Apple installs |
+| Platform | Signed system volume off; boot arguments with `amfi_` or `cs_enforcement_disable`; quarantine off | Library validation off; world-writable app; screen lock over 1 hour or off | Other boot arguments; screen lock over 5 minutes; world-writable `/Library` folder without the sticky bit | |
+| Sharing | | Internet Sharing, SMB guest, NFS; remote-support tool running; `PermitUserEnvironment`, `GatewayPorts`, or `HostbasedAuthentication` on | Remote Apple Events, Apache, printer sharing, AirDrop to everyone, AirPlay receiver, media sharing, content caching; `X11Forwarding` on; `MaxAuthTries` over 6 | |
+| Persistence | Authorization plugin or PAM module that the user can write (`chain_writable` HIGH); login item in an app in an unusual path | Unsigned or ad hoc authorization plugin; plugin or PAM module that only the admin group can write; PAM module outside `/usr/lib/pam`; any ScriptingAddition or directory service plug-in; unsigned login item in an app | Authorization plugin signed with a team ID; any StartupItem | Audio plug-ins; login items in apps |
+| Apps | Debug port listening on a non-loopback address, running or set in a launch item; forced extensions in managed preferences on a Mac without MDM enrollment | Debug port on loopback only; forced extensions in local preferences only; native-messaging host under a temporary or shared folder | Native-messaging host whose program is missing | Forced extensions on an MDM-enrolled Mac; native-messaging host count |
+| Accounts | Extra UID 0; home folder writable by others; sudoers file or `sudo` with wrong owner or writable by others; `NOPASSWD: ALL`; `!authenticate`; NOPASSWD for a code-loading program | Hidden admin account; home folder writable by its group; weak `Defaults` | Hidden non-admin account | |
+| Credentials | Credential file with an inline secret, or a private key, readable by group or others | Weak SSH key; `ForwardAgent yes` or `StrictHostKeyChecking no` for every host | Private keys without a passphrase; owner-only credential files with inline secrets; the same SSH options for specific hosts | |
+| Developer | | | Global `hooksPath` | |
 | Trust | | User-domain trusted certificates | | |
 
-`NOPASSWD: ALL` changes from MEDIUM in 1.2 to HIGH.
+`--remote-debugging-pipe` gives no finding. Dropped after the review: the missing `secure_path` check (stock macOS has none) and `credential.helper store` (the `.git-credentials` check covers it).
 
 ## Side effects
 
@@ -220,7 +245,7 @@ None new. `cupsctl` can start cupsd on demand, so the printer sharing check runs
 
 - Section selection (`--only`): a later release.
 - The other register ideas (I014, I017 to I072): later releases.
-- Report-format ideas (I076 to I086).
+- Report-format ideas (I076, I078 to I086), including standard-format export. Stable IDs (I077) are in scope.
 
 ## How to continue if interrupted
 

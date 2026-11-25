@@ -14,7 +14,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 - [x] Version 1.2: per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`. (resolved 2026-11-24): merged into `master`; tests pass there. Open checks: `profiles list` output with a device profile installed, and T19 on a second Mac.
 
-Version 1.3 (designing on `feature/checks-1.3`; design `dev/features/checks-1.3.md`, architecture review next, covering every severity): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
+Version 1.3 (designing on `feature/checks-1.3`; design `dev/features/checks-1.3.md`; architecture review done and its findings decided; the user reviews the doc next): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
 
 - [ ] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation.
 - [ ] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`).
@@ -58,11 +58,11 @@ Do these in the change that gives the repo a public remote.
 ## Open questions
 
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
-- [ ] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script?
+- [x] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script? (resolved 2026-11-24): yes; the request was sent to the network-manager session.
 - [x] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root. (resolved 2026-11-24): yes, `#includedir /private/etc/sudoers.d`.
-- [ ] Continue macassay rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of macassay's host checks; evidence is in `dev/prior-art.md`.
+- [x] Continue macassay rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of macassay's host checks; evidence is in `dev/prior-art.md`. (resolved 2026-11-24): continue, per the user.
 - [x] Project name: pick one that does not overlap with the projects in `dev/prior-art.md` (several use `macaudit` or `mac-security-audit`). (resolved 2026-11-24): `macassay`. See Decisions.
-- [ ] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel.
+- [x] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel. (resolved 2026-11-24): the user sent it through macharden's private advisory form.
 
 ## Decisions
 
