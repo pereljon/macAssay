@@ -1274,6 +1274,10 @@ NC=$(security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null
 security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | mask_hex | sort -u | block "Certificates in the System keychain ($NC)"
 security dump-trust-settings -d 2>/dev/null | trusted_certs | mask_hex > "$TMP/ts"
 if [ -s "$TMP/ts" ]; then block "Admin trust settings (certificates trusted by an administrator)" < "$TMP/ts"; finding MA-TRUST-001 MEDIUM Trust "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
+security dump-trust-settings 2>/dev/null | trusted_certs | mask_hex > "$TMP/uts"
+if [ -s "$TMP/uts" ]; then block "User trust settings (certificates the user trusts)" < "$TMP/uts"
+  finding MA-TRUST-002 MEDIUM Trust "$(grep -c . "$TMP/uts") certificate(s) are trusted in the user's trust settings; a trusted root can intercept HTTPS. Confirm each one."
+else say "- User-trusted certificates: none"; fi
 TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
 if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
   sqlite3 -init /dev/null -readonly "$TCCU" "select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service" 2>/dev/null | block "Privacy permissions granted (user database)"
