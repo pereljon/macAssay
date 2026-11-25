@@ -214,6 +214,14 @@ rc_hits() {
       grep -nE -- "$re" "$f" 2>/dev/null | while IFS=: read -r ln _; do printf '%s:%s: %s\n' "$f" "$ln" "$name"; done
     done
   done | sort -u; }
+# rc_pattern_sevs FILE: reads rc_hits output; prints HIGH if a line names a pattern other than base64 decode or osascript -e, and MEDIUM if one names either.
+rc_pattern_sevs() {
+  grep -qvE ': (base64 decode|osascript -e)$' "$1" && echo HIGH
+  grep -qE ': (base64 decode|osascript -e)$' "$1" && echo MEDIUM; }
+# boot_policy_sev MODE: prints the severity for a secure boot mode (HIGH for Permissive, MEDIUM for another non-Full mode), nothing for Full or empty.
+boot_policy_sev() { case "$1" in ''|Full) ;; Permissive) echo HIGH ;; *) echo MEDIUM ;; esac; }
+# temp_program PATH: succeeds for a program in a temporary or shared folder, except one under App Translocation.
+temp_program() { case "$1" in */AppTranslocation/*) return 1 ;; /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) return 0 ;; *) return 1 ;; esac; }
 
 # stdin: crontab lines. Prints the schedule and command name; arguments and variable values may hold secrets.
 crontab_summary() {
@@ -560,8 +568,8 @@ if [ "$(uname -m)" != arm64 ]; then say "- bputil: not applicable on an Intel Ma
 elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; then
   filter_bputil < "$TMP/bp" | block "bputil -d (security settings only)"
   BPM=$(bputil_mode < "$TMP/bp" | clean_field)
-  case "$BPM" in ''|Full) ;; Permissive) finding MA-PLATFORM-009 HIGH Platform "Secure boot policy is Permissive Security." ;;
-    *) finding MA-PLATFORM-009 MEDIUM Platform "Secure boot policy is not Full Security: $BPM." ;; esac
+  case "$(boot_policy_sev "$BPM")" in HIGH) finding MA-PLATFORM-009 HIGH Platform "Secure boot policy is Permissive Security." ;;
+    MEDIUM) finding MA-PLATFORM-009 MEDIUM Platform "Secure boot policy is not Full Security: $BPM." ;; esac
 else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
 h3 "Packet filter"
 : > "$TMP/pf"
@@ -701,8 +709,9 @@ ls /etc/periodic/daily /etc/periodic/weekly /etc/periodic/monthly 2>/dev/null | 
 RCF=(); for f in $RC_FILES; do RCF+=("$THOME/$f"); done
 rc_hits "${RCF[@]}" /etc/zshrc /etc/zshenv /etc/zprofile /etc/zlogin /etc/profile /etc/bashrc > "$TMP/rc"
 if [ -s "$TMP/rc" ]; then block "Suspicious patterns in shell startup files (file:line: pattern; line text not shown)" < "$TMP/rc"
-  grep -qvE ': (base64 decode|osascript -e)$' "$TMP/rc" && finding MA-PERSISTENCE-006 HIGH Persistence "Shell startup files contain download-and-run, /dev/tcp or nc -e patterns (see section 8)."
-  grep -qE ': (base64 decode|osascript -e)$' "$TMP/rc" && finding MA-PERSISTENCE-011 MEDIUM Persistence "Shell startup files decode base64 or run osascript -e (see section 8)."
+  rc_pattern_sevs "$TMP/rc" > "$TMP/rcs"
+  grep -qx HIGH "$TMP/rcs" && finding MA-PERSISTENCE-006 HIGH Persistence "Shell startup files contain download-and-run, /dev/tcp or nc -e patterns (see section 8)."
+  grep -qx MEDIUM "$TMP/rcs" && finding MA-PERSISTENCE-011 MEDIUM Persistence "Shell startup files decode base64 or run osascript -e (see section 8)."
 else say "- Shell startup files: no download-and-run or decode patterns"; fi
 find /Users/Shared /private/tmp /private/var/tmp -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -v '/macassay\.' | head -20 > "$TMP/x"
 if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; finding MA-PERSISTENCE-007 MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 8)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
@@ -738,7 +747,7 @@ h3 "Running programs outside standard locations"
 say "| Program | Signer |"; say "|---|---|"
 ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
   s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  case "$p" in */AppTranslocation/*) ;; /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)";; esac
+  temp_program "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
 done
 say ""; say "**Applications that Gatekeeper rejects**"; say ""
 for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue

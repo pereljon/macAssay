@@ -139,3 +139,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 2 review, Minor 2: the F15 call count and the F16 shared-ID list are loose guards: dropped; no requirement.
 - Task 3 review, Minor 1: no code comment says why the Drives block is masked: dropped; the commit message holds the reason, no requirement.
 - Task 3 review, Minor 2: no test checks that callers apply mask_hex: dropped; the M3 privacy check on a real report covers it, no requirement.
+- Task 4 review, Important 1: the startup-pattern split, the Permissive case, and the AppTranslocation exclusion had no fixture or manual case: fixed with rc_pattern_sevs, boot_policy_sev, temp_program and fixture cases; test plan R7.
+- Task 4 review, Minor 2: a PASSWD-tagged item after NOPASSWD joins the programs list, so a writable program there can raise the finding: dropped; it over-reports and no requirement is broken; Task 12 replaces the parser.
+- Task 4 review, Minor 3: group_has_others reads only the first group with a given GID: dropped; two groups sharing a GID is unusual, no requirement.
+- Task 4 review, Minor 4: G20 mocks group_has_others and stat, so the real dscl path has no fixture: dropped; the reviewer ran it by hand, no requirement.
