@@ -420,6 +420,28 @@ screen_lock_sev() {
   [ -n "$s" ] || return 0
   if [ "$s" -gt 3600 ]; then printf 'MEDIUM\tset to %s seconds\n' "$s"
   elif [ "$s" -gt 300 ]; then printf 'LOW\tset to %s seconds\n' "$s"; fi; }
+# unusual_path PATH: succeeds for a temporary, shared or hidden folder.
+unusual_path() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*|*/.[!.]*/*) return 0 ;; esac; return 1; }
+# pam_modules FILE DEPTH: prints each module given as an absolute path outside /usr/lib/pam. Follows include and
+# substack targets inside ${PAMD:-/etc/pam.d}; the PAM_SEEN list and a depth limit of 16 stop loops.
+pam_modules() {
+  local f="$1" depth="$2" ty ctl rest mod
+  if [ "$depth" -gt 16 ] || [ ! -f "$f" ]; then return 0; fi
+  printf '%s\n' "$PAM_SEEN" | grep -qxF -- "$f" && return 0
+  PAM_SEEN="$PAM_SEEN"$'\n'"$f"
+  while read -r ty rest; do
+    case "$ty" in ''|'#'*) continue ;; esac
+    if [ "${rest:0:1}" = "[" ]; then ctl="${rest%%]*}]"; rest="${rest#*]}"
+    else ctl="${rest%%[[:space:]]*}"; rest="${rest#"$ctl"}"; fi
+    rest="${rest#"${rest%%[![:space:]]*}"}"; mod="${rest%%[[:space:]]*}"
+    case "$ctl" in include|substack)
+      case "$mod" in */*) ;; ?*) pam_modules "${PAMD:-/etc/pam.d}/$mod" $((depth + 1)) ;; esac; continue ;; esac
+    case "$mod" in /usr/lib/pam/*) ;; /*) echo "$mod" ;; esac
+  done < "$f"; }
+# auth_plugin_finding SIGNER WRITABLE: prints "ID<TAB>SEVERITY" for an authorization plugin; WRITABLE is chain_writable output.
+auth_plugin_finding() {
+  if [ -n "$2" ]; then printf 'MA-PERSISTENCE-012\t%s\n' "${2%%$'\t'*}"; return; fi
+  case "$1" in Apple) ;; unsigned|"ad hoc") printf 'MA-PERSISTENCE-013\tMEDIUM\n' ;; *) printf 'MA-PERSISTENCE-014\tLOW\n' ;; esac; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -843,6 +865,48 @@ else say "- Background items (sfltool): skipped ($(skip_reason "sfltool dumpbtm"
 DY=$(launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null)
 [ -n "$DY" ] && finding MA-PERSISTENCE-008 HIGH Persistence "launchd sets DYLD_INSERT_LIBRARIES=$DY (library injection)."
 say "- launchd DYLD_INSERT_LIBRARIES: $(mdesc "${DY:-not set}")"
+h3 "Authorization plugins and PAM modules"
+NAP=0
+for b in /Library/Security/SecurityAgentPlugins/*.bundle; do [ -e "$b" ] || continue
+  NAP=$((NAP+1)); s=$(sig "$b"); w=$(chain_writable "$b" "$b"/Contents/MacOS/*)
+  say "- Authorization plugin $(mdesc "${b##*/}"): $(mdesc "$s"), owner $(mdesc "$(stat -f %Su "$b" 2>/dev/null)")"
+  case "$(auth_plugin_finding "$s" "$w" | cut -f1)" in
+    MA-PERSISTENCE-012) finding MA-PERSISTENCE-012 "${w%%$'\t'*}" Persistence "Authorization plugin ${b##*/} can be changed by a non-root account: ${w#*$'\t'}." ;;
+    MA-PERSISTENCE-013) finding MA-PERSISTENCE-013 MEDIUM Persistence "Authorization plugin ${b##*/} is $s." ;;
+    MA-PERSISTENCE-014) finding MA-PERSISTENCE-014 LOW Persistence "Authorization plugin ${b##*/} is installed ($s)." ;;
+  esac
+done
+[ "$NAP" -eq 0 ] && say "- Authorization plugins: none outside macOS"
+PAM_SEEN=""; for f in /etc/pam.d/*; do pam_modules "$f" 1; done | sort -u > "$TMP/pam"
+if [ -s "$TMP/pam" ]; then
+  while IFS= read -r m; do
+    w=$(chain_writable "$m"); say "- PAM module $(mdesc "$m"): owner $(mdesc "$(stat -f %Su "$m" 2>/dev/null || echo missing)")"
+    if [ -n "$w" ]; then finding MA-PERSISTENCE-015 "${w%%$'\t'*}" Persistence "PAM module $m can be changed by a non-root account: ${w#*$'\t'}."
+    else finding MA-PERSISTENCE-016 MEDIUM Persistence "PAM module outside /usr/lib/pam: $m"; fi
+  done < "$TMP/pam"
+else say "- PAM modules outside /usr/lib/pam: none"; fi
+h3 "Other plug-ins"
+ents() { find "$@" -mindepth 1 -maxdepth 1 ! -name .DS_Store 2>/dev/null | sed 's#.*/##' | sort -u | paste -sd, -; }
+SI=$(ents /Library/StartupItems); SA=$(ents /Library/ScriptingAdditions "$THOME/Library/ScriptingAdditions"); DSP=$(ents /Library/DirectoryServices/PlugIns)
+say "- StartupItems: $(mdesc "${SI:-none}")"; [ -n "$SI" ] && finding MA-PERSISTENCE-017 LOW Persistence "StartupItems are present (a deprecated startup method): $SI"
+say "- Scripting additions: $(mdesc "${SA:-none}")"; [ -n "$SA" ] && finding MA-PERSISTENCE-018 MEDIUM Persistence "Scripting additions are installed: $SA"
+say "- Directory service plug-ins: $(mdesc "${DSP:-none}")"; [ -n "$DSP" ] && finding MA-PERSISTENCE-019 MEDIUM Persistence "Directory service plug-ins are installed: $DSP"
+AUD=$(ents /Library/Audio/Plug-Ins/HAL); NAUD=$(find /Library/Audio/Plug-Ins/HAL -mindepth 1 -maxdepth 1 ! -name .DS_Store 2>/dev/null | grep -c .)
+say "- Audio plug-ins (HAL): $NAUD ($(mdesc "${AUD:-none}"))"
+[ "$NAUD" -gt 0 ] && finding MA-PERSISTENCE-020 INFO Persistence "$NAUD audio plug-ins (HAL drivers) are installed: $AUD"
+h3 "Login items inside apps"
+find /Applications "$THOME/Applications" -maxdepth 5 \( -path '*.app/Contents/Library/LoginItems/*.app' -prune -print \) -o \( -path '*.app/Contents/Library/LaunchAgents/*.plist' -print \) -o \( -path '*.app/Contents/Library/LaunchDaemons/*.plist' -print \) 2>/dev/null > "$TMP/li"
+NLI=0; : > "$TMP/liu"; : > "$TMP/lix"
+while IFS= read -r p; do
+  NLI=$((NLI+1)); app="${p%%.app/*}.app"; s=$(sig "$app")
+  say "- $(mdesc "${app##*/}"): $(mdesc "${p##*/}") ($(mdesc "$s"))"
+  if unusual_path "$app"; then echo "$app" >> "$TMP/lix"
+  else case "$s" in unsigned|"ad hoc") echo "${app##*/}" >> "$TMP/liu" ;; esac; fi
+done < "$TMP/li"
+say "- Login and launch items inside apps: $NLI"
+[ "$NLI" -gt 0 ] && finding MA-PERSISTENCE-021 INFO Persistence "$NLI login or launch items are registered inside apps (see section 8)."
+[ -s "$TMP/lix" ] && finding MA-PERSISTENCE-023 HIGH Persistence "Login item inside an app in an unusual path: $(sort -u "$TMP/lix" | paste -sd, -)"
+[ -s "$TMP/liu" ] && finding MA-PERSISTENCE-022 MEDIUM Persistence "Login item inside an app that is not signed: $(sort -u "$TMP/liu" | paste -sd, -)"
 h3 "Other accounts and root"
 collect_accounts | other_accounts "$TUSER" 2>/dev/null > "$TMP/others"
 while read -r n u h; do

@@ -366,5 +366,19 @@ check "G19 localhost only is off" not cups_shared "$T/cups1"
 check "G19 Port line is on" cups_shared "$T/cups2"
 check "G19 Listen on all addresses is on" cups_shared "$T/cups3"
 
+# G16, G18: PAM modules, bracketed controls, and include loops.
+mkdir "$T/pam"
+printf 'auth include other_file\nauth [success=ok default=die] /opt/evil/pam_x.so\naccount required pam_permit.so\nauth required /usr/lib/pam/pam_ok.so\n' > "$T/pam/svc"
+printf 'auth substack svc\nsession optional /Users/Shared/pam_y.so\n' > "$T/pam/other_file"
+( PAMD="$T/pam"; PAM_SEEN=""; pam_modules "$T/pam/svc" 1 ) > "$T/g16"
+check "G16 bracketed control field" has "$T/g16" "/opt/evil/pam_x.so"
+check "G16 module in an included file" has "$T/g16" "/Users/Shared/pam_y.so"
+check "G18 include loop reads each file once" [ "$(grep -c . "$T/g16")" -eq 2 ]
+# G15: one finding per authorization plugin, at its highest severity.
+check "G15 unsigned, user-writable plugin gives one HIGH" [ "$(auth_plugin_finding unsigned $'HIGH\tx is owned by bob')" = $'MA-PERSISTENCE-012\tHIGH' ]
+check "G15 unsigned plugin is MEDIUM" [ "$(auth_plugin_finding unsigned '')" = $'MA-PERSISTENCE-013\tMEDIUM' ]
+check "G15 plugin signed by a developer is LOW" [ "$(auth_plugin_finding 'Team ABCDE12345' '')" = $'MA-PERSISTENCE-014\tLOW' ]
+check "G15 Apple plugin gives nothing" [ -z "$(auth_plugin_finding Apple '')" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
