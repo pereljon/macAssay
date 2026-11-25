@@ -35,8 +35,8 @@ Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by 
 
 Do these in the change that gives the repo a public remote.
 
-- [ ] Write `SECURITY.md`: report privately through a GitHub security advisory only (no email address); supported versions are the latest release; in scope are sudoers rules and the installer, the audit changing the Mac, secrets reaching the report, and command injection from data read off the audited Mac; findings in an audit's results are not security issues.
-- [ ] Turn on private vulnerability reporting in the GitHub repo settings.
+- [x] Write `SECURITY.md`: report privately through a GitHub security advisory only (no email address); supported versions are the latest release; in scope are sudoers rules and the installer, the audit changing the Mac, secrets reaching the report, and command injection from data read off the audited Mac; findings in an audit's results are not security issues. (resolved 2026-11-24): written.
+- [ ] Turn on private vulnerability reporting in the GitHub repo settings. GitHub offers it only for public repos; the API returned 404 on the private repo on 2026-11-24, so do it right after the repo goes public.
 - [ ] Add a license line (MIT, see `LICENSE`) to `README.md`.
 - [ ] Make `pereljon/macassay` public.
 
