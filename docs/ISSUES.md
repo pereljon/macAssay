@@ -14,7 +14,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 - [x] Version 1.2: per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`. (resolved 2026-11-24): merged into `master`; tests pass there. Open checks: `profiles list` output with a device profile installed, and T19 on a second Mac.
 
-Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by value. More proposals, ranked, are in `dev/prior-art-ideas.md`:
+Version 1.3 (designing on `feature/checks-1.3`; design `dev/features/checks-1.3.md`, architecture review next, covering every severity): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
 
 - [ ] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation.
 - [ ] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`).
@@ -30,6 +30,10 @@ Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by 
 - [ ] Battery health on laptops.
 - [ ] Recent non-Apple installs (`pkgutil`, install history).
 - [ ] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults, no `secure_path`.
+
+Later:
+
+- [ ] Run selected report sections only (an `--only` option), with the skipped sections listed under Limitations.
 
 ## Publish checklist
 
@@ -47,7 +51,7 @@ Do these in the change that gives the repo a public remote.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
 - [x] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule. (resolved 2026-11-24): all four approved and built; see `dev/features/sudo-rules.md` (Decisions).
 - [x] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. (resolved 2026-11-24): T5 and T7 to T11 pass; merged after the pre-merge review.
-- [ ] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
+- [h] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
 
 ## Open questions
@@ -66,3 +70,4 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-24: The project is renamed `macassay`. Checked on 2026-11-24: no Homebrew formula or cask, no GitHub user, org, or repo, `macassay.com` unregistered (whois), and no `.dev`, `.io`, or `.app` DNS records. Web search found no product with the name; no formal USPTO search was done. Rejected: macwitness (a 2011 Mac security app named Witness), macdossier, macreceipt, macledger, maccensus, macreckon, macnotary, macfathom, macplumb, macaffirm. Conviction: `firm`.
 - 2026-11-24: The command is `macassay` with no `.sh` extension. The rename happens on `feature/sudo-rules`, so 1.2 ships as macassay 1.2. `dev/HANDOFF.md` keeps its history and updates its paths. Conviction: `ok`.
 - 2026-11-24: The code is on GitHub at `pereljon/macassay`, private until the project is ready, then public. The license is MIT, with the user's full name as the copyright holder in `LICENSE` only. Rejected: the GitHub username or "the macassay contributors" as the holder.
+- 2026-11-24: Version 1.3 takes every proposed check group (the 1.3 list here and the priority-A register ideas) plus the certificate-label bug, in one release. Rejected: splitting the inventory checks into 1.4, which repeats the design and review cycle for the lowest-risk checks. Section selection waits for a later release.
