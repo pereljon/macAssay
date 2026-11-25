@@ -587,6 +587,9 @@ ssh_cfg() {
       stricthostkeychecking) case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" in no|off) echo "$scope StrictHostKeyChecking" ;; esac ;;
     esac
   done < "$f"; }
+# git_hooks_path FILE: prints each core.hooksPath value in a git config file. git itself is never run.
+git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/, "", s); next }
+  s ~ /^\[core\]/ && tolower($0) ~ /^[[:space:]]*hookspath[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); print v }' "$1" 2>/dev/null; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -1261,6 +1264,9 @@ say "- SSH client Host and Match blocks other than Host *: $(grep -cx block "$TM
 
 # ---------- 12. Shell, developer and AI tools ----------
 h2 "12. Shell, developer and AI tools"
+HP=$(for f in "$THOME/.gitconfig" "$THOME/.config/git/config"; do [ -f "$f" ] && git_hooks_path "$f"; done | paste -sd, -)
+say "- Git global hooksPath: $(mdesc "${HP:-not set}")"
+[ -n "$HP" ] && finding MA-DEVELOPER-001 LOW Developer "Git runs hooks from a global hooksPath for every repository: $HP"
 
 # ---------- 13. Trust and privacy ----------
 h2 "13. Trust and privacy"

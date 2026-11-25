@@ -547,5 +547,10 @@ check "G5 host names not in the output" hasnt "$T/g5" "example"
 check "G18 self-include read once" [ "$(grep -c 'all ForwardAgent' "$T/g5")" -eq 1 ]
 check "G18 Include text is never run" [ ! -e "$T/pwned" ]
 
+# G6: git hooksPath; other sections, such as a [url] with a token, never print.
+printf '[core]\n\thooksPath = ~/.githooks\n[url "https://SECRET_T@github.com/"]\n\tinsteadOf = https://github.com/\n' > "$T/gitconfig"
+check "G6 hooksPath found" [ "$(git_hooks_path "$T/gitconfig")" = "~/.githooks" ]
+check "G6 url token not printed" [ -z "$(git_hooks_path "$T/gitconfig" | grep SECRET)" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
