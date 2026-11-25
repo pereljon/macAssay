@@ -102,9 +102,14 @@ Each section has a short label, used as the flag category. Content moved from 1.
 
 1.2 categories map to labels: Memory, Stability, and Storage (disk use) go to Health; Backup to Backups; Security and Firewall go to Platform, except failed SSH sign-ins, which go to Events; Malware (XProtect detections) goes to Events; Processes and Apps go to Apps; the rest keep their meaning under the new label. Flag texts that cite a section number are updated.
 
+Five 1.2 items from section 14 move as follows: the guest account to Accounts; `DYLD_INSERT_LIBRARIES` to Persistence; Gatekeeper-rejected apps to Apps; the 1.2 screen lock line to Platform, where the new screen lock check replaces it; the "rules not installed" notice to Limitations.
+
 ## Build order
 
-1. Commit 1 moves blocks into the outline, renames categories, and folds the privileged checks into topic sections. It adds no check and changes no check logic. Verification: run 1.2 and the reordered script with `--quick --offline --skip-du`, normalize headings and category names, sort both reports, and compare. The line sets must match, apart from values that change between runs (load, memory, connection counts).
+1. Commit 1 moves blocks into the outline, renames categories, and folds the privileged checks into topic sections. It adds no check and changes no check logic. Verification, in three parts:
+   - Script check: sort the non-heading lines of the 1.2 script and the commit 1 script, apply the category map, and diff. This covers blocks that a quick run skips.
+   - Report check: run 1.2 twice to measure run-to-run noise, then run 1.2 and commit 1 with the same flags, normalize headings and categories, sort, and diff. Differences beyond the measured noise fail.
+   - Placement check: a table of every `h3`, `block`, and `run` label with its expected section, checked against the commit 1 report; and a list of every flag text with its new label, reviewed by hand.
 2. Commit 2 adds hex masking.
 3. Later commits add the new checks, one section per commit, with fixture tests for each parser.
 
@@ -139,28 +144,28 @@ Each check runs as the user. Severity labels follow "Severities".
 - Signed system volume: `csrutil authenticated-root status`.
 - Library validation: `DisableLibraryValidation` from `/Library/Preferences/com.apple.security.libraryvalidation`.
 - Quarantine: `LSQuarantine` from `com.apple.LaunchServices`.
-- Screen lock: the delay from `sysadminctl -screenLock status 2>&1`; also `immediate` and `off`.
+- Screen lock: the delay from `sysadminctl -screenLock status 2>&1`; also `immediate` and `off`. It replaces the 1.2 screen lock line and its LOW flag.
 - World-writable apps: `find /Applications -maxdepth 2 -name '*.app' -type d -perm -2`. World-writable folders: `find /Library -xdev -type d -perm -002 ! -perm -1000`, count plus the first 10.
 
 ### 6. Sharing and remote access
 
-- More sharing services, each from one key or listener: Remote Apple Events (`launchctl print system/com.apple.AEServer` succeeds), Internet Sharing (`com.apple.nat` `NAT` `Enabled`), SMB guest access (`AllowGuestAccess`), Apache (`org.apache.httpd` loaded), NFS (`/etc/exports` with entries), printer sharing (`cupsctl` `_share_printers=1`), AirDrop (`DiscoverableMode`), AirPlay receiver (ControlCenter listening on TCP 5000 or 7000), media sharing (`home-sharing-enabled`), content caching (`AssetCache` `Activated`).
+- More sharing services, each from one key or listener: Remote Apple Events (`launchctl print system/com.apple.AEServer` succeeds), Internet Sharing (`com.apple.nat` `NAT` `Enabled`), SMB guest access (`AllowGuestAccess`), Apache (`org.apache.httpd` loaded), NFS (`/etc/exports` with entries), printer sharing (cupsd listening on a non-loopback TCP 631 in the privileged listener list; without the rules, `cupsctl` `_share_printers=1` only when `ps` shows cupsd already running, because `cupsctl` can start cupsd), AirDrop (`DiscoverableMode`), AirPlay receiver (ControlCenter listening on TCP 5000 or 7000), media sharing (`home-sharing-enabled`), content caching (`AssetCache` `Activated`).
 - Remote-support tools: process names from `ps -axo comm=` matched against TeamViewer, AnyDesk, RustDesk, ScreenConnect, Splashtop, BeyondTrust, LogMeIn, RealVNC, TigerVNC, and JumpCloud Assist.
 - More sshd settings, only when SSH listens, from the existing `sshd -G` output: `permituserenvironment`, `gatewayports`, `hostbasedauthentication`, `x11forwarding`, `maxauthtries`.
 
 ### 8. Startup and persistence
 
-- Authorization plugins: each bundle in `/Library/Security/SecurityAgentPlugins`, with its signer from `codesign -dv` (team ID only) and its owner. HIGH when the user can write it or its folder chain (the 1.2 `chain_writable` helper).
-- PAM: modules in `/etc/pam.d` given as an absolute path outside `/usr/lib/pam`, with owner and `chain_writable`.
+- Authorization plugins: each bundle in `/Library/Security/SecurityAgentPlugins`, with its signer from `codesign -dv` (team ID only) and its owner. Severity also uses the 1.2 `chain_writable` helper on the bundle and its folder chain.
+- PAM: modules in `/etc/pam.d` given as an absolute path outside `/usr/lib/pam`, with owner and `chain_writable`. The parser reads the module as the first field after the control field, where a bracketed control such as `[success=ok default=die]` counts as one field, and follows `include` and `substack` targets inside `/etc/pam.d`.
 - StartupItems, ScriptingAdditions (`/Library` and `~/Library`), directory service plug-ins: any entry.
 - Audio plug-ins: count, and names of entries in `/Library/Audio/Plug-Ins/HAL`.
 - Login items in apps: the `find` above, as app name and item name; count, then items whose app is not signed or sits in an unusual path.
 
 ### 9. Apps and browsers
 
-- Forced extensions: `ExtensionInstallForcelist` (Chrome, Edge, Brave) and Firefox `ExtensionSettings` with `force_installed`, from `/Library/Managed Preferences` (INFO) and `/Library/Preferences` or `~/Library/Preferences` (HIGH). Extension IDs only.
-- Native-messaging hosts: count per folder; for each host manifest, the `path` key read with `plutil -extract path raw` (JSON); MEDIUM when the path is unusual or missing.
-- Debug ports: `ps -axwwo comm=,command=` for `--remote-debugging-port`, `--remote-debugging-pipe`, or `--inspect`, excluding the check's own process; program name only. Launch items whose `ProgramArguments` contain these flags: MEDIUM.
+- Forced extensions: `ExtensionInstallForcelist` (Chrome, Edge, Brave) and Firefox `ExtensionSettings` with `force_installed`, from `/Library/Managed Preferences`, `/Library/Managed Preferences/<user>`, `/Library/Preferences`, and `~/Library/Preferences`, plus Firefox `distribution/policies.json` inside the app bundle. The source and the MDM enrollment state (from the existing `profiles status -type enrollment`) set the severity. Extension IDs only.
+- Native-messaging hosts: count per folder; for each host manifest, the `path` key read with `plutil -extract path raw` (JSON). Flags: a path under `/tmp`, `/private/tmp`, `/private/var/folders`, or `/Users/Shared`; a missing path. Hidden folders are not flagged here, because Claude Code and Codex install hosts under `~/.claude` and `~/.codex`.
+- Debug ports: match `ps -axwwo pid=,command=` in a pipe for `--remote-debugging-port` or a word-bounded `--inspect` (`--inspect`, `--inspect=`, `--inspect-brk`), excluding the check's own process. `--remote-debugging-pipe` opens no socket and is ignored. For each match, the name comes from `ps -o comm= -p PID` and the bind address from `lsof -nP -a -p PID -iTCP -sTCP:LISTEN`. `ps` output is never written to the temporary folder. Launch items whose `ProgramArguments` contain the flags are also listed; `--remote-debugging-address` with a non-loopback value counts as non-loopback.
 
 ### 10. Accounts and privileges
 
@@ -168,14 +173,14 @@ Each check runs as the user. Severity labels follow "Severities".
 - Hidden accounts: `IsHidden` set on an account with UID 500 or above; MEDIUM when the account is in the `admin` group.
 - Home folders writable by group or others: `stat` on each `/Users/*` home except `Shared`.
 - Sudoers ownership: `stat` on `/etc/sudoers`, `/etc/sudoers.d`, its files, and `/usr/bin/sudo`; expect `root:wheel`, no write for group or others, and setuid on `sudo`.
-- Sudoers content, through the existing rule that reads `/etc/sudoers` and `sudoers.d` files: `NOPASSWD: ALL` (HIGH), `!authenticate` (HIGH), NOPASSWD for a program on the code-loading list (MEDIUM), weak `Defaults` (MEDIUM), no `secure_path` (LOW). The code-loading list: shells, `env`, `python*`, `perl`, `ruby`, `node`, `osascript`, `vi`, `vim`, `less`, `more`, `find`, `awk`, `sed`, `tar`, `zip`, `git`, `ssh`, `scp`, `rsync`, `tee`, `cp`, `mv`, `dd`, `chmod`, `chown`, `curl`, `wget`, and `ALL`. Only names are printed, never full rule lines, so rules that name hosts or files stay out.
+- Sudoers content: the 1.2 `classify_sudoers` function is extended, so one rule gives one flag at its highest severity. It reads the files through the existing rule. It expands `Cmnd_Alias` names before matching, matches program basenames exactly (`ssh` does not match `ssh-keygen`), and reads `Defaults` lines for `!authenticate` and weak settings. The code-loading list: shells, `env`, `python*`, `perl`, `ruby`, `node`, `osascript`, `vi`, `vim`, `less`, `more`, `find`, `awk`, `sed`, `tar`, `zip`, `git`, `ssh`, `scp`, `rsync`, `tee`, `cp`, `mv`, `dd`, `chmod`, `chown`, `curl`, `wget`. The 1.2 block that lists non-comment lines, and the rule text in the flag, are unchanged; they come from root-owned configuration the user controls. No check for a missing `secure_path`: stock macOS sudoers has none (verified), so it would fire on every Mac.
 
 ### 11. Credentials and keys
 
-- Credential files in the home folder: `.netrc`, `.aws/credentials`, `.git-credentials`, `.npmrc`, `.pypirc`, `.docker/config.json`, `.kube/config`, `.config/gh/hosts.yml`. For each: presence, owner, mode, and whether `has_key` finds an inline secret (`password`, `aws_secret_access_key`, any line in `.git-credentials`, `_authToken` or `_auth`, `password` in `.pypirc`, `"auth":`, `token:` or `client-key-data:`, `oauth_token:`). The report never names profiles or sections.
-- SSH private keys: files in `~/.ssh` whose line 1 is a private-key header. Report file name, mode, and passphrase state from the header only. Never run `ssh-keygen` on a private key.
-- SSH public keys: `ssh-keygen -l -f` on each `~/.ssh/*.pub`; weak types.
-- SSH client options: parse `~/.ssh/config` (and its `Include` files under `~/.ssh`) for `ForwardAgent yes` and `StrictHostKeyChecking no`; report whether each applies under `Host *` and a count of other `Host` blocks. Host names are not reported.
+- Credential files in the home folder: `.netrc`, `.aws/credentials`, `.git-credentials`, `.npmrc`, `.pypirc`, `.docker/config.json`, `.kube/config`, `.config/gh/hosts.yml`. For each: presence, owner, mode (`stat -L`, so a symlink reports its target), and whether `has_key` finds an inline secret: `password` in `.netrc`; `aws_secret_access_key` or `aws_session_token`; any line in `.git-credentials`; `_authToken`, `_auth`, or `_password` in `.npmrc`; `password` in `.pypirc`; `"auth":` or `"identitytoken":`; `token:`, `password:`, or `client-key-data:` in `.kube/config`; `oauth_token:`. A value that starts with `${` names an environment variable and does not count. The report never names profiles or sections.
+- SSH private keys: files in `~/.ssh` whose line 1 is a private-key header. Report file name, mode (`stat -L`), and passphrase state from the header only. For OpenSSH keys, compare the start of line 2 with the fixed base64 prefix `b3BlbnNzaC1rZXktdjEAAAAABG5vbmU` (cipher `none`) without decoding, because a key written as one line holds the private material on line 2. Never run `ssh-keygen` on a private key. File names are printed, because the user needs them to fix a finding; key file names are not secrets under `AGENTS.md`.
+- SSH public keys: `ssh-keygen -l -f` on each `~/.ssh/*.pub`; print bits and type only, never the comment, which `AGENTS.md` allows only from `authorized_keys`.
+- SSH client options: parse `~/.ssh/config`, `/etc/ssh/ssh_config`, `/etc/ssh/ssh_config.d/*`, and every `Include` target they name, for `ForwardAgent yes` and `StrictHostKeyChecking no` or `off`. Accept `Key value` and `Key=value`, any case. Options before the first `Host` or `Match` apply to every host, like `Host *`. Report whether each applies to every host, and a count of other `Host` blocks. Host names are not reported.
 
 ### 12. Shell, developer and AI tools
 
@@ -183,11 +188,13 @@ Each check runs as the user. Severity labels follow "Severities".
 
 ### 13. Trust and privacy
 
-- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped.
+- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. Only certificates with a `TrustRoot` or `TrustAsRoot` result count toward the flag, so a "Never Trust" entry does not raise it.
 
 ## Severities
 
-New flags, by section. Repeated findings give one flag with a count.
+New flags, by section. Repeated findings give one flag with a count, and one risk gives one flag.
+
+The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a real weakening, LOW for hygiene, INFO for inventory. Health flags (disk space, SMART status, kernel panics, memory) use a separate scale: HIGH means data loss or failure is likely soon.
 
 | Section | HIGH | MEDIUM | LOW | INFO |
 |---|---|---|---|---|
@@ -207,7 +214,7 @@ New flags, by section. Repeated findings give one flag with a count.
 
 ## Side effects
 
-None new. `tmutil isexcluded`, `system_profiler SPPowerDataType`, `codesign -dv`, and `sysadminctl -screenLock status` only read. No check runs `git`, `ssh -G`, `ssh-keygen` on a private key, or a helper inside an app.
+None new. `cupsctl` can start cupsd on demand, so the printer sharing check runs it only when cupsd is already running. `tmutil isexcluded`, `system_profiler SPPowerDataType`, `codesign -dv`, and `sysadminctl -screenLock status` only read. No check runs `git`, `ssh -G`, `ssh-keygen` on a private key, or a helper inside an app.
 
 ## Out of scope
 
