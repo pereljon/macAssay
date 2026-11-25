@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: designing
-status: 2026-11-24 scope, outline, secret handling, and severities approved; architecture review done and decided; user review of the doc next
+lifecycle: ready
+status: 2026-11-24 approved by the user after the architecture review and the delta review; implementation plan next
 ---
 
 # Report by theme and new checks (version 1.3)
@@ -49,8 +49,9 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 The user decided each item below after the architecture review. In each, the rejected option is keeping the earlier severity (the 1.2 one, or the one approved in design part 3), unless the item names another.
 
 - A1 swap over 75% LOW. A2 application firewall off MEDIUM. A3 Time Machine not encrypted MEDIUM. A4 auto-login MEDIUM. A5 another account's shell startup file HIGH. A6 shell startup patterns split, HIGH and MEDIUM. A7 firewall rule for a missing program LOW. A8 Permissive secure boot HIGH. A9 tunnels (cloudflared, ngrok, frpc) LOW. A10 App Translocation paths left out of the temporary-folder finding.
-- B1 other boot arguments LOW. B2 debug port by bind address; no finding for `--remote-debugging-pipe`. B3 forced extensions by source and MDM enrollment; rejected: the review's MEDIUM for managed preferences without enrollment. B4 authorization plugin LOW when signed with a team ID, MEDIUM when unsigned. B5 writable plugin or PAM module by `chain_writable`. B6 StartupItems LOW. B7 missing native-messaging host program LOW. B8 NOPASSWD for a code-loading program HIGH. B9 no `secure_path` check dropped. B10 `credential.helper store` check dropped. B11 Remote Apple Events and Apache LOW. B12 macOS auto-install off INFO. B13 home folder writable by its group added, MEDIUM. B14 login items in apps added, MEDIUM when unsigned, HIGH in an unusual path.
+- B1 other boot arguments LOW. B2 debug port by bind address; no finding for `--remote-debugging-pipe`. B3 forced extensions by source and MDM enrollment; rejected: the review's MEDIUM for managed preferences without enrollment. B4 authorization plugin LOW when signed with a team ID, MEDIUM when unsigned. B5 writable plugin or PAM module by `chain_writable` (amended by G3). B6 StartupItems LOW. B7 missing native-messaging host program LOW. B8 NOPASSWD for a code-loading program HIGH. B9 no `secure_path` check dropped. B10 `credential.helper store` check dropped. B11 Remote Apple Events and Apache LOW. B12 macOS auto-install off INFO. B13 home folder writable by its group added (raised to HIGH by G1). B14 login items in apps added, MEDIUM when unsigned, HIGH in an unusual path.
 - C1 passwordless root: HIGH when configured, MEDIUM from default macOS permissions; rejected: HIGH for both.
+- G1 group-writable home folders and other accounts' shell startup files HIGH when the group has other members; supersedes B13 and the group part of A5. G2 NOPASSWD for a program a non-root account can write HIGH. G3 admin-group write MEDIUM only under `/Applications`, HIGH elsewhere; supersedes the MEDIUM part of B5. These follow the delta review.
 - E1 stable check IDs in 1.3. E2 format `MA-<LABEL>-NNN`. E3 standard references later; rejected: in 1.3.
 
 ## Verified facts
@@ -218,7 +219,7 @@ Decided by the user on 2026-11-24 (A1 to A10). Commit 1 keeps 1.2 severities so 
 - Application firewall off: HIGH to MEDIUM.
 - Time Machine backup not encrypted: LOW to MEDIUM.
 - Auto-login: LOW to MEDIUM.
-- Another account's shell startup file owned by an account other than its user or root, or writable by others: MEDIUM to HIGH. Root-owned files give no finding. Group-writable: see the open question in the test plan's review findings (D-2.3).
+- Another account's shell startup file owned by an account other than its user or root, or writable by others: MEDIUM to HIGH. Root-owned files give no finding. Writable by its group: HIGH when the group has members other than the file's user, such as `staff` (decision G1).
 - Shell startup patterns: download-and-run, `/dev/tcp`, and `nc -e` stay HIGH; `base64` decoding and `osascript -e` become MEDIUM.
 - Firewall allow rule for a program that no longer exists: MEDIUM to LOW; unsigned and ad hoc programs stay MEDIUM.
 - Secure boot policy: Permissive is HIGH; Reduced stays MEDIUM.
@@ -227,7 +228,8 @@ Decided by the user on 2026-11-24 (A1 to A10). Commit 1 keeps 1.2 severities so 
 - `NOPASSWD: ALL`: MEDIUM to HIGH.
 - The 1.2 screen lock finding is removed in the Platform commit, which adds its replacement.
 - Admin-domain trusted certificates count by the same rule as the user domain: Deny and Unspecified results no longer count.
-- `chain_writable` and decision C1: open question D-2.2 in the test plan's review findings.
+- `chain_writable`, per decisions C1 and G3: admin-group write is MEDIUM only under `/Applications`, where macOS gives the admin group write by default. Elsewhere it is HIGH.
+- `classify_sudoers`: a NOPASSWD rule for a program that a non-root account can write (by `chain_writable`) is HIGH (decision G2). Other NOPASSWD rules for programs off the code-loading list stay LOW.
 - Shell startup patterns: the MEDIUM part gets its own ID; the HIGH part keeps the 1.2 check's ID.
 
 ## Severities
@@ -243,9 +245,9 @@ The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a r
 | Updates | | Checks off or last full check over 30 days; critical responses or data updates off; XProtect over 60 days old | Automatic download or App Store auto-update off | macOS auto-install off; recent non-Apple installs |
 | Platform | Signed system volume off; boot arguments with `amfi_` or `cs_enforcement_disable`; quarantine off | Library validation off; world-writable app; screen lock over 1 hour or off | Other boot arguments; screen lock over 5 minutes; world-writable `/Library` folder without the sticky bit | |
 | Sharing | | Internet Sharing, SMB guest, NFS; remote-support tool running; `PermitUserEnvironment`, `GatewayPorts`, or `HostbasedAuthentication` on | Remote Apple Events, Apache, printer sharing, AirDrop to everyone, AirPlay receiver, media sharing, content caching; `X11Forwarding` on; `MaxAuthTries` over 6 | |
-| Persistence | Authorization plugin or PAM module that the user can write (`chain_writable` HIGH); login item in an app in an unusual path | Unsigned or ad hoc authorization plugin; plugin or PAM module that only the admin group can write; PAM module outside `/usr/lib/pam`; any ScriptingAddition or directory service plug-in; unsigned login item in an app | Authorization plugin signed with a team ID; any StartupItem | Audio plug-ins; login items in apps |
+| Persistence | Authorization plugin or PAM module that a non-root account can write, including through the admin group (`chain_writable` HIGH, decision G3); login item in an app in an unusual path | Unsigned or ad hoc authorization plugin; PAM module outside `/usr/lib/pam`; any ScriptingAddition or directory service plug-in; unsigned login item in an app | Authorization plugin signed with a team ID; any StartupItem | Audio plug-ins; login items in apps |
 | Apps | Debug port listening on a non-loopback address, running or set in a launch item; forced extensions in managed preferences or Firefox `policies.json` on a Mac without MDM enrollment | Debug port on loopback only, or with an unknown bind address; forced extensions in local preferences only; native-messaging host under a temporary or shared folder | Native-messaging host whose program is missing | Forced extensions (any source) on an MDM-enrolled Mac; native-messaging host count |
-| Accounts | Extra UID 0; home folder writable by others; sudoers file or `sudo` with wrong owner or writable by others; `NOPASSWD: ALL`; `!authenticate`; NOPASSWD for a code-loading program | Hidden admin account; home folder writable by its group; weak `Defaults` | Hidden non-admin account | |
+| Accounts | Extra UID 0; home folder writable by others; sudoers file or `sudo` with wrong owner or writable by others; `NOPASSWD: ALL`; `!authenticate`; NOPASSWD for a code-loading program or for a program a non-root account can write; home folder writable by a group with other members | Hidden admin account; weak `Defaults` | Hidden non-admin account | |
 | Credentials | Credential file with an inline secret, or a private key, readable by group or others | Weak SSH key; `ForwardAgent yes` or `StrictHostKeyChecking no` for every host | Private keys without a passphrase; owner-only credential files with inline secrets; the same SSH options for specific hosts | |
 | Developer | | | Global `hooksPath` | |
 | Trust | | User-domain trusted certificates | | |

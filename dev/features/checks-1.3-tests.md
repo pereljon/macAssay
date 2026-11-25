@@ -44,6 +44,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 - G19. Printer sharing from fixture `cupsd.conf` files: `Listen localhost:631` gives off; `Port 631` and `Listen *:631` give on.
 - G16. PAM parser: a bracketed control field, an absolute module path outside `/usr/lib/pam`, and an `include` of another `/etc/pam.d` file.
 - G17. User trust: a `TrustRoot` entry, an entry with no result type, and a certificate with zero trust settings count; `Deny` and `Unspecified` entries do not. The admin-domain parser gives the same counts.
+- G20. `chain_writable` and NOPASSWD: an admin-writable folder under `/Applications` gives MEDIUM and one under `/Library` gives HIGH; a NOPASSWD rule for a script in a user-writable folder gives HIGH; a home folder and an rc file writable by `staff` give HIGH.
 - G14. Hidden accounts: a hidden admin and a hidden non-admin fixture give MEDIUM and LOW; system accounts under UID 500 are ignored.
 
 ## Manual runs (no sudo rules)
@@ -108,9 +109,9 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - D-1.6 G4's fake `ssh-keygen` could not catch an absolute-path call; a private key named `*.pub`: fixed in G4.
 - D-1.7 Read `cupsd.conf` instead of running `cupsctl`: fixed (simpler, no side effect); requirement 6. How `Port` and `Listen` lines look with printer sharing on is from training knowledge; G19 and a manual check cover it.
 - D-2.1 Decisions not itemized with rejected options: fixed (decision record in the design doc); development `AGENTS.md` (Decisions).
-- D-2.2 `chain_writable` gives MEDIUM for admin-group write anywhere, while C1 says MEDIUM only for default macOS permissions: asked the user, because the fix also changes B5.
-- D-2.3 Group-write severities ignore that the default group `staff` holds every user, and root-owned rc files gave HIGH: root-owned files fixed (no finding); group-writable home folders and rc files asked the user, because B13 and A5 approved MEDIUM.
-- D-2.4 NOPASSWD for a program the user can write stays LOW: asked the user (new severity rule).
+- D-2.2 `chain_writable` gives MEDIUM for admin-group write anywhere, while C1 says MEDIUM only for default macOS permissions: asked the user; MEDIUM only under `/Applications`, HIGH elsewhere (decision G3).
+- D-2.3 Group-write severities ignore that the default group `staff` holds every user, and root-owned rc files gave HIGH: root-owned files fixed (no finding); group-writable home folders and rc files asked the user; HIGH when the group has other members (decision G1).
+- D-2.4 NOPASSWD for a program the user can write stays LOW: asked the user; HIGH (decision G2).
 - D-2.5 Two findings for one item still possible: fixed (one item, one finding, at the highest severity; G15 cases); requirement 8.
 - D-2.6 Firefox `policies.json` had no severity: fixed (same as managed preferences); requirement 8.
 - D-3.1 Category map contradicted the placement table: fixed (label from the check's section, R5 list); requirement 2.
