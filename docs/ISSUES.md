@@ -63,7 +63,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Continue macassay rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of macassay's host checks; evidence is in `dev/prior-art.md`. (resolved 2026-11-24): continue, per the user.
 - [x] Project name: pick one that does not overlap with the projects in `dev/prior-art.md` (several use `macaudit` or `mac-security-audit`). (resolved 2026-11-24): `macassay`. See Decisions.
 - [x] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel. (resolved 2026-11-24): the user sent it through macharden's private advisory form.
-- [ ] Another account's shell startup file that root owns: the 1.3 design says root-owned files give no finding. Should a root-owned file that everyone, or a group with other members, can write still give a HIGH finding? Recommended: yes; the plan (Task 4, `rc_file_risks`) is written that way.
+- [x] Another account's shell startup file that root owns: the 1.3 design says root-owned files give no finding. Should a root-owned file that everyone, or a group with other members, can write still give a HIGH finding? Recommended: yes; the plan (Task 4, `rc_file_risks`) is written that way. (resolved 2026-11-24): yes, per the user; recorded as decision R1 in `dev/features/checks-1.3.md`.
 
 ## Decisions
 
