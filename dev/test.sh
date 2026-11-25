@@ -520,6 +520,8 @@ check "G4 PKCS#8 encrypted" [ "$(ssh_key_state "$K/p8")" = passphrase ]
 check "G4 one-line OpenSSH key" [ "$(ssh_key_state "$K/oneline")" = "no passphrase" ]
 check "G4 not a key" [ -z "$(ssh_key_state "$K/notes")" ]
 check "G4 private key named .pub is a private key" [ "$(ssh_key_state "$K/x.pub")" = "no passphrase" ]
+printf -- '-----BEGIN OPENSSH PRIVATE KEY-----\r\nDUMMYBODYTEXT\r\n-----END OPENSSH PRIVATE KEY-----\r\n' > "$K/crlf.pub"
+check "G4 CRLF private key named .pub is a private key" [ -n "$(ssh_key_state "$K/crlf.pub")" ]
 check "G4 private-key function never runs ssh-keygen" [ -z "$(type ssh_key_state | grep ssh-keygen)" ]
 check "G4 public summary has no comment" [ -z "$(ssh_pub_summary "$K/plain.pub" | grep SECRET)" ]
 check "G4 public summary bits and type" [ "$(ssh_pub_summary "$K/plain.pub" | cut -f2,3)" = $'256\t(ED25519)' ]

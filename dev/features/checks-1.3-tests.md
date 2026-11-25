@@ -158,3 +158,10 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 12 review, Minor 3: a wildcard command such as /usr/bin/* stays LOW: dropped; same as 1.2, no requirement.
 - Task 12 review, Minor 4: an inline # comment containing NOPASSWD is not stripped: dropped; no wrong severity seen, no requirement.
 - Task 12 re-review, Finding 1: a Runas list with a comma, `(root, operator) NOPASSWD: /bin/sh`, was split at the comma and the shell was missed: fixed in classify_sudoers with a G7 case; design (one rule, one finding at its highest severity).
+- Task 13 review, Minor 1: a CRLF private key named *.pub reached ssh-keygen -l because the header kept its CR; breaks the no-ssh-keygen-on-private-key constraint: fixed in ssh_key_state, with a G4 fixture.
+- Task 13 review, Minor 2: quoted values and `Host * !x` in ssh config are not parsed: dropped; no requirement.
+- Task 13 review, Minor 3: passwords that start with `$` are not detected: dropped; no requirement.
+- Task 13 review, Minor 4: SSH_SEEN dedupe across scopes: dropped; no requirement.
+- Task 7 review: the G11 regex misses an indirect whole-domain read; an empty cutoff would list every install (date -v works on stock macOS); "0 days ago" when the date fails to parse: dropped; no requirement.
+- Task 10 review: MA-PERSISTENCE-023 is nearly unreachable (flagged for the final review); a `/usr/lib/pam/../` path is skipped; an unclosed bracket control is not parsed; a PAMD environment variable redirects includes: dropped; no requirement.
+- Task 11 review: the Firefox plist key path may be `EnterprisePolicies.*` (to be added to the design assumptions in Task 16); nmh_risk misses the /var/folders and /var/tmp forms; debug_pids matches the flag text in any process's arguments: dropped; no requirement.
