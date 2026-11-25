@@ -161,8 +161,9 @@ classify_sudoers() {
       n = split(rest, items, ","); all = 0; code = 0; progs = ""; pw = 1
       for (i = 1; i <= n; i++) {
         c = trim(items[i]); sub(/^:/, "", c); c = trim(c)
-        while (c ~ /^\([^)]*\)/ || c ~ /^[A-Z_]+:/) {
+        while (c ~ /^\([^)]*\)/ || c ~ /^[A-Z_]+:/ || tolower(c) ~ /^sha(224|256|384|512):[^ ]/ || c ~ /^(CWD|CHROOT|TIMEOUT|NOTBEFORE|NOTAFTER|ROLE|TYPE)=[^ ]/) {
           if (c ~ /^\(/) sub(/^\([^)]*\) */, "", c)
+          else if (tolower(c) ~ /^sha(224|256|384|512):[^ ]/ || c ~ /^[A-Z_]+=/) sub(/^[^ ]+ */, "", c)
           else { if (c ~ /^NOPASSWD:/) pw = 1; else if (c ~ /^PASSWD:/) pw = 0; sub(/^[A-Z_]+: */, "", c) } }
         if (!pw) continue
         m = split(expand(c, 0), ex, ",")

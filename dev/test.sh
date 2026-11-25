@@ -444,6 +444,9 @@ x ALL = (root) NOPASSWD: /bin/ls, (root) NOPASSWD: /bin/sh
 y ALL = (root) NOPASSWD: /bin/ls, (operator) /bin/sh
 z ALL = (root) NOPASSWD: /bin/ls, PASSWD: /bin/sh
 w ALL = (root) NOPASSWD: /bin/ls, (root, operator) NOPASSWD: /bin/sh
+u1 ALL = (root) NOPASSWD: sha256:0a1b2c3d4e5f /bin/sh
+u2 ALL = NOPASSWD: /bin/ls, CWD=/ /bin/sh
+u3 ALL = (root) NOPASSWD: SHA512:0a1b2c3d4e5f TIMEOUT=5 /usr/bin/ssh-keygen
 EOT
 classify_sudoers < "$T/g7" > "$T/g7.out"
 check "G7 !authenticate is HIGH" has "$T/g7.out" $'MA-ACCOUNTS-010\tHIGH\tDefaults !authenticate'
@@ -453,11 +456,14 @@ check "G7 NOPASSWD: ALL is HIGH" has "$T/g7.out" $'MA-ACCOUNTS-005\tHIGH\ta ALL'
 check "G7 python is a code-loading program" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tb ALL'
 check "G7 alias holding a shell" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tc ALL'
 check "G7 ssh-keygen is not ssh" has "$T/g7.out" $'MA-ACCOUNTS-006\tLOW\td ALL'
-check "G7 one line per rule" [ "$(grep -c . "$T/g7.out")" -eq 10 ]
+check "G7 one line per rule" [ "$(grep -c . "$T/g7.out")" -eq 13 ]
 check "G7 command with its own Runas spec and NOPASSWD" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tx ALL'
 check "G7 Runas spec after the tag carries it over" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\ty ALL'
 check "G7 command after PASSWD is not passwordless" has "$T/g7.out" $'MA-ACCOUNTS-006\tLOW\tz ALL = (root) NOPASSWD: /bin/ls, PASSWD: /bin/sh\t/bin/ls'
 check "G7 Runas list with a comma" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tw ALL'
+check "G7 digest spec before a shell" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tu1 ALL'
+check "G7 option spec before a shell" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tu2 ALL'
+check "G7 digest and option specs before a program list it" has "$T/g7.out" $'MA-ACCOUNTS-006\tLOW\tu3 ALL = (root) NOPASSWD: SHA512:0a1b2c3d4e5f TIMEOUT=5 /usr/bin/ssh-keygen\t/usr/bin/ssh-keygen'
 check "G7 full rule text kept" has "$T/g7.out" "b ALL = (root) NOPASSWD: /usr/bin/python3"
 # G14: hidden accounts.
 printf '%s\n' 'hadmin 502 yes' 'huser 503 no' '_sys 200 no' | hidden_findings > "$T/g14"
