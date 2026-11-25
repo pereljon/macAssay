@@ -11,6 +11,10 @@
 - **No secrets in the report:** omit serial numbers and UUIDs. Report key type and comment only from `authorized_keys`. Never copy shell startup file contents.
 - **Least privilege:** privileged checks run only through sudo rules for read-only commands with exact arguments.
 
+## Terminology
+
+- A flag is a command-line option, such as `--quick`. A finding is an entry in the report, with a severity. Do not call a finding a flag.
+
 ## Security Context
 
 - Users: the user, auditing their own Macs, locally or over SSH.

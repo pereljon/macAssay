@@ -12,14 +12,14 @@ Investigated against macOS 27.2.1 (Darwin 27.2.0, arm64) and `macassay` 1.2 at c
 
 ## Goal
 
-Make the report cover the security exposure that the architecture review and the prior-art register found missing, and make it easy to read. Each section covers one theme, and each flag's category names its section.
+Make the report cover the security exposure that the architecture review and the prior-art register found missing, and make it easy to read. Each section covers one theme, and each finding's category names its section.
 
 ## Requirements
 
 Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSUES.md` and below) or to `AGENTS.md`.
 
 1. The report has the 14 sections in "Report outline", in that order, followed by the Summary and Limitations as now. Source: user decision.
-2. Each flag's category is the short label of its section. Source: user decision.
+2. Each finding's category is the short label of its section. Source: user decision.
 3. The "Privileged checks" section is removed; each privileged check moves to its topic section. Source: user decision.
 4. Every check group in "New checks" is built. Source: user decision (scope).
 5. Long hex strings in certificate labels are masked. Source: `docs/ISSUES.md` bug, user decision (scope).
@@ -34,7 +34,7 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 - 2026-11-24: Section selection (`--only`) waits for a later release. Rejected for 1.3: it needs dependency handling between sections and a Limitations record of what was skipped.
 - 2026-11-24: The report is reorganized by theme. Rejected: adding checks into the 1.2 sections, which crowds the security baseline section; appending new sections, which splits related checks. The reorder is mechanical because all privileged data is collected before section 1.
 - 2026-11-24: Two themes beyond the first draft, "Device management and security software" and "Shell, developer and AI tools". Both hold existing or planned checks from `dev/prior-art-ideas.md` that fit no other theme.
-- 2026-11-24: Inventory checks print a count and the unusual items only. A missing setting gets an explicit "macOS default" line. Repeated findings collapse into one flag.
+- 2026-11-24: Inventory checks print a count and the unusual items only. A missing setting gets an explicit "macOS default" line. Repeated findings collapse into one finding.
 - 2026-11-24: Secret presence is decided from key names and file headers only (design part 2).
 - 2026-11-24: Severities as in "Severities", with three raised to HIGH after comparison with the 1.2 scale: quarantine off, locally set forced browser extensions, and a user-writable authorization plugin or PAM module.
 - 2026-11-24: The architecture review of this design must review every severity, existing and new, for consistency and correctness. Source: the user.
@@ -66,7 +66,7 @@ Checked on this Mac, 2026-11-24, as the user without sudo:
 - `find /Applications ~/Applications -maxdepth 5` for `Contents/Library/LoginItems/*.app` and `Contents/Library/Launch{Agents,Daemons}/*.plist` takes 0.9 s and finds 16 items.
 - Native-messaging host folders exist under `~/Library/Application Support/<browser>/NativeMessagingHosts`, `/Library/Google/Chrome/NativeMessagingHosts`, and `/Library/Application Support/Mozilla/NativeMessagingHosts`.
 - `dscl . -list /Users UniqueID` and `dscl . -list /Users IsHidden` work without root. `IsHidden` is `1` or `YES`.
-- `/Users/<user>` is `drwxr-xr-x` by default, so readable home folders are not flagged.
+- `/Users/<user>` is `drwxr-xr-x` by default, so readable home folders give no finding.
 - `find /Applications -maxdepth 2 -name '*.app' -perm -2` finds one world-writable app here.
 - `stat -f '%Su:%Sg %Sp'` reads `/etc/sudoers`, `/etc/sudoers.d`, its files, and `/usr/bin/sudo` without root.
 - For an OpenSSH private key, base64-decoding line 2 shows the cipher name (`none` when there is no passphrase). The result matched `ssh-keygen -y -P ''` on every key here. PEM keys mark encryption with an `ENCRYPTED` header line.
@@ -81,7 +81,7 @@ Checked on this Mac, 2026-11-24, as the user without sudo:
 
 ## Report outline
 
-Each section has a short label, used as the flag category. Content moved from 1.2 is listed with its old section number.
+Each section has a short label, used as the finding category. Content moved from 1.2 is listed with its old section number.
 
 | # | Section | Label | Moved from 1.2 | New in 1.3 |
 |---|---|---|---|---|
@@ -100,7 +100,7 @@ Each section has a short label, used as the flag category. Content moved from 1.
 | 13 | Trust and privacy | Trust | 14 certificates, admin trust, privacy permissions | User-domain trust |
 | 14 | Security events from the logs | Events | 12 XProtect messages, failed SSH sign-ins | None |
 
-1.2 categories map to labels: Memory, Stability, and Storage (disk use) go to Health; Backup to Backups; Security and Firewall go to Platform, except failed SSH sign-ins, which go to Events; Malware (XProtect detections) goes to Events; Processes and Apps go to Apps; the rest keep their meaning under the new label. Flag texts that cite a section number are updated.
+1.2 categories map to labels: Memory, Stability, and Storage (disk use) go to Health; Backup to Backups; Security and Firewall go to Platform, except failed SSH sign-ins, which go to Events; Malware (XProtect detections) goes to Events; Processes and Apps go to Apps; the rest keep their meaning under the new label. Finding texts that cite a section number are updated.
 
 Five 1.2 items from section 14 move as follows: the guest account to Accounts; `DYLD_INSERT_LIBRARIES` to Persistence; Gatekeeper-rejected apps to Apps; the 1.2 screen lock line to Platform, where the new screen lock check replaces it; the "rules not installed" notice to Limitations.
 
@@ -109,7 +109,7 @@ Five 1.2 items from section 14 move as follows: the guest account to Accounts; `
 1. Commit 1 moves blocks into the outline, renames categories, and folds the privileged checks into topic sections. It adds no check and changes no check logic. Verification, in three parts:
    - Script check: sort the non-heading lines of the 1.2 script and the commit 1 script, apply the category map, and diff. This covers blocks that a quick run skips.
    - Report check: run 1.2 twice to measure run-to-run noise, then run 1.2 and commit 1 with the same flags, normalize headings and categories, sort, and diff. Differences beyond the measured noise fail.
-   - Placement check: a table of every `h3`, `block`, and `run` label with its expected section, checked against the commit 1 report; and a list of every flag text with its new label, reviewed by hand.
+   - Placement check: a table of every `h3`, `block`, and `run` label with its expected section, checked against the commit 1 report; and a list of every finding text with its new label, reviewed by hand.
 2. Commit 2 adds hex masking.
 3. Later commits add the new checks, one section per commit, with fixture tests for each parser.
 
@@ -144,7 +144,7 @@ Each check runs as the user. Severity labels follow "Severities".
 - Signed system volume: `csrutil authenticated-root status`.
 - Library validation: `DisableLibraryValidation` from `/Library/Preferences/com.apple.security.libraryvalidation`.
 - Quarantine: `LSQuarantine` from `com.apple.LaunchServices`.
-- Screen lock: the delay from `sysadminctl -screenLock status 2>&1`; also `immediate` and `off`. It replaces the 1.2 screen lock line and its LOW flag.
+- Screen lock: the delay from `sysadminctl -screenLock status 2>&1`; also `immediate` and `off`. It replaces the 1.2 screen lock line and its LOW finding.
 - World-writable apps: `find /Applications -maxdepth 2 -name '*.app' -type d -perm -2`. World-writable folders: `find /Library -xdev -type d -perm -002 ! -perm -1000`, count plus the first 10.
 
 ### 6. Sharing and remote access
@@ -164,7 +164,7 @@ Each check runs as the user. Severity labels follow "Severities".
 ### 9. Apps and browsers
 
 - Forced extensions: `ExtensionInstallForcelist` (Chrome, Edge, Brave) and Firefox `ExtensionSettings` with `force_installed`, from `/Library/Managed Preferences`, `/Library/Managed Preferences/<user>`, `/Library/Preferences`, and `~/Library/Preferences`, plus Firefox `distribution/policies.json` inside the app bundle. The source and the MDM enrollment state (from the existing `profiles status -type enrollment`) set the severity. Extension IDs only.
-- Native-messaging hosts: count per folder; for each host manifest, the `path` key read with `plutil -extract path raw` (JSON). Flags: a path under `/tmp`, `/private/tmp`, `/private/var/folders`, or `/Users/Shared`; a missing path. Hidden folders are not flagged here, because Claude Code and Codex install hosts under `~/.claude` and `~/.codex`.
+- Native-messaging hosts: count per folder; for each host manifest, the `path` key read with `plutil -extract path raw` (JSON). Findings: a path under `/tmp`, `/private/tmp`, `/private/var/folders`, or `/Users/Shared`; a missing path. Hidden folders give no finding here, because Claude Code and Codex install hosts under `~/.claude` and `~/.codex`.
 - Debug ports: match `ps -axwwo pid=,command=` in a pipe for `--remote-debugging-port` or a word-bounded `--inspect` (`--inspect`, `--inspect=`, `--inspect-brk`), excluding the check's own process. `--remote-debugging-pipe` opens no socket and is ignored. For each match, the name comes from `ps -o comm= -p PID` and the bind address from `lsof -nP -a -p PID -iTCP -sTCP:LISTEN`. `ps` output is never written to the temporary folder. Launch items whose `ProgramArguments` contain the flags are also listed; `--remote-debugging-address` with a non-loopback value counts as non-loopback.
 
 ### 10. Accounts and privileges
@@ -173,7 +173,7 @@ Each check runs as the user. Severity labels follow "Severities".
 - Hidden accounts: `IsHidden` set on an account with UID 500 or above; MEDIUM when the account is in the `admin` group.
 - Home folders writable by group or others: `stat` on each `/Users/*` home except `Shared`.
 - Sudoers ownership: `stat` on `/etc/sudoers`, `/etc/sudoers.d`, its files, and `/usr/bin/sudo`; expect `root:wheel`, no write for group or others, and setuid on `sudo`.
-- Sudoers content: the 1.2 `classify_sudoers` function is extended, so one rule gives one flag at its highest severity. It reads the files through the existing rule. It expands `Cmnd_Alias` names before matching, matches program basenames exactly (`ssh` does not match `ssh-keygen`), and reads `Defaults` lines for `!authenticate` and weak settings. The code-loading list: shells, `env`, `python*`, `perl`, `ruby`, `node`, `osascript`, `vi`, `vim`, `less`, `more`, `find`, `awk`, `sed`, `tar`, `zip`, `git`, `ssh`, `scp`, `rsync`, `tee`, `cp`, `mv`, `dd`, `chmod`, `chown`, `curl`, `wget`. The 1.2 block that lists non-comment lines, and the rule text in the flag, are unchanged; they come from root-owned configuration the user controls. No check for a missing `secure_path`: stock macOS sudoers has none (verified), so it would fire on every Mac.
+- Sudoers content: the 1.2 `classify_sudoers` function is extended, so one rule gives one finding at its highest severity. It reads the files through the existing rule. It expands `Cmnd_Alias` names before matching, matches program basenames exactly (`ssh` does not match `ssh-keygen`), and reads `Defaults` lines for `!authenticate` and weak settings. The code-loading list: shells, `env`, `python*`, `perl`, `ruby`, `node`, `osascript`, `vi`, `vim`, `less`, `more`, `find`, `awk`, `sed`, `tar`, `zip`, `git`, `ssh`, `scp`, `rsync`, `tee`, `cp`, `mv`, `dd`, `chmod`, `chown`, `curl`, `wget`. The 1.2 block that lists non-comment lines, and the rule text in the finding, are unchanged; they come from root-owned configuration the user controls. No check for a missing `secure_path`: stock macOS sudoers has none (verified), so it would fire on every Mac.
 
 ### 11. Credentials and keys
 
@@ -188,13 +188,13 @@ Each check runs as the user. Severity labels follow "Severities".
 
 ### 13. Trust and privacy
 
-- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. Only certificates with a `TrustRoot` or `TrustAsRoot` result count toward the flag, so a "Never Trust" entry does not raise it.
+- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. Only certificates with a `TrustRoot` or `TrustAsRoot` result count toward the finding, so a "Never Trust" entry does not raise it.
 
 ## Severities
 
-New flags, by section. Repeated findings give one flag with a count, and one risk gives one flag.
+New findings, by section. Repeated findings give one finding with a count, and one risk gives one finding.
 
-The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a real weakening, LOW for hygiene, INFO for inventory. Health flags (disk space, SMART status, kernel panics, memory) use a separate scale: HIGH means data loss or failure is likely soon.
+The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a real weakening, LOW for hygiene, INFO for inventory. Health findings (disk space, SMART status, kernel panics, memory) use a separate scale: HIGH means data loss or failure is likely soon.
 
 | Section | HIGH | MEDIUM | LOW | INFO |
 |---|---|---|---|---|

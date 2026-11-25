@@ -62,7 +62,7 @@ The script started as a scripted version of a manual review of the user's Mac mi
 
 ### Test results
 
-- Full local run on the Mac mini (macOS, Darwin 27.2.0) took about 1 minute 40 seconds. It produced 41 flags: HIGH 0, MEDIUM 14, LOW 19, INFO 8. The flags matched the earlier manual review.
+- Full local run on the Mac mini (macOS, Darwin 27.2.0) took about 1 minute 40 seconds. It produced 41 findings: HIGH 0, MEDIUM 14, LOW 19, INFO 8. The findings matched the earlier manual review.
 - The encoded remote path was tested locally, and it produced the same report. The bad-key error was tested ("Cannot read key: /nonexistent").
 - Not tested: remote mode against a real second Mac, because no other Mac accepted a key from this Mac.
 - Not tested: any run as root or with sudo.
@@ -127,7 +127,7 @@ Rules for B:
 1. Improve `-h`: print the whole header comment block, with examples and the install steps.
 2. Add the optional checks:
    - other local users and root (`/var/root`): `authorized_keys`, LaunchAgents, crontabs, shell startup patterns;
-   - sudoers contents: flag `NOPASSWD` rules other than mac-audit's (`NOPASSWD: ALL` is MEDIUM); flag `sudoers.d` files that the rules cannot read (added after install);
+   - sudoers contents: report `NOPASSWD` rules other than mac-audit's (`NOPASSWD: ALL` is MEDIUM); report `sudoers.d` files that the rules cannot read (added after install);
    - `bputil -d` (secure boot policy);
    - `profiles show -type configuration` as root (device-level profiles).
 3. Replace the remote `--sudo` option, which wraps the whole script in `sudo -n`.
