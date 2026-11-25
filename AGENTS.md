@@ -13,7 +13,9 @@
 
 ## Terminology
 
-- A flag is a command-line option, such as `--quick`. A finding is an entry in the report, with a severity. Do not call a finding a flag.
+- Use the terms of security assessment standards (NIST OSCAL, SARIF, the AWS Security Finding Format).
+- A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the Summary.
+- A flag is a command-line option, such as `--quick`. Do not call a finding a flag.
 
 ## Security Context
 
