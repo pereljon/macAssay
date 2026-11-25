@@ -43,7 +43,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
 - [x] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule. (resolved 2026-11-24): all four approved and built; see `dev/features/sudo-rules.md` (Decisions).
-- [ ] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`.
+- [/] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. T5, T7, T8, T9, and T11 pass; T10 is left, then the pre-merge review.
 - [ ] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
 
@@ -51,7 +51,7 @@ Do these in the change that gives the repo a public remote.
 
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [ ] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script?
-- [ ] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root.
+- [x] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root. (resolved 2026-11-24): yes, `#includedir /private/etc/sudoers.d`.
 - [ ] Continue macassay rather than adopt, fork, or contribute to another project? Recommended: continue. Deep reviews of mac-posture-audit and macharden found no remote mode and no sudo-rule model in either, and both cover about half of macassay's host checks; evidence is in `dev/prior-art.md`.
 - [x] Project name: pick one that does not overlap with the projects in `dev/prior-art.md` (several use `macaudit` or `mac-security-audit`). (resolved 2026-11-24): `macassay`. See Decisions.
 - [ ] Send the drafted security report on macharden's `eval` injection through its private advisory form? The draft is not in the repo; the user decides the channel.

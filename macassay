@@ -147,6 +147,8 @@ classify_sudoers() {
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
 redact_ids() { sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
 filter_bputil() { grep -iE 'security mode|system integrity|sip|kext|kernel extension|mdm|user-approved' | drop_ids; }
+# stdin: bputil -d output. Prints the boot security mode word (Full, Reduced, Permissive) from the smb0 line.
+bputil_mode() { awk -F: '/^Security Mode:/ { split($2, w, " "); print w[1]; exit }'; }
 filter_profiles() { grep -iE 'there (are|is) |name:|profileIdentifier:|organization:' | drop_ids; }
 
 # rc_hits FILE...: prints "file:line: pattern name" for each match.
@@ -701,8 +703,8 @@ h3 "Secure boot policy"
 if [ "$(uname -m)" != arm64 ]; then say "- bputil: not applicable on an Intel Mac"
 elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; then
   filter_bputil < "$TMP/bp" | block "bputil -d (security settings only)"
-  BPM=$(filter_bputil < "$TMP/bp" | grep -i 'security mode' | grep -vi full | head -1)
-  [ -n "$BPM" ] && flag MEDIUM Security "Secure boot policy is not Full Security: $BPM"
+  BPM=$(bputil_mode < "$TMP/bp" | clean_field)
+  [ -n "$BPM" ] && [ "$BPM" != Full ] && flag MEDIUM Security "Secure boot policy is not Full Security: $BPM."
 else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
 h3 "Device configuration profiles"
 if priv "profiles (device)" /usr/bin/profiles list -type configuration > "$TMP/prof" 2>/dev/null; then

@@ -119,19 +119,25 @@ check "F6 continued line joined" has "$T/f6" "erin ALL = (root) NOPASSWD: ALL"
 check "F6 comments, includes and Defaults ignored" [ "$(wc -l < "$T/f6" | tr -d ' ')" -eq 8 ]
 
 # F7: allow-lists keep settings and drop identifiers.
+# The bputil fixture follows real macOS 27.2 output, with identifiers replaced.
 cat > "$T/bputil" <<'EOF'
-OS Type                       : macOS
-Local Policy Nonce Hash (lpnh): 1234567890ABCDEF1234567890ABCDEF12345678
-Security Mode: Full (smb0): absent
-System Integrity Protection (SIP) : enabled
-Volume Group UUID security mode: 11111111-2222-3333-4444-555555555555
-3rd Party Kexts Status (smb2): disabled
+OS Type                                       : macOS
+Local Policy Nonce Hash                 (lpnh): 1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF
+Unique Chip ID                          (ECID): 0x123456789ABCDE
+Security Mode                           (CSEC): 1
+Volume Group UUID                       (vuid): 11111111-2222-3333-4444-555555555555
+Security Mode:               Reduced    (smb0): 1
+3rd Party Kexts Status:      Enabled    (smb2): 1
+DEP-allowed MDM Control:     Enabled    (smb4): 1
+SIP Status:                  Enabled    (sip0): absent
 EOF
 filter_bputil < "$T/bputil" > "$T/f7b"
-check "F7 bputil keeps the security mode" has "$T/f7b" "Security Mode: Full"
-check "F7 bputil keeps SIP" has "$T/f7b" "System Integrity Protection"
+check "F7 bputil keeps the security mode" has "$T/f7b" "Security Mode:               Reduced"
+check "F7 bputil keeps SIP" has "$T/f7b" "SIP Status"
 check "F7 bputil keeps kexts" has "$T/f7b" "Kexts Status"
-check "F7 bputil drops UUIDs and hashes" [ -z "$(grep -E '1111|ABCDEF' "$T/f7b")" ]
+check "F7 bputil drops UUIDs, hashes and the chip ID" [ -z "$(grep -E '1111|ABCDEF|ECID' "$T/f7b")" ]
+check "F7 bputil mode from the smb0 line" [ "$(bputil_mode < "$T/bputil")" = Reduced ]
+check "F7 bputil mode Full" [ "$(printf 'Security Mode                           (CSEC): 1\nSecurity Mode:               Full       (smb0): absent\n' | bputil_mode)" = Full ]
 cat > "$T/profiles" <<'EOF'
 There are 2 configuration profiles installed
 _computerlevel[1] attribute: name: Wi-Fi

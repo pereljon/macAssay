@@ -68,6 +68,8 @@ These were checked on the Mac mini on 2026-11-24.
 - `ssh-keygen -l -f ~/.ssh/authorized_keys` prints bits, fingerprint, comment, and key type, and never prints key data.
 - `/usr/bin/readlink -f` resolves a symlink chain.
 - `/usr/sbin/sshd -G` runs as the user and prints `Port`, `UsePAM`, `PermitRootLogin`, `PubkeyAuthentication`, `PasswordAuthentication`, and `KbdInteractiveAuthentication`, with capitalized key names. `sshd -T` prints lowercase names and needs root to load the host keys.
+- `bputil -d` prints the policy twice in effect: a raw `Security Mode (CSEC): 1` line, and a readable `Security Mode: Reduced (smb0): 1` line. Only the `smb0` line names the mode. It also prints the chip ID (ECID), UUIDs, and hashes.
+- `/etc/sudoers` contains `#includedir /private/etc/sudoers.d` (read through the installed rules).
 - `profiles list -type configuration` run as the user prints "There are no configuration profiles installed for user 'USER'" on this Mac.
 - `/var/root` is `root:wheel 750`. `/Users` is `root:admin 755`. `/usr/local/bin` is `root:wheel 755`.
 - The macOS `awk` (20200816) does not support `\s`.
@@ -78,8 +80,7 @@ These were checked on the Mac mini on 2026-11-24.
 
 Assumptions not yet verified:
 
-- `/etc/sudoers` contains an `includedir` line for `sudoers.d`. The installer checks it as root and warns when it is missing.
-- The output formats of `bputil -d` and root `profiles list -type configuration` are unknown, because both need root. Test T9 confirms the allow-lists.
+- The output of root `profiles list -type configuration` with a device profile installed is unknown; this Mac has none. Test T8 checks it on a Mac that has one.
 - `osascript -e 'do shell script "..." with administrator privileges'` authorizes through Authorization Services, not sudo, so it works when a sudoers file fails to parse (training knowledge; not tested here).
 - The root-run program check may also flag root daemons inside `/Applications` app bundles, because `/Applications` is `root:admin 775`. The first run on this Mac shows how many fire (test T8), and the severity for admin-group write is settled then.
 - `du` over protected home folders may raise privacy prompts for a terminal without Full Disk Access. Test T4 checks for prompts.
@@ -217,7 +218,7 @@ The rules list accounts and `sudoers.d` files as they were at install time. Reru
 Section 15 always appears. A skipped check prints one line with its reason.
 
 - **Sudoers contents.** Show the non-comment lines of `/etc/sudoers` and each readable `sudoers.d` file. A line that starts with `#` and a digit is a rule for a user ID, not a comment. A NOPASSWD rule whose command list contains `ALL`, after any tags, is MEDIUM. Another NOPASSWD rule outside the macassay file is LOW. A `sudoers.d` file with no matching rule is INFO: "rerun --install-sudoers". The macassay file itself raises no flag; the existing section 9 INFO flag for `sudoers.d` files excludes it.
-- **Secure boot policy.** `bputil -d </dev/null`, so the volume prompt cannot block the run. `filter_bputil` keeps only lines that name the security mode, SIP, kernel extensions, or MDM, and drops any line that holds a UUID or a hex string of 32 characters or more. A security mode other than Full is MEDIUM.
+- **Secure boot policy.** `bputil -d </dev/null`, so the volume prompt cannot block the run. `bputil_mode` reads the mode from the `Security Mode:` (`smb0`) line. `filter_bputil` keeps only lines that name the security mode, SIP, kernel extensions, or MDM, and drops any line that holds a UUID or a hex string of 32 characters or more. A security mode other than Full is MEDIUM.
 - **Device profiles.** `profiles list -type configuration`. `filter_profiles` keeps only profile name, identifier, and organization lines.
 - **Other accounts and root.** For each account in the rules:
   - `authorized_keys`: `ssh-keygen -l` output (bits, fingerprint, comment, type).
