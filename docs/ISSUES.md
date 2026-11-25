@@ -15,7 +15,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 - [x] Version 1.2: per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`. (resolved 2026-11-24): merged into `master`; tests pass there. Open checks: `profiles list` output with a device profile installed, and T19 on a second Mac.
 
-Version 1.3 (built on `feature/checks-1.3`, not yet merged; design `dev/features/checks-1.3.md`; plan `docs/superpowers/plans/2026-11-24-checks-1.3.md`; verification results in `dev/features/checks-1.3-tests.md`; pre-merge review next): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
+Version 1.3 (released 2026-11-25 as v1.3.0; design `dev/features/checks-1.3.md`; plan `docs/superpowers/plans/2026-11-24-checks-1.3.md`; verification results and review record in `dev/features/checks-1.3-tests.md`): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
 
 - [x] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`). (resolved 2026-11-25): built on `feature/checks-1.3`.
@@ -31,6 +31,10 @@ Version 1.3 (built on `feature/checks-1.3`, not yet merged; design `dev/features
 - [x] Battery health on laptops. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Recent non-Apple installs (`pkgutil`, install history). (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults. The `secure_path` check was dropped (decision B9). (resolved 2026-11-25): built on `feature/checks-1.3`.
+
+Version 1.4 (needs a design doc and test plan):
+
+- [ ] Homebrew packages and casks: count outdated formulae and casks separately and list their names; add an optional `--greedy` count for casks that update themselves or track `latest`; report third-party taps and the tap of each installed package, and Homebrew settings such as `HOMEBREW_CASK_OPTS` (`--no-quarantine`) and `HOMEBREW_VERIFY_ATTESTATIONS` (register I018); check cask apps for removed quarantine and missing notarization. 1.3 reports only one `brew outdated --quiet` count (MA-UPDATES-002). The design must weigh the run time and network use of `brew info --json=v2 --installed` and `--greedy`.
 
 Later:
 
