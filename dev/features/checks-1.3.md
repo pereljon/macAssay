@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: building
-status: 2026-11-24 approved after the architecture and delta reviews; building per docs/superpowers/plans/2026-11-24-checks-1.3.md
+status: built; pre-merge review next
 ---
 
 # Report by theme and new checks (version 1.3)
@@ -94,6 +94,7 @@ Checked on this Mac, 2026-11-24, as the user without sudo:
 - `DiscoverableMode` values are `Everyone`, `Contacts Only`, and `Off` (training knowledge).
 - Chromium browsers read `ExtensionInstallForcelist` from `/Library/Managed Preferences/<domain>.plist` (MDM) and `/Library/Preferences/<domain>.plist` (local) (training knowledge).
 - `nvram boot-args` reads without root on Intel Macs as on Apple silicon (not tested on Intel).
+- The Firefox policy plist may hold forced extensions under an `EnterprisePolicies.*` key path rather than the key the check reads (training knowledge; not verified on a Mac with Firefox policies).
 
 ## Report outline
 

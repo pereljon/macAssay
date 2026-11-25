@@ -8,29 +8,29 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 - [x] Root mode shows root's crontab as the user's when the user has none: `crontab -u USER -l || crontab -l` falls through (`mac-audit.sh:273`, ShellCheck SC2015). (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
 - [x] The home-folder `du` glob passes file names that start with `-` to `du` as options (`mac-audit.sh:327`, ShellCheck SC2035). File names on the audited Mac are untrusted input. (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
 - [x] More 1.1 bugs from the architecture review, all fixed by the 1.2 design (`dev/features/sudo-rules.md`, 1.1 fixes): shell startup line text copied into the report; `kmutil` UUIDs in the report; `awk \s` in `authorized_keys`; untrusted text can add report rows; the SSH finding misses keyboard-interactive; a missing option value loops forever; truncation has no marker; remote `sudo bash` uses the remote `PATH`; a root audit reads the user's `PATH`, `HOME` rc files, and writes the report through a symlink. (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
-- [ ] Certificate labels in section 14 can carry a 32-character hex identifier, such as a Cloudflare account ID in a gateway CA name (found in the 1.2 pre-merge review; present in 1.1). Consider masking long hex strings in certificate labels in 1.3.
+- [x] Certificate labels in section 14 can carry a 32-character hex identifier, such as a Cloudflare account ID in a gateway CA name (found in the 1.2 pre-merge review; present in 1.1). Consider masking long hex strings in certificate labels in 1.3. (resolved 2026-11-25): `mask_hex` masks them on `feature/checks-1.3`; the M3 check on a full run found no 32-character hex string, and a gateway CA label with a long hex ID shows `<ID>`.
 - [ ] Without the sudo rules, the listener table misses root-owned listeners (sshd, smbd, screen sharing, kdc): unprivileged `netstat -anv` stopped listing them on this Mac on 2026-11-24, though `nc` still connects (seen in the 1.3 Task 1 runs; cause not verified). 1.2 behaves the same.
 
 ## Planned
 
 - [x] Version 1.2: per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`. (resolved 2026-11-24): merged into `master`; tests pass there. Open checks: `profiles list` output with a device profile installed, and T19 on a second Mac.
 
-Version 1.3 (designing on `feature/checks-1.3`; design `dev/features/checks-1.3.md`; architecture and delta reviews done; design approved; plan `docs/superpowers/plans/2026-11-24-checks-1.3.md`; build next): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
+Version 1.3 (built on `feature/checks-1.3`, not yet merged; design `dev/features/checks-1.3.md`; plan `docs/superpowers/plans/2026-11-24-checks-1.3.md`; verification results in `dev/features/checks-1.3-tests.md`; pre-merge review next): every check below, the priority-A ideas I001 to I012, and I013, I015, I016 in `dev/prior-art-ideas.md`, and the certificate-label bug. Checks proposed by the architecture review (2026-11-24), ranked by value:
 
-- [ ] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation.
-- [ ] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`).
-- [ ] User-domain certificate trust (`security dump-trust-settings` without `-d`).
-- [ ] Authorization plugins, PAM modules, StartupItems, ScriptingAdditions, directory service and audio plug-ins.
-- [ ] Login items registered inside app bundles (`launchctl print gui/UID`).
-- [ ] Accounts: extra UID 0, hidden accounts, home folders readable or writable by others.
-- [ ] Browser policies that force-install extensions.
-- [ ] Quarantine turned off (`LSQuarantine`).
-- [ ] SSH private keys: loose permissions, no passphrase.
-- [ ] More sharing services: Remote Apple Events (TCP 3031), printer sharing, Internet Sharing, AirDrop discoverable by everyone.
-- [ ] Time Machine policy: `AutoBackup` off, home folder excluded.
-- [ ] Battery health on laptops.
-- [ ] Recent non-Apple installs (`pkgutil`, install history).
-- [ ] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults, no `secure_path`.
+- [x] Boot and code-signing settings: `nvram boot-args` (never `nvram -p`), `csrutil authenticated-root status`, library validation. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] User-domain certificate trust (`security dump-trust-settings` without `-d`). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Authorization plugins, PAM modules, StartupItems, ScriptingAdditions, directory service and audio plug-ins. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Login items registered inside app bundles (`launchctl print gui/UID`). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Accounts: extra UID 0, hidden accounts, home folders readable or writable by others. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Browser policies that force-install extensions. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Quarantine turned off (`LSQuarantine`). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] SSH private keys: loose permissions, no passphrase. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] More sharing services: Remote Apple Events (TCP 3031), printer sharing, Internet Sharing, AirDrop discoverable by everyone. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Time Machine policy: `AutoBackup` off, home folder excluded. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Battery health on laptops. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Recent non-Apple installs (`pkgutil`, install history). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults, no `secure_path`. (resolved 2026-11-25): built on `feature/checks-1.3`.
 
 Later:
 
@@ -48,6 +48,9 @@ Do these in the change that gives the repo a public remote.
 
 ## Next steps
 
+- [ ] L1: read the battery condition and maximum capacity on a laptop; the `system_profiler SPPowerDataType` field names are from training knowledge (`dev/features/checks-1.3-tests.md`).
+- [ ] T19 and X1: run remote mode against a second Mac. X1 was skipped on 2026-11-25 because `ssh localhost` failed host key verification.
+- [ ] Verify the open 1.3 assumptions in `dev/features/checks-1.3.md` (battery fields, `DiscoverableMode` values, Chromium and Firefox forced-extension key paths, `nvram boot-args` on Intel).
 - [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
