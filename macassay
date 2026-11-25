@@ -517,6 +517,70 @@ bind_class() {
 debug_findings() {
   awk -F'\t' '{ if (!($1 in w)) { o[++n] = $1; w[$1] = $3 } else w[$1] = w[$1] "; " $3; if ($2 == "nonloopback") h[$1] = 1 }
     END { for (i = 1; i <= n; i++) print (h[o[i]] ? "HIGH" : "MEDIUM") "\t" o[i] "\t" w[o[i]] }'; }
+# Credential files under the home folder, a tab, then an extended regex for an inline secret.
+# A value that starts with $ names an environment variable and does not count.
+CRED_FILES=$(printf '%s\n' \
+  $'.netrc\t(^|[[:space:]])password[[:space:]]+[^$[:space:]]' \
+  $'.aws/credentials\t^[[:space:]]*(aws_secret_access_key|aws_session_token)[[:space:]]*=[[:space:]]*[^$[:space:]]' \
+  $'.git-credentials\t[^[:space:]]' \
+  $'.npmrc\t(_authToken|_auth|_password)[[:space:]]*=[[:space:]]*[^$[:space:]]' \
+  $'.pypirc\t^[[:space:]]*password[[:space:]]*[=:][[:space:]]*[^$[:space:]]' \
+  $'.docker/config.json\t"(auth|identitytoken)"[[:space:]]*:[[:space:]]*"[^"$]' \
+  $'.kube/config\t^[[:space:]]*(token|password|client-key-data):[[:space:]]*[^$[:space:]]' \
+  $'.config/gh/hosts.yml\t^[[:space:]]*oauth_token:[[:space:]]*[^$[:space:]]')
+# has_key FILE PATTERN: succeeds when FILE has a line that matches PATTERN. Prints nothing; the only way credential files are read.
+has_key() { grep -qsE -- "$2" "$1"; }
+# cred_scan HOME: prints "path<TAB>mode owner<TAB>yes|no" for each credential file present; yes means an inline secret.
+cred_scan() {
+  local rel re f o s
+  printf '%s\n' "$CRED_FILES" | while IFS=$'\t' read -r rel re; do
+    f="$1/$rel"; [ -e "$f" ] || continue
+    o=$(stat -L -f '%Sp %Su' "$f" 2>/dev/null) || continue
+    if has_key "$f" "$re"; then s=yes; else s=no; fi
+    printf '%s\t%s\t%s\n' "$rel" "$o" "$s"
+  done; }
+# ssh_key_state FILE: prints "no passphrase" or "passphrase" for a private key file, nothing for other files.
+# Reads the header line and at most 31 characters of line 2; never decodes or runs a tool on the key.
+ssh_key_state() {
+  local l1
+  l1=$(head -n 1 "$1" 2>/dev/null)
+  case "$l1" in
+    "-----BEGIN OPENSSH PRIVATE KEY-----")
+      if [ "$(sed -n 2p "$1" | cut -c1-31)" = b3BlbnNzaC1rZXktdjEAAAAABG5vbmU ]; then echo "no passphrase"; else echo passphrase; fi ;;
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----") echo passphrase ;;
+    "-----BEGIN "*"PRIVATE KEY-----") if head -n 3 "$1" | grep -q ENCRYPTED; then echo passphrase; else echo "no passphrase"; fi ;;
+  esac; }
+# ssh_pub_summary FILE: prints "file<TAB>bits<TAB>(TYPE)" for a public key, without its comment.
+ssh_pub_summary() { ssh-keygen -l -f "$1" 2>/dev/null | awk -v f="${1##*/}" '{print f "\t" $1 "\t" $NF}'; }
+# ssh_cfg FILE DEPTH SCOPE: prints "SCOPE ForwardAgent" for ForwardAgent yes, "SCOPE StrictHostKeyChecking" for
+# StrictHostKeyChecking no or off, and "block" for each Host or Match block that is not for every host.
+# SCOPE is "all" before the first Host or Match line and under Host *, and "host" elsewhere.
+# Follows Include like ssh does; the SSH_SEEN list and a depth limit of 16 stop loops. Config text is never run.
+ssh_cfg() {
+  local f="$1" depth="$2" scope="$3" line key val pat g base
+  local -a pats
+  if [ "$depth" -gt 16 ] || [ ! -f "$f" ] || [ ! -r "$f" ]; then return 0; fi
+  printf '%s\n' "$SSH_SEEN" | grep -qxF -- "$f" && return 0
+  SSH_SEEN="$SSH_SEEN"$'\n'"$f"
+  case "$f" in /etc/ssh/*) base=/etc/ssh ;; *) base="$THOME/.ssh" ;; esac
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|'#'*) continue ;; esac
+    key=$(printf '%s' "${line%%[[:space:]=]*}" | tr '[:upper:]' '[:lower:]')
+    val="${line#*[[:space:]=]}"; val="${val#"${val%%[![:space:]=]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+    case "$key" in
+      host) if [ "$val" = "*" ]; then scope=all; else scope=host; echo block; fi ;;
+      match) case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" in all) scope=all ;; *) scope=host; echo block ;; esac ;;
+      include)
+        read -ra pats <<< "$val"
+        for pat in "${pats[@]}"; do
+          case "$pat" in *%*|*'$'*) continue ;; \~/*) pat="$THOME/${pat#\~/}" ;; /*) ;; *) pat="$base/$pat" ;; esac
+          while IFS= read -r g; do ssh_cfg "$g" $((depth + 1)) "$scope"; done < <(compgen -G "$pat")
+        done ;;
+      forwardagent) [ "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" = yes ] && echo "$scope ForwardAgent" ;;
+      stricthostkeychecking) case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" in no|off) echo "$scope StrictHostKeyChecking" ;; esac ;;
+    esac
+  done < "$f"; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -1144,6 +1208,50 @@ done
 
 # ---------- 11. Credentials and keys ----------
 h2 "11. Credentials and keys"
+cred_scan "$THOME" > "$TMP/cred"
+if [ -s "$TMP/cred" ]; then
+  awk -F'\t' '{print $1 ": " $2 ", inline secret: " $3}' "$TMP/cred" | block "Credential files in the home folder (file, mode and owner, inline secret)"
+  CRH=$(awk -F'\t' '$3 == "yes" && (substr($2, 5, 1) == "r" || substr($2, 8, 1) == "r") {print $1}' "$TMP/cred" | paste -sd, -)
+  CRL=$(awk -F'\t' '$3 == "yes" && substr($2, 5, 1) != "r" && substr($2, 8, 1) != "r"' "$TMP/cred" | grep -c .)
+  [ -n "$CRH" ] && finding MA-CREDENTIALS-001 HIGH Credentials "Credential files with inline secrets are readable by other accounts: $CRH"
+  [ "$CRL" -gt 0 ] && finding MA-CREDENTIALS-003 LOW Credentials "$CRL credential file(s) hold inline secrets, readable by the owner only (see section 11)."
+else say "- Credential files in the home folder: none"; fi
+: > "$TMP/keys"
+for f in "$THOME"/.ssh/*; do [ -f "$f" ] || continue
+  st=$(ssh_key_state "$f"); [ -n "$st" ] || continue
+  printf '%s\t%s\t%s\n' "${f##*/}" "$(stat -L -f '%Sp' "$f" 2>/dev/null)" "$st" >> "$TMP/keys"
+done
+if [ -s "$TMP/keys" ]; then
+  awk -F'\t' '{print $1 ": " $2 ", " $3}' "$TMP/keys" | block "SSH private keys (file, mode, passphrase)"
+  KR=$(awk -F'\t' 'substr($2, 5, 1) == "r" || substr($2, 8, 1) == "r" {print $1}' "$TMP/keys" | paste -sd, -)
+  KN=$(awk -F'\t' '$3 == "no passphrase" && substr($2, 5, 1) != "r" && substr($2, 8, 1) != "r" {print $1}' "$TMP/keys" | paste -sd, -)
+  [ -n "$KR" ] && finding MA-CREDENTIALS-002 HIGH Credentials "SSH private keys are readable by other accounts: $KR"
+  [ -n "$KN" ] && finding MA-CREDENTIALS-004 LOW Credentials "$(printf '%s' "$KN" | tr ',' '\n' | grep -c .) SSH private key(s) have no passphrase: $KN"
+else say "- SSH private keys in ~/.ssh: none"; fi
+: > "$TMP/pub"
+for f in "$THOME"/.ssh/*.pub; do [ -f "$f" ] || continue
+  [ -n "$(ssh_key_state "$f")" ] && continue
+  ssh_pub_summary "$f" >> "$TMP/pub"
+done
+if [ -s "$TMP/pub" ]; then
+  awk -F'\t' '{print $1 ": " $2 " " $3}' "$TMP/pub" | block "SSH public keys (file, bits, type)"
+  KW=$(awk -F'\t' '$3 == "(DSA)" || ($3 == "(RSA)" && $2 < 2048) {print $1}' "$TMP/pub" | paste -sd, -)
+  [ -n "$KW" ] && finding MA-CREDENTIALS-005 MEDIUM Credentials "Weak SSH keys (DSA, or RSA under 2048 bits): $KW"
+fi
+SSH_SEEN=""
+{ ssh_cfg "$THOME/.ssh/config" 1 all; ssh_cfg /etc/ssh/ssh_config 1 all
+  for f in /etc/ssh/ssh_config.d/*; do ssh_cfg "$f" 1 all; done; } > "$TMP/sshc"
+for opt in ForwardAgent StrictHostKeyChecking; do
+  if grep -qx "all $opt" "$TMP/sshc"; then sc="every host"; elif grep -qx "host $opt" "$TMP/sshc"; then sc="specific hosts"; else sc="not set"; fi
+  case "$opt" in ForwardAgent) say "- SSH client ForwardAgent yes: $sc" ;; *) say "- SSH client StrictHostKeyChecking no: $sc" ;; esac
+  case "$opt/$sc" in
+    "ForwardAgent/every host") finding MA-CREDENTIALS-006 MEDIUM Credentials "SSH agent forwarding is on for every host (ForwardAgent yes)." ;;
+    "ForwardAgent/specific hosts") finding MA-CREDENTIALS-008 LOW Credentials "SSH agent forwarding is on for some hosts (ForwardAgent yes)." ;;
+    "StrictHostKeyChecking/every host") finding MA-CREDENTIALS-007 MEDIUM Credentials "SSH host key checking is off for every host (StrictHostKeyChecking no)." ;;
+    "StrictHostKeyChecking/specific hosts") finding MA-CREDENTIALS-009 LOW Credentials "SSH host key checking is off for some hosts (StrictHostKeyChecking no)." ;;
+  esac
+done
+say "- SSH client Host and Match blocks other than Host *: $(grep -cx block "$TMP/sshc")"
 
 # ---------- 12. Shell, developer and AI tools ----------
 h2 "12. Shell, developer and AI tools"

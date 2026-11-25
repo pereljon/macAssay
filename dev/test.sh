@@ -468,5 +468,74 @@ check "G22 group-writable folder" [ -n "$(sudo_owner_risk /etc/sudoers.d 'root:w
 check "G22 sudo without setuid" [ -n "$(sudo_owner_risk /usr/bin/sudo 'root:wheel -r-x--x--x')" ]
 check "G22 stock sudo" [ -z "$(sudo_owner_risk /usr/bin/sudo 'root:wheel -r-s--x--x')" ]
 
+# G3: credential files. Presence, mode and inline-secret state only.
+cred_home() { mkdir -p "$1/.aws" "$1/.docker" "$1/.kube" "$1/.config/gh"; }
+H1="$T/h1"; cred_home "$H1"
+printf 'machine x login u password SECRET_A\n' > "$H1/.netrc"
+printf '[prof_SECRET]\naws_access_key_id = AKIDEXAMPLE\naws_secret_access_key = SECRET_B\n' > "$H1/.aws/credentials"
+printf 'https://u:SECRET_C@github.com\n' > "$H1/.git-credentials"
+printf '//registry.npmjs.org/:_authToken=SECRET_D\n' > "$H1/.npmrc"
+printf '[pypi]\nusername = u\npassword = SECRET_E\n' > "$H1/.pypirc"
+printf '{"auths":{"r":{"auth":"SECRET_F"}}}\n' > "$H1/.docker/config.json"
+printf 'users:\n- name: x\n  user:\n    token: SECRET_G\n' > "$H1/.kube/config.real"; ln -s config.real "$H1/.kube/config"
+printf 'github.com:\n    oauth_token: SECRET_H\n' > "$H1/.config/gh/hosts.yml"
+chmod 644 "$H1/.netrc"
+H2="$T/h2"; cred_home "$H2"
+printf 'machine x login u\n' > "$H2/.netrc"
+printf '[default]\naws_access_key_id = AKIDEXAMPLE\n' > "$H2/.aws/credentials"
+: > "$H2/.git-credentials"
+printf '//registry.npmjs.org/:_authToken=${NPM_TOKEN}\n' > "$H2/.npmrc"
+printf '[pypi]\nusername = u\n' > "$H2/.pypirc"
+printf '{"credsStore":"osxkeychain"}\n' > "$H2/.docker/config.json"
+printf 'users:\n- name: x\n  user:\n    exec: {}\n' > "$H2/.kube/config"
+printf 'github.com:\n    user: u\n' > "$H2/.config/gh/hosts.yml"
+cred_scan "$H1" > "$T/g3a"; cred_scan "$H2" > "$T/g3b"
+check "G3 no secret value or profile name" [ -z "$(cat "$T/g3a" "$T/g3b" | grep -E 'SECRET|AKID|prof_')" ]
+check "G3 eight files with an inline secret" [ "$(awk -F'\t' '$3 == "yes"' "$T/g3a" | grep -c .)" -eq 8 ]
+check "G3 eight files without one" [ "$(awk -F'\t' '$3 == "no"' "$T/g3b" | grep -c .)" -eq 8 ]
+check "G3 mode shown" has "$T/g3a" $'.netrc\t-rw-r--r--'
+check "G3 symlinked file reports the target mode" [ "$(awk -F'\t' '$1 == ".kube/config" {print substr($2, 1, 10)}' "$T/g3a")" = "-rw-------" ]
+# G4: SSH private keys from headers only.
+K="$T/keys"; mkdir "$K"
+ssh-keygen -q -t ed25519 -N '' -C SECRET_C1 -f "$K/plain"
+ssh-keygen -q -t ed25519 -N 'test-passphrase' -f "$K/locked"
+ssh-keygen -q -t rsa -b 2048 -m PEM -N '' -f "$K/pem_plain"
+ssh-keygen -q -t rsa -b 2048 -m PEM -N 'test-passphrase' -f "$K/pem_locked"
+ssh-keygen -q -t rsa -b 2048 -m PKCS8 -N 'test-passphrase' -f "$K/p8"
+{ head -1 "$K/plain"; sed '1d;$d' "$K/plain" | tr -d '\n'; echo; tail -1 "$K/plain"; } > "$K/oneline"
+cp "$K/plain" "$K/x.pub"; echo "not a key" > "$K/notes"
+check "G4 OpenSSH none" [ "$(ssh_key_state "$K/plain")" = "no passphrase" ]
+check "G4 OpenSSH with a passphrase" [ "$(ssh_key_state "$K/locked")" = passphrase ]
+check "G4 PEM without ENCRYPTED" [ "$(ssh_key_state "$K/pem_plain")" = "no passphrase" ]
+check "G4 PEM with ENCRYPTED" [ "$(ssh_key_state "$K/pem_locked")" = passphrase ]
+check "G4 PKCS#8 encrypted" [ "$(ssh_key_state "$K/p8")" = passphrase ]
+check "G4 one-line OpenSSH key" [ "$(ssh_key_state "$K/oneline")" = "no passphrase" ]
+check "G4 not a key" [ -z "$(ssh_key_state "$K/notes")" ]
+check "G4 private key named .pub is a private key" [ "$(ssh_key_state "$K/x.pub")" = "no passphrase" ]
+check "G4 private-key function never runs ssh-keygen" [ -z "$(type ssh_key_state | grep ssh-keygen)" ]
+check "G4 public summary has no comment" [ -z "$(ssh_pub_summary "$K/plain.pub" | grep SECRET)" ]
+check "G4 public summary bits and type" [ "$(ssh_pub_summary "$K/plain.pub" | cut -f2,3)" = $'256\t(ED25519)' ]
+# G5, G18: SSH client options, Include handling, and loops.
+S="$T/ssh"; mkdir -p "$S/home/.ssh" "$S/inc"
+cat > "$S/home/.ssh/config" <<EOF
+ForwardAgent yes
+Include $S/inc/*.conf
+Include \$(touch $T/pwned)
+Include ~/.ssh/config
+Host secret-host.example
+  StrictHostKeyChecking=no
+Host *
+  StrictHostKeyChecking off
+EOF
+printf 'Host other.example\n  ForwardAgent yes\n' > "$S/inc/a.conf"
+( THOME="$S/home"; SSH_SEEN=""; ssh_cfg "$S/home/.ssh/config" 1 all ) > "$T/g5"
+check "G5 option before the first Host applies to every host" has "$T/g5" "all ForwardAgent"
+check "G5 Include outside ~/.ssh under a named host" has "$T/g5" "host ForwardAgent"
+check "G5 Key=value under a named host" has "$T/g5" "host StrictHostKeyChecking"
+check "G5 off under Host *" has "$T/g5" "all StrictHostKeyChecking"
+check "G5 host names not in the output" hasnt "$T/g5" "example"
+check "G18 self-include read once" [ "$(grep -c 'all ForwardAgent' "$T/g5")" -eq 1 ]
+check "G18 Include text is never run" [ ! -e "$T/pwned" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
