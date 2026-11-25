@@ -126,5 +126,11 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 
 - R0, R1, R2 (commit 1): pass.
 - R1 reviewed by hand as noise: process lists, memory and CPU rows, and established outbound connections (live state).
-- R1 reviewed by hand as environment: the quick run lists fewer listeners and no UDP 69 line because unprivileged lsof now sees no root-owned sockets; the 1.2 script run now against the same Mac gives the same 11 listener rows as commit 1.
+- R1 reviewed by hand as environment: the quick run lists 11 listener rows against 17 in the baseline, and no UDP 69 line. Inferred, not verified: unprivileged `netstat` no longer lists root-owned listeners on this Mac. A rerun of the 1.2 script without the sudo rules matched commit 1.
 - R1 reviewed by hand as Mac state: the full run lists new Google Drive and launchd listener rows and no UDP 69 TFTP finding.
+
+## Task reviews
+
+- Task 1 review, Minor 1: Results line stated an inferred cause as fact and named lsof instead of netstat: fixed; root AGENTS.md (say what was verified).
+- Task 1 review, Minor 2: listener row counts disagreed (10 and 11): fixed with Minor 1; no requirement, fixed in the same line.
+- Task 1 review, Minor 3: commit trailer names Opus, reviewer expected Sonnet: dropped; the controller specified that trailer, no requirement broken.
