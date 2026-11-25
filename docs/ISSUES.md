@@ -21,8 +21,8 @@ Version 1.3 (built on `feature/checks-1.3`, not yet merged; design `dev/features
 - [x] Update safety settings (`CriticalUpdateInstall`, `ConfigDataInstall`) and XProtect age (`xprotect version`). (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] User-domain certificate trust (`security dump-trust-settings` without `-d`). (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Authorization plugins, PAM modules, StartupItems, ScriptingAdditions, directory service and audio plug-ins. (resolved 2026-11-25): built on `feature/checks-1.3`.
-- [x] Login items registered inside app bundles (`launchctl print gui/UID`). (resolved 2026-11-25): built on `feature/checks-1.3`.
-- [x] Accounts: extra UID 0, hidden accounts, home folders readable or writable by others. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Login items registered inside app bundles (a `find` under /Applications and ~/Applications). (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Accounts: extra UID 0, hidden accounts, home folders writable by others. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Browser policies that force-install extensions. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Quarantine turned off (`LSQuarantine`). (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] SSH private keys: loose permissions, no passphrase. (resolved 2026-11-25): built on `feature/checks-1.3`.
@@ -30,7 +30,7 @@ Version 1.3 (built on `feature/checks-1.3`, not yet merged; design `dev/features
 - [x] Time Machine policy: `AutoBackup` off, home folder excluded. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Battery health on laptops. (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Recent non-Apple installs (`pkgutil`, install history). (resolved 2026-11-25): built on `feature/checks-1.3`.
-- [x] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults, no `secure_path`. (resolved 2026-11-25): built on `feature/checks-1.3`.
+- [x] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults. The `secure_path` check was dropped (decision B9). (resolved 2026-11-25): built on `feature/checks-1.3`.
 
 Later:
 
@@ -50,7 +50,7 @@ Do these in the change that gives the repo a public remote.
 
 - [ ] L1: read the battery condition and maximum capacity on a laptop; the `system_profiler SPPowerDataType` field names are from training knowledge (`dev/features/checks-1.3-tests.md`).
 - [ ] T19 and X1: run remote mode against a second Mac. X1 was skipped on 2026-11-25 because `ssh localhost` failed host key verification.
-- [ ] Verify the open 1.3 assumptions in `dev/features/checks-1.3.md` (battery fields, `DiscoverableMode` values, Chromium and Firefox forced-extension key paths, `nvram boot-args` on Intel).
+- [ ] Verify the open 1.3 assumptions in `dev/features/checks-1.3.md` (battery fields, `DiscoverableMode` values, Chromium forced-extension key paths, `nvram boot-args` on Intel). The Firefox key path is resolved (2026-11-25): it matches Mozilla's policy-templates documentation.
 - [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
