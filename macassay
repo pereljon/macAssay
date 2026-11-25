@@ -128,7 +128,8 @@ gen_rules() {
 # classify_refusal EXIT_STATUS STDERR_FILE: succeeds when sudo itself refused or could not run the command.
 classify_refusal() { [ "$1" -eq 1 ] && grep -qE '^sudo: |is not allowed to execute|may not run sudo' "$2"; }
 
-# stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>rule" for each NOPASSWD rule; joins continued lines.
+# stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>rule<TAB>programs" for each NOPASSWD rule; joins continued lines.
+# Programs lists the absolute paths in a LOW rule, for the writable check in sudoers_findings.
 classify_sudoers() {
   awk '
     { sub(/\r$/, "") }
@@ -139,9 +140,60 @@ classify_sudoers() {
     line ~ /^Defaults/ { next }
     line !~ /NOPASSWD/ { next }
     { rest = substr(line, index(line, "NOPASSWD") + 8) }
-    rest ~ /(^|[:, ])ALL( |,|$)/ { print "MA-ACCOUNTS-005\tMEDIUM\t" line; next }
-    { print "MA-ACCOUNTS-006\tLOW\t" line }'
+    rest ~ /(^|[:, ])ALL( |,|$)/ { print "MA-ACCOUNTS-005\tHIGH\t" line "\t"; next }
+    { n = split(rest, items, ","); progs = ""
+      for (i = 1; i <= n; i++) { c = items[i]; sub(/^[: ]+/, "", c); while (c ~ /^[A-Z_]+: */) sub(/^[A-Z_]+: */, "", c)
+        split(c, w, " "); if (w[1] ~ /^\//) progs = progs (progs == "" ? "" : " ") w[1] }
+      print "MA-ACCOUNTS-006\tLOW\t" line "\t" progs }'
 }
+
+# sudoers_findings PATH; stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>text" for each rule that gives a finding.
+# A rule whose program a non-root account can change gives one finding at the chain_writable severity (decision G2).
+sudoers_findings() {
+  local id sev rule progs w pa
+  classify_sudoers | while IFS=$'\t' read -r id sev rule progs; do
+    if [ -n "$progs" ]; then
+      read -ra pa <<< "$progs"; w=$(chain_writable "${pa[@]}")
+      if [ -n "$w" ]; then
+        printf 'MA-ACCOUNTS-008\t%s\tNOPASSWD rule in %s runs a program that a non-root account can change (%s): %s\n' "${w%%$'\t'*}" "$1" "${w#*$'\t'}" "$rule"
+        continue; fi
+    fi
+    printf '%s\t%s\tNOPASSWD rule in %s: %s\n' "$id" "$sev" "$1" "$rule"
+  done; }
+
+# group_has_others GID USER: succeeds when an account other than USER and root is in group GID,
+# as its primary group or a listed member.
+group_has_others() {
+  local g
+  dscl . -list /Users PrimaryGroupID 2>/dev/null | awk -v g="$1" -v u="$2" '$2 == g && $1 != u && $1 != "root" {f = 1} END {exit !f}' && return 0
+  g=$(dscl . -search /Groups PrimaryGroupID "$1" 2>/dev/null | awk 'NR == 1 {print $1}')
+  [ -n "$g" ] || return 1
+  dscl . -read "/Groups/$g" GroupMembership 2>/dev/null | cut -d: -f2- | tr ' ' '\n' | grep -vxF -e "$2" -e root -e '' | grep -q .; }
+# home_write_risk PERM GID OWNER: prints why another account can write a home folder or a file in it, or nothing.
+home_write_risk() {
+  [ "${1:8:1}" = w ] && { echo "writable by everyone"; return; }
+  [ "${1:5:1}" = w ] && [ "$2" != 0 ] && group_has_others "$2" "$3" && echo "writable by group $2, which has other members"; }
+# rc_file_risks UID USER; stdin: ls -lnd lines. Prints "path<TAB>reason" for each startup file another account can change.
+rc_file_risks() {
+  local perm o g p r
+  while read -r perm _ o g _ _ _ _ p; do
+    case "$perm" in -*) ;; *) continue ;; esac
+    if [ "$o" != 0 ] && [ "$o" != "$1" ]; then r="owned by UID $o"; else r=$(home_write_risk "$perm" "$g" "$2"); fi
+    [ -n "$r" ] && printf '%s\t%s\n' "$p" "$r"
+  done; }
+
+# trusted_certs; stdin: security dump-trust-settings output. Prints the name of each certificate that counts as
+# trusted: a TrustRoot or TrustAsRoot result, a setting without a result (the default is TrustRoot), or no
+# settings at all ("always trust"), per SecTrustSettings.h. Deny and Unspecified do not count.
+trusted_certs() {
+  awk '
+    function close_setting() { if (inset && !hasres) trust = 1; inset = 0 }
+    function flush() { close_setting(); if (name != "" && (n == 0 || trust)) print name; name = "" }
+    /^Cert [0-9]+:/ { flush(); name = $0; sub(/^Cert [0-9]+: */, "", name); n = -1; trust = 0; next }
+    /Number of trust settings/ { n = $NF + 0; next }
+    /^[[:space:]]+Trust Setting [0-9]+:/ { close_setting(); inset = 1; hasres = 0; next }
+    /Result Type/ { hasres = 1; if ($0 ~ /kSecTrustSettingsResultTrust(Root|AsRoot)/) trust = 1; next }
+    END { flush() }'; }
 
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
@@ -226,8 +278,8 @@ sig()  { # signer summary for a path
   esac; }
 plistprog(){ plutil -extract Program raw -o - "$1" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$1" 2>/dev/null; }
 # chain_writable PATH...: prints "SEVERITY<TAB>reason" for the worst item on the paths, or a folder above
-# them, that a non-root account can change. MEDIUM only for write access through the admin group;
-# group wheel holds only root on macOS.
+# them, that a non-root account can change. Admin-group write is MEDIUM only under /Applications, where
+# macOS grants it by default (decision G3); group wheel holds only root on macOS.
 chain_writable() {
   local p d o perm grp hit=""
   for p in "$@"; do
@@ -245,7 +297,10 @@ chain_writable() {
           if [ "${perm:5:1}" = w ]; then
             case "$grp" in
               wheel) ;;
-              admin) [ -z "$hit" ] && hit="$d is writable by the admin group" ;;
+              admin) case "$d" in
+                       /Applications|/Applications/*) [ -z "$hit" ] && hit="$d is writable by the admin group" ;;
+                       *) printf 'HIGH\t%s is writable by the admin group\n' "$d"; return 0 ;;
+                     esac ;;
               *) printf 'HIGH\t%s is writable by group %s\n' "$d" "$grp"; return 0 ;;
             esac
           elif [ -w "$d" ]; then printf 'HIGH\t%s is writable by %s through an ACL\n' "$d" "$(id -un)"; return 0; fi
@@ -402,7 +457,7 @@ MEMGB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
 SW=$(sysctl -n vm.swapusage)
 say "- Installed memory: ${MEMGB} GB"; say "- Swap: \`$SW\`"
 SWT=$(echo "$SW" | awk '{gsub("M","",$3); print int($3)}'); SWU=$(echo "$SW" | awk '{gsub("M","",$6); print int($6)}')
-if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then finding MA-HEALTH-001 MEDIUM Health "Swap ${SWU} of ${SWT} MB used ($(( SWU * 100 / SWT ))%)."; fi
+if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then finding MA-HEALTH-001 LOW Health "Swap ${SWU} of ${SWT} MB used ($(( SWU * 100 / SWT ))%)."; fi
 run "Memory pressure" sh -c 'memory_pressure | tail -2; vm_stat | grep -E "Pageouts|Swapouts"'
 ps -axo rss=,pcpu=,pid=,user=,comm= | sort -rn | head -15 | awk '{printf "%7.0f MB %5s%% %6s %-10s %s\n",$1/1024,$2,$3,$4,$5}' | block "Top 15 processes by memory"
 ps -axo pcpu=,rss=,pid=,comm= | sort -rn | head -10 | block "Top 10 processes by CPU"
@@ -450,7 +505,7 @@ say "- Time Machine destinations: ${TMDEST:-none}"; say "- Local snapshots: $NSN
 say "- Latest backup on first destination: ${LASTBK:-unknown} (UTC); backups recorded: ${NSD:-unknown}"
 say "- First destination encryption: ${TMENC:-unknown}"
 [ -z "$TMDEST" ] && finding MA-BACKUPS-001 MEDIUM Backups "No Time Machine destination configured."
-[ "$TMENC" = "NotEncrypted" ] && finding MA-BACKUPS-002 LOW Backups "Time Machine disk is not encrypted."
+[ "$TMENC" = "NotEncrypted" ] && finding MA-BACKUPS-002 MEDIUM Backups "Time Machine disk is not encrypted."
 if [ -n "$LASTBK" ]; then
   AGE=$(( ( $(date +%s) - $(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$LASTBK" +%s 2>/dev/null || date +%s) ) / 3600 ))
   say "- Hours since latest backup: $AGE"; [ "$AGE" -ge 48 ] && finding MA-BACKUPS-003 MEDIUM Backups "Latest Time Machine backup is $AGE hours old."
@@ -479,10 +534,10 @@ AUTOL=$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2
 printf '%s\n' "$SIP" "$FV" "Gatekeeper: $GK" "$FWS" "$FWST" "$FWSIG" "Auto-login user: ${AUTOL:-none}" | block "Baseline"
 echo "$SIP" | grep -q enabled || finding MA-PLATFORM-001 HIGH Platform "System Integrity Protection is not enabled."
 echo "$GK" | grep -q enabled || finding MA-PLATFORM-002 HIGH Platform "Gatekeeper is disabled."
-echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 HIGH Platform "Application firewall is off."
+echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 MEDIUM Platform "Application firewall is off."
 echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)."
 echo "$FV" | grep -q 'On' || finding MA-PLATFORM-005 MEDIUM Platform "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
-[ -n "$AUTOL" ] && finding MA-PLATFORM-006 LOW Platform "Automatic login is on for $AUTOL."
+[ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL."
 SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
 echo "$SL" | grep -qi 'off' && finding MA-PLATFORM-010 LOW Platform "Screen lock after sleep or screen saver is off."
 run "System extensions" systemextensionsctl list
@@ -495,7 +550,9 @@ $FW --listapps 2>/dev/null | awk '/^[0-9]+ :/{sub(/^[0-9]+ : /,""); sub(/ +$/,""
 NALLOW=0
 while IFS='|' read -r r p; do
   s=$(sig "$p"); say "| $r | \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in "ad hoc"|unsigned|missing) finding MA-PLATFORM-008 MEDIUM Platform "Allow rule for a program that is $s: $p";; esac; fi
+  if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in
+    "ad hoc"|unsigned) finding MA-PLATFORM-008 MEDIUM Platform "Allow rule for a program that is $s: $p" ;;
+    missing) finding MA-PLATFORM-011 LOW Platform "Allow rule for a program that no longer exists: $p" ;; esac; fi
 done < "$TMP/fw"
 say ""; say "- Entries: $(wc -l < "$TMP/fw" | tr -d ' '), Allow: $NALLOW"
 h3 "Secure boot policy"
@@ -503,7 +560,8 @@ if [ "$(uname -m)" != arm64 ]; then say "- bputil: not applicable on an Intel Ma
 elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; then
   filter_bputil < "$TMP/bp" | block "bputil -d (security settings only)"
   BPM=$(bputil_mode < "$TMP/bp" | clean_field)
-  [ -n "$BPM" ] && [ "$BPM" != Full ] && finding MA-PLATFORM-009 MEDIUM Platform "Secure boot policy is not Full Security: $BPM."
+  case "$BPM" in ''|Full) ;; Permissive) finding MA-PLATFORM-009 HIGH Platform "Secure boot policy is Permissive Security." ;;
+    *) finding MA-PLATFORM-009 MEDIUM Platform "Secure boot policy is not Full Security: $BPM." ;; esac
 else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
 h3 "Packet filter"
 : > "$TMP/pf"
@@ -591,7 +649,8 @@ while read -r addr proc; do
   esac
 done < "$TMP/lis"
 [ "$LSOFL" -eq 0 ] && say "" && say "Without the macassay sudo rules, ports owned by root may show without a process name."
-pgrep -fl cloudflared >/dev/null 2>&1 && finding MA-NETWORK-003 INFO Network "A Cloudflare tunnel (cloudflared) is running; its published hostnames are configured in the Cloudflare dashboard."
+TUN=$(ps -axo comm= | awk -F/ '{print $NF}' | grep -xE 'cloudflared|ngrok|frpc' | sort -u | paste -sd, -)
+[ -n "$TUN" ] && finding MA-NETWORK-003 LOW Network "A tunnel program is running ($TUN); it can publish local services to the internet. Check what it exposes."
 run "VPN and tunnel processes" sh -c 'ps -axo user=,pid=,comm= | grep -iE "cloudflared|tailscale|wireguard|openvpn|nordvpn|anyconnect|ngrok|frpc|zerotier" | grep -v grep'
 h3 "All TCP listeners"
 if [ "$LSOFL" -eq 1 ]; then awk '{print $1, $2, $3, $9}' "$TMP/lsofl" | sort -u | block "All TCP listeners (lsof)"
@@ -641,7 +700,10 @@ say "- User crontab entries: $(printf '%s' "$CT" | grep -c . )"; [ -n "$CT" ] &&
 ls /etc/periodic/daily /etc/periodic/weekly /etc/periodic/monthly 2>/dev/null | grep -vE '^[0-9]{3}\.|^$|:$' | block "Non-standard periodic scripts"
 RCF=(); for f in $RC_FILES; do RCF+=("$THOME/$f"); done
 rc_hits "${RCF[@]}" /etc/zshrc /etc/zshenv /etc/zprofile /etc/zlogin /etc/profile /etc/bashrc > "$TMP/rc"
-if [ -s "$TMP/rc" ]; then block "Suspicious patterns in shell startup files (file:line: pattern; line text not shown)" < "$TMP/rc"; finding MA-PERSISTENCE-006 HIGH Persistence "Shell startup files contain download-and-run or decode patterns (see section 8)."; else say "- Shell startup files: no download-and-run or decode patterns"; fi
+if [ -s "$TMP/rc" ]; then block "Suspicious patterns in shell startup files (file:line: pattern; line text not shown)" < "$TMP/rc"
+  grep -qvE ': (base64 decode|osascript -e)$' "$TMP/rc" && finding MA-PERSISTENCE-006 HIGH Persistence "Shell startup files contain download-and-run, /dev/tcp or nc -e patterns (see section 8)."
+  grep -qE ': (base64 decode|osascript -e)$' "$TMP/rc" && finding MA-PERSISTENCE-011 MEDIUM Persistence "Shell startup files decode base64 or run osascript -e (see section 8)."
+else say "- Shell startup files: no download-and-run or decode patterns"; fi
 find /Users/Shared /private/tmp /private/var/tmp -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -v '/macassay\.' | head -20 > "$TMP/x"
 if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; finding MA-PERSISTENCE-007 MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 8)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
 if priv "sfltool dumpbtm" /usr/bin/sfltool dumpbtm > "$TMP/btm" 2>/dev/null; then
@@ -659,8 +721,8 @@ while read -r n u h; do
   RCF=(); for f in $RC_FILES; do RCF+=("$h/$f"); done
   if priv "shell startup files ($n)" /bin/ls -lnd "${RCF[@]}" > "$TMP/rcl" 2>/dev/null; then
     grep -v 'No such file' "$TMP/rcl" | block "Shell startup files ($n; owner, size, date)"
-    grep -v 'No such file' "$TMP/rcl" | awk -v u="$u" '$1 ~ /^-/ && ($3 != u || substr($1, 6, 1) == "w" || substr($1, 9, 1) == "w") {print $NF}' |
-      while read -r p; do finding MA-PERSISTENCE-009 MEDIUM Persistence "Shell startup file $p is owned by another account or writable by group or others."; done
+    grep -v 'No such file' "$TMP/rcl" | rc_file_risks "$u" "$n" | while IFS=$'\t' read -r p r; do
+      finding MA-PERSISTENCE-009 HIGH Persistence "Shell startup file $p is $r."; done
   else say "- Shell startup files ($n): skipped ($(skip_reason "shell startup files ($n)"))"; fi
 done < "$TMP/others"
 h3 "Crontabs"
@@ -676,7 +738,7 @@ h3 "Running programs outside standard locations"
 say "| Program | Signer |"; say "|---|---|"
 ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
   s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  case "$p" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)";; esac
+  case "$p" in */AppTranslocation/*) ;; /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)";; esac
 done
 say ""; say "**Applications that Gatekeeper rejects**"; say ""
 for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
@@ -712,7 +774,7 @@ noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#(
 sudo_file(){ # LABEL PATH
   if priv "$1" /bin/cat "$2" > "$TMP/sud" 2>/dev/null; then
     noncomment < "$TMP/sud" | block "$2 (non-comment lines)"
-    classify_sudoers < "$TMP/sud" | while IFS=$'\t' read -r id sev rule; do finding "$id" "$sev" Accounts "NOPASSWD rule in $2: $rule"; done
+    sudoers_findings "$2" < "$TMP/sud" | while IFS=$'\t' read -r id sev text; do finding "$id" "$sev" Accounts "$text"; done
     return 0
   fi
   say "- $2: skipped ($(skip_reason "$1"))"; return 1; }
@@ -732,8 +794,8 @@ h2 "12. Shell, developer and AI tools"
 h2 "13. Trust and privacy"
 NC=$(security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | grep -c '"labl"')
 security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | mask_hex | sort -u | block "Certificates in the System keychain ($NC)"
-TS=$(security dump-trust-settings -d 2>&1 | grep -E '^Cert [0-9]+:' | mask_hex)
-if [ -n "$TS" ]; then echo "$TS" | block "Admin trust settings (certificates trusted by an administrator)"; finding MA-TRUST-001 MEDIUM Trust "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
+security dump-trust-settings -d 2>/dev/null | trusted_certs | mask_hex > "$TMP/ts"
+if [ -s "$TMP/ts" ]; then block "Admin trust settings (certificates trusted by an administrator)" < "$TMP/ts"; finding MA-TRUST-001 MEDIUM Trust "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
 TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
 if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
   sqlite3 -init /dev/null -readonly "$TCCU" "select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service" 2>/dev/null | block "Privacy permissions granted (user database)"

@@ -112,7 +112,7 @@ gina ALL = (root) NOPASSWD:/bin/ls,ALL
 #includedir /private/etc/sudoers.d
 EOF
 classify_sudoers < "$T/sudoers" > "$T/f6"
-check "F6 six NOPASSWD: ALL rules are MEDIUM" [ "$(cut -f2 "$T/f6" | grep -c '^MEDIUM')" -eq 6 ]
+check "F6 six NOPASSWD: ALL rules are HIGH" [ "$(cut -f2 "$T/f6" | grep -c '^HIGH')" -eq 6 ]
 check "F6 a #UID rule is not a comment" has "$T/f6" "#501 ALL = (ALL) NOPASSWD: ALL"
 check "F6 two other NOPASSWD rules are LOW" [ "$(cut -f2 "$T/f6" | grep -c '^LOW')" -eq 2 ]
 check "F6 IDs for the two risks" [ "$(cut -f1 "$T/f6" | sort -u | paste -sd, -)" = "MA-ACCOUNTS-005,MA-ACCOUNTS-006" ]
@@ -230,7 +230,7 @@ check "F15 no flag calls left" [ -z "$(grep -v '^[[:space:]]*#' macassay | grep 
 grep -oE 'MA-[A-Za-z]+-[0-9]+' macassay | sort > "$T/f16"
 check "F16 every ID has a label and three digits" [ -z "$(grep -vxE "MA-($LABRE)-[0-9]{3}" "$T/f16")" ]
 grep -oE 'finding MA-[A-Z]+-[0-9]+' macassay | sort | uniq -d > "$T/f16d"
-check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007)' "$T/f16d")" ]
+check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007|MA-PLATFORM-009)' "$T/f16d")" ]
 
 # G1: long hex runs in certificate labels are masked; dashed UUIDs are still replaced.
 h32=0123456789abcdef0123456789ABCDEF; h31=${h32:0:31}
@@ -238,6 +238,57 @@ check "G1 32 hex characters masked" [ "$(echo "CA $h32" | mask_hex)" = "CA <ID>"
 check "G1 64 hex characters masked" [ "$(echo "CA $h32$h32 x" | mask_hex)" = "CA <ID> x" ]
 check "G1 31 hex characters kept" [ "$(echo "CA $h31" | mask_hex)" = "CA $h31" ]
 check "G1 redact_ids still replaces a UUID" [ "$(echo 11111111-2222-3333-4444-555555555555 | redact_ids)" = "<UUID>" ]
+
+# G2, G17: trust settings count by the SecTrustSettings.h rule; names are masked and policy strings dropped.
+cat > "$T/trust" <<'EOF'
+Number of trusted certs = 5
+Cert 0: Root A 0123456789abcdef0123456789abcdef
+   Number of trust settings : 1
+   Trust Setting 0:
+      Policy OID            : SSL
+      Policy String         : 192.0.2.10
+      Result Type           : kSecTrustSettingsResultTrustRoot
+Cert 1: No Result B
+   Number of trust settings : 1
+   Trust Setting 0:
+      Policy OID            : SSL
+Cert 2: Always C
+   Number of trust settings : 0
+Cert 3: Denied D
+   Number of trust settings : 1
+   Trust Setting 0:
+      Result Type           : kSecTrustSettingsResultDeny
+Cert 4: Unspecified E
+   Number of trust settings : 1
+   Trust Setting 0:
+      Result Type           : kSecTrustSettingsResultUnspecified
+EOF
+trusted_certs < "$T/trust" | mask_hex > "$T/g17"
+check "G17 TrustRoot, no result and zero settings count" [ "$(grep -c . "$T/g17")" -eq 3 ]
+check "G17 Deny and Unspecified do not count" [ -z "$(grep -E 'Denied|Unspecified' "$T/g17")" ]
+check "G2 names kept and masked" has "$T/g17" "Root A <ID>"
+check "G2 policy strings dropped" hasnt "$T/g17" "192.0.2.10"
+
+# G20: admin-group write is MEDIUM only under /Applications; group write counts when the group has other members.
+( stat() { case "$3" in /Applications) echo "root drwxrwxr-x admin" ;; *) echo "root drwxr-xr-x wheel" ;; esac; }
+  [ "$(chain_writable /Applications | cut -f1)" = MEDIUM ] )
+check "G20 admin-writable folder under /Applications is MEDIUM" [ $? -eq 0 ]
+( stat() { case "$3" in /Library) echo "root drwxrwxr-x admin" ;; *) echo "root drwxr-xr-x wheel" ;; esac; }
+  [ "$(chain_writable /Library | cut -f1)" = HIGH ] )
+check "G20 admin-writable folder under /Library is HIGH" [ $? -eq 0 ]
+printf 'bob ALL = (root) NOPASSWD: %s\n' "$T/prog" | sudoers_findings /etc/sudoers > "$T/g20s"
+check "G20 NOPASSWD for a user-writable program is HIGH" [ "$(cut -f1,2 "$T/g20s")" = $'MA-ACCOUNTS-008\tHIGH' ]
+( group_has_others() { [ "$1" = 20 ]; }
+  printf '%s\n' '-rw-rw-r--  1 501  20  10 Nov 1 10:00 /Users/a/.zshrc' \
+                '-rw-r--r--  1 502  20  10 Nov 1 10:00 /Users/a/.bashrc' \
+                '-rw-r--r--  1 0  0  10 Nov 1 10:00 /Users/a/.profile' \
+                '-rw-rw-r--  1 501  99  10 Nov 1 10:00 /Users/a/.zshenv' \
+                '-rw-r--rw-  1 0  0  10 Nov 1 10:00 /Users/a/.zlogin' | rc_file_risks 501 a ) > "$T/g20rc"
+check "G20 rc file writable by staff" has "$T/g20rc" $'/Users/a/.zshrc\twritable by group 20'
+check "G20 rc file owned by another account" has "$T/g20rc" $'/Users/a/.bashrc\towned by UID 502'
+check "G20 root-owned rc file gives nothing" hasnt "$T/g20rc" ".profile"
+check "G20 group without other members gives nothing" hasnt "$T/g20rc" ".zshenv"
+check "G20 rc file writable by everyone" has "$T/g20rc" ".zlogin"
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

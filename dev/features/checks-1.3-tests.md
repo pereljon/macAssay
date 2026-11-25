@@ -128,6 +128,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - R1 reviewed by hand as noise: process lists, memory and CPU rows, and established outbound connections (live state).
 - R1 reviewed by hand as environment: the quick run lists 11 listener rows against 17 in the baseline, and no UDP 69 line. Inferred, not verified: unprivileged `netstat` no longer lists root-owned listeners on this Mac. A rerun of the 1.2 script without the sudo rules matched commit 1.
 - R1 reviewed by hand as Mac state: the full run lists new Google Drive and launchd listener rows and no UDP 69 TFTP finding.
+- R7 (commit 4), quick and full runs against the commit 3 full run: pass. Changed rows by ID and severity: MA-HEALTH-001 MEDIUM to LOW; MA-PLATFORM-006 LOW to MEDIUM; MA-NETWORK-003 INFO to LOW; the three missing-program firewall rows moved from MA-PLATFORM-008 MEDIUM to MA-PLATFORM-011 LOW. MA-PLATFORM-009 stays MEDIUM (Reduced). No row for MA-PLATFORM-003, MA-BACKUPS-002, MA-APPS-001, MA-PERSISTENCE-006, -009 or -011, MA-ACCOUNTS-005 or -008, or MA-TRUST-001 fired on this Mac. The three MA-ACCOUNTS-006 rows stay LOW. The full run read the other accounts' startup files and gave no finding.
 
 ## Task reviews
 
@@ -136,3 +137,5 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 1 review, Minor 3: commit trailer names Opus, reviewer expected Sonnet: dropped; the controller specified that trailer, no requirement broken.
 - Task 2 review, Minor 1: F15 does not check that a label matches its ID prefix: dropped; no requirement, and the design lets an ID keep its label after its check moves.
 - Task 2 review, Minor 2: the F15 call count and the F16 shared-ID list are loose guards: dropped; no requirement.
+- Task 3 review, Minor 1: no code comment says why the Drives block is masked: dropped; the commit message holds the reason, no requirement.
+- Task 3 review, Minor 2: no test checks that callers apply mask_hex: dropped; the M3 privacy check on a real report covers it, no requirement.
