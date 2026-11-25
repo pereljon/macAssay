@@ -408,6 +408,16 @@ recent_installs() {
     /^    "displayVersion" => / { v = $0; sub(/^[^>]*> "/, "", v); sub(/"$/, "", v) }
     /^    "processName" => / { p = $0; sub(/^[^>]*> "/, "", p); sub(/"$/, "", p) }
     /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " n (v != "" ? " " v : "") }'; }
+# boot_args_sev ARGS: prints HIGH for boot arguments that turn off code-signing enforcement, LOW for others.
+boot_args_sev() { case "$1" in '') ;; *amfi_*|*cs_enforcement_disable*) echo HIGH ;; *) echo LOW ;; esac; }
+# screen_lock_sev TEXT: prints "SEVERITY<TAB>description" for a screen lock that is off or slow, from sysadminctl -screenLock status.
+screen_lock_sev() {
+  local s
+  case "$1" in *immediate*) return 0 ;; *[Oo]ff*) printf 'MEDIUM\toff\n'; return 0 ;; esac
+  s=$(printf '%s' "$1" | sed -n 's/.* \([0-9][0-9]*\) seconds.*/\1/p')
+  [ -n "$s" ] || return 0
+  if [ "$s" -gt 3600 ]; then printf 'MEDIUM\tdelay %s seconds\n' "$s"
+  elif [ "$s" -gt 300 ]; then printf 'LOW\tdelay %s seconds\n' "$s"; fi; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -604,7 +614,30 @@ echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall st
 echo "$FV" | grep -q 'On' || finding MA-PLATFORM-005 MEDIUM Platform "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
 [ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL."
 SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
-echo "$SL" | grep -qi 'off' && finding MA-PLATFORM-010 LOW Platform "Screen lock after sleep or screen saver is off."
+SLR=$(screen_lock_sev "$SL")
+[ -n "$SLR" ] && finding MA-PLATFORM-010 "${SLR%%$'\t'*}" Platform "Screen lock is ${SLR#*$'\t'}."
+BA=$(nvram boot-args 2>/dev/null | cut -f2-)
+say "- Boot arguments: $(mdesc "${BA:-none}")"
+case "$(boot_args_sev "$BA")" in
+  HIGH) finding MA-PLATFORM-013 HIGH Platform "Boot arguments turn off code-signing enforcement: $BA" ;;
+  LOW) finding MA-PLATFORM-014 LOW Platform "Boot arguments are set: $BA" ;;
+esac
+AR=$(csrutil authenticated-root status 2>&1); say "- $(mdesc "$AR")"
+case "$AR" in *disabled*) finding MA-PLATFORM-012 HIGH Platform "The signed system volume (authenticated root) is off." ;; esac
+LV=$(defaults read /Library/Preferences/com.apple.security.libraryvalidation DisableLibraryValidation 2>/dev/null)
+default_line "Library validation disabled (DisableLibraryValidation)" "$LV" "0, library validation on"
+[ "$LV" = 1 ] && finding MA-PLATFORM-016 MEDIUM Platform "Library validation is off, so apps can load libraries signed by other developers."
+LQ=$(defaults read com.apple.LaunchServices LSQuarantine 2>/dev/null)
+default_line "Quarantine for downloads (LSQuarantine)" "$LQ" "1, on"
+[ "$LQ" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off (LSQuarantine=0), so Gatekeeper does not check downloaded files."
+find /Applications -maxdepth 2 -name '*.app' -type d -perm -2 2>/dev/null > "$TMP/wwa"
+if [ -s "$TMP/wwa" ]; then block "Apps writable by everyone" < "$TMP/wwa"
+  finding MA-PLATFORM-017 MEDIUM Platform "$(grep -c . "$TMP/wwa") app(s) in /Applications are writable by everyone: $(sed 's#.*/##' "$TMP/wwa" | paste -sd, -)"
+else say "- Apps writable by everyone: none"; fi
+find /Library -xdev -type d -perm -002 ! -perm -1000 2>/dev/null > "$TMP/wwl"
+NWWL=$(grep -c . "$TMP/wwl"); say "- Folders in /Library writable by everyone without the sticky bit: $NWWL"
+if [ "$NWWL" -gt 0 ]; then head -10 "$TMP/wwl" | block "Folders in /Library writable by everyone (first 10)"
+  finding MA-PLATFORM-018 LOW Platform "$NWWL folder(s) in /Library are writable by everyone without the sticky bit (see section 4)."; fi
 run "System extensions" systemextensionsctl list
 systemextensionsctl list 2>/dev/null | grep -q 'waiting for user' && finding MA-PLATFORM-007 INFO Platform "A system extension is waiting for user approval: $(systemextensionsctl list 2>/dev/null | grep 'waiting for user' | awk -F'\t' '{print $(NF-1)}' | paste -sd';' -)"
 kmutil showloaded --list-only 2>/dev/null | grep -v com.apple | awk '{print $6, $7}' | block "Third-party kernel extensions loaded (name and version)"

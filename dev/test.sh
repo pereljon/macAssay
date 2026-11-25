@@ -346,5 +346,17 @@ recent_installs 2026-10-25 < "$T/ih" > "$T/g21"
 check "G21 recent non-Apple install listed" has "$T/g21" "2026-11-20  Example App 2.0"
 check "G21 Apple and old installs skipped" [ "$(grep -c . "$T/g21")" -eq 1 ]
 
+# G9: screen lock severities from sysadminctl text.
+check "G9 immediate gives nothing" [ -z "$(screen_lock_sev 'screenLock delay is immediate')" ]
+check "G9 5 seconds gives nothing" [ -z "$(screen_lock_sev 'screenLock delay is 5 seconds')" ]
+check "G9 900 seconds is LOW" [ "$(screen_lock_sev 'screenLock delay is 900 seconds' | cut -f1)" = LOW ]
+check "G9 7200 seconds is MEDIUM" [ "$(screen_lock_sev 'screenLock delay is 7200 seconds' | cut -f1)" = MEDIUM ]
+check "G9 off is MEDIUM" [ "$(screen_lock_sev 'screenLock is off' | cut -f1)" = MEDIUM ]
+check "G15 one screen lock finding call" [ "$(grep -c 'finding MA-PLATFORM-010' macassay)" -eq 1 ]
+# G10: boot arguments.
+check "G10 no boot arguments" [ -z "$(boot_args_sev '')" ]
+check "G10 -v is LOW" [ "$(boot_args_sev '-v')" = LOW ]
+check "G10 amfi argument is HIGH" [ "$(boot_args_sev 'amfi_get_out_of_my_way=1')" = HIGH ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
