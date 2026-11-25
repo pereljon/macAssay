@@ -427,5 +427,46 @@ check "G13 managed, not enrolled is HIGH" [ "$(printf 'managed\tcom.google.Chrom
 check "G13 local only, not enrolled is MEDIUM" [ "$(printf 'local\tcom.google.Chrome\tx\n' | forced_ext_finding 0 | cut -f1,2)" = $'MA-APPS-006\tMEDIUM' ]
 check "G13 enrolled is INFO" [ "$(printf 'managed\tcom.google.Chrome\tx\n' | forced_ext_finding 1 | cut -f1,2)" = $'MA-APPS-007\tINFO' ]
 
+# G7: sudoers content. One line per rule, at its highest severity, with the rule text.
+cat > "$T/g7" <<'EOT'
+Cmnd_Alias SHELLS = /bin/sh, /bin/zsh
+Defaults !authenticate
+Defaults env_keep += "DYLD_LIBRARY_PATH"
+Defaults	env_reset
+Defaults	env_keep += "HOME MAIL"
+Defaults	env_keep += "SSH_AUTH_SOCK"
+Defaults	!log_allowed
+a ALL = (root) NOPASSWD: ALL
+b ALL = (root) NOPASSWD: /usr/bin/python3
+c ALL = (root) NOPASSWD: SHELLS
+d ALL = (root) NOPASSWD: /usr/bin/ssh-keygen
+EOT
+classify_sudoers < "$T/g7" > "$T/g7.out"
+check "G7 !authenticate is HIGH" has "$T/g7.out" $'MA-ACCOUNTS-010\tHIGH\tDefaults !authenticate'
+check "G7 env_keep DYLD is MEDIUM" has "$T/g7.out" $'MA-ACCOUNTS-011\tMEDIUM\tDefaults env_keep += "DYLD_LIBRARY_PATH"'
+check "G7 stock Defaults give nothing" [ -z "$(grep -E 'HOME MAIL|SSH_AUTH_SOCK|env_reset|log_allowed' "$T/g7.out")" ]
+check "G7 NOPASSWD: ALL is HIGH" has "$T/g7.out" $'MA-ACCOUNTS-005\tHIGH\ta ALL'
+check "G7 python is a code-loading program" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tb ALL'
+check "G7 alias holding a shell" has "$T/g7.out" $'MA-ACCOUNTS-009\tHIGH\tc ALL'
+check "G7 ssh-keygen is not ssh" has "$T/g7.out" $'MA-ACCOUNTS-006\tLOW\td ALL'
+check "G7 one line per rule" [ "$(grep -c . "$T/g7.out")" -eq 6 ]
+check "G7 full rule text kept" has "$T/g7.out" "b ALL = (root) NOPASSWD: /usr/bin/python3"
+# G14: hidden accounts.
+printf '%s\n' 'hadmin 502 yes' 'huser 503 no' '_sys 200 no' | hidden_findings > "$T/g14"
+check "G14 hidden admin is MEDIUM" has "$T/g14" $'MA-ACCOUNTS-013\tMEDIUM\thadmin'
+check "G14 hidden user is LOW" has "$T/g14" $'MA-ACCOUNTS-014\tLOW\thuser'
+check "G14 system account ignored" hasnt "$T/g14" "_sys"
+# G20: home folders.
+( group_has_others() { [ "$1" = 20 ]; }
+  [ -n "$(home_write_risk drwxrwxr-x 20 alice)" ] && [ -z "$(home_write_risk drwxrwxr-x 99 alice)" ] &&
+  [ -n "$(home_write_risk drwxr-xrwx 99 alice)" ] && [ -z "$(home_write_risk drwxr-xr-x 20 alice)" ] )
+check "G20 home folder writable by staff or everyone, not by a group without other members" [ $? -eq 0 ]
+# G22: sudo file owner and mode.
+check "G22 stock sudoers" [ -z "$(sudo_owner_risk /etc/sudoers 'root:wheel -r--r-----')" ]
+check "G22 other owner" [ -n "$(sudo_owner_risk /etc/sudoers 'bob:wheel -r--r-----')" ]
+check "G22 group-writable folder" [ -n "$(sudo_owner_risk /etc/sudoers.d 'root:wheel drwxrwxr-x')" ]
+check "G22 sudo without setuid" [ -n "$(sudo_owner_risk /usr/bin/sudo 'root:wheel -r-x--x--x')" ]
+check "G22 stock sudo" [ -z "$(sudo_owner_risk /usr/bin/sudo 'root:wheel -r-s--x--x')" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

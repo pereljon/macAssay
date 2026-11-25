@@ -128,24 +128,46 @@ gen_rules() {
 # classify_refusal EXIT_STATUS STDERR_FILE: succeeds when sudo itself refused or could not run the command.
 classify_refusal() { [ "$1" -eq 1 ] && grep -qE '^sudo: |is not allowed to execute|may not run sudo' "$2"; }
 
-# stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>rule<TAB>programs" for each NOPASSWD rule; joins continued lines.
-# Programs lists the absolute paths in a LOW rule, for the writable check in sudoers_findings.
+# stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>rule<TAB>programs" for each NOPASSWD rule and each weak Defaults line.
+# Joins continued lines and expands Cmnd_Alias names. Programs lists the absolute paths in a LOW rule, for the
+# writable check in sudoers_findings. Program names match exactly: ssh does not match ssh-keygen.
 classify_sudoers() {
   awk '
+    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
+    function expand(item, depth,   n, parts, i, out) {
+      if (depth > 8 || !(item in alias)) return item
+      n = split(alias[item], parts, ","); out = ""
+      for (i = 1; i <= n; i++) out = out (out == "" ? "" : ",") expand(trim(parts[i]), depth + 1)
+      return out }
+    function loads_code(p) {
+      sub(/.*\//, "", p)
+      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|osascript|vim?|less|more|find|awk|sed|tar|zip|git|ssh|scp|rsync|tee|cp|mv|dd|chmod|chown|curl|wget)$/ }
     { sub(/\r$/, "") }
     cont == "" && /^[[:space:]]*#/ && !/^[[:space:]]*#[0-9]/ { next }
     { line = cont $0 }
     /\\$/ { sub(/\\$/, "", line); cont = line " "; next }
     { cont = ""; gsub(/[[:space:]]+/, " ", line); sub(/^ /, "", line) }
-    line ~ /^Defaults/ { next }
+    line ~ /^Cmnd_Alias / {
+      nd = split(substr(line, 12), defs, ":")
+      for (i = 1; i <= nd; i++) { eq = index(defs[i], "="); if (eq) alias[trim(substr(defs[i], 1, eq - 1))] = substr(defs[i], eq + 1) }
+      next }
+    line ~ /^Defaults/ {
+      if (line ~ /!authenticate/) print "MA-ACCOUNTS-010\tHIGH\t" line "\t"
+      else if (line ~ /!env_reset|!tty_tickets|timestamp_type *= *"?global|timestamp_timeout *= *-/ || (line ~ /env_(keep|check)/ && line ~ /[" =](DYLD_[A-Z_]*|LD_[A-Z_]*|PYTHONPATH|PERL5LIB|RUBYLIB|NODE_OPTIONS|BASH_ENV|ENV|PATH)([ "]|$)/)) print "MA-ACCOUNTS-011\tMEDIUM\t" line "\t"
+      next }
     line !~ /NOPASSWD/ { next }
-    { rest = substr(line, index(line, "NOPASSWD") + 8) }
-    rest ~ /(^|[:, ])ALL( |,|$)/ { print "MA-ACCOUNTS-005\tHIGH\t" line "\t"; next }
-    { n = split(rest, items, ","); progs = ""
-      for (i = 1; i <= n; i++) { c = items[i]; sub(/^[: ]+/, "", c); while (c ~ /^[A-Z_]+: */) sub(/^[A-Z_]+: */, "", c)
-        split(c, w, " "); if (w[1] ~ /^\//) progs = progs (progs == "" ? "" : " ") w[1] }
-      print "MA-ACCOUNTS-006\tLOW\t" line "\t" progs }'
-}
+    { rest = substr(line, index(line, "NOPASSWD") + 8); n = split(rest, items, ","); all = 0; code = 0; progs = ""
+      for (i = 1; i <= n; i++) {
+        c = trim(items[i]); sub(/^:/, "", c); c = trim(c)
+        while (c ~ /^[A-Z_]+:/) sub(/^[A-Z_]+: */, "", c)
+        m = split(expand(c, 0), ex, ",")
+        for (j = 1; j <= m; j++) {
+          split(trim(ex[j]), w, " ")
+          if (w[1] == "ALL") all = 1
+          else if (w[1] ~ /^\//) { if (loads_code(w[1])) code = 1; progs = progs (progs == "" ? "" : " ") w[1] } } }
+      if (all) print "MA-ACCOUNTS-005\tHIGH\t" line "\t"
+      else if (code) print "MA-ACCOUNTS-009\tHIGH\t" line "\t"
+      else print "MA-ACCOUNTS-006\tLOW\t" line "\t" progs }'; }
 
 # sudoers_findings PATH; stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>text" for each rule that gives a finding.
 # A rule whose program a non-root account can change gives one finding at the chain_writable severity (decision G2).
@@ -158,7 +180,12 @@ sudoers_findings() {
         printf 'MA-ACCOUNTS-008\t%s\tNOPASSWD rule in %s runs a program that a non-root account can change (%s): %s\n' "${w%%$'\t'*}" "$1" "${w#*$'\t'}" "$rule"
         continue; fi
     fi
-    printf '%s\t%s\tNOPASSWD rule in %s: %s\n' "$id" "$sev" "$1" "$rule"
+    case "$id" in
+      MA-ACCOUNTS-010) printf '%s\t%s\tsudo asks no password for the rules that this line covers (Defaults !authenticate), in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      MA-ACCOUNTS-011) printf '%s\t%s\tWeak sudo default in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      MA-ACCOUNTS-009) printf '%s\t%s\tNOPASSWD rule in %s allows a program that can run other code: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      *) printf '%s\t%s\tNOPASSWD rule in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+    esac
   done; }
 
 # group_has_others GID USER: succeeds when an account other than USER and root is in group GID,
@@ -173,6 +200,15 @@ group_has_others() {
 home_write_risk() {
   [ "${1:8:1}" = w ] && { echo "writable by everyone"; return; }
   [ "${1:5:1}" = w ] && [ "$2" != 0 ] && group_has_others "$2" "$3" && echo "writable by group $2, which has other members"; }
+# hidden_findings; stdin: "NAME UID ADMIN" lines for hidden accounts, ADMIN yes or no.
+# Prints "ID<TAB>SEVERITY<TAB>NAME" for each account with UID 500 or above.
+hidden_findings() { awk '$2 ~ /^[0-9]+$/ && $2 >= 500 { if ($3 == "yes") print "MA-ACCOUNTS-013\tMEDIUM\t" $1; else print "MA-ACCOUNTS-014\tLOW\t" $1 }'; }
+# sudo_owner_risk PATH "OWNER:GROUP MODE": prints what is wrong with a sudo file's owner or mode, or nothing.
+sudo_owner_risk() {
+  local og="${2%% *}" perm="${2#* }"
+  [ "$og" = root:wheel ] || { echo "owned by $og"; return; }
+  { [ "${perm:5:1}" = w ] || [ "${perm:8:1}" = w ]; } && { echo "writable by group or others ($perm)"; return; }
+  [ "$1" = /usr/bin/sudo ] && [ "${perm:3:1}" != s ] && echo "not setuid ($perm)"; }
 # rc_file_risks UID USER; stdin: ls -lnd lines. Prints "path<TAB>reason" for each startup file another account can change.
 rc_file_risks() {
   local perm o g p r
@@ -1057,6 +1093,27 @@ RPW=$(dscl . -read /Users/root Password 2>/dev/null | awk '{print $2}')
 if { [ -n "$RAA" ] && ! echo "$RAA" | grep -q DisabledUser; } || { [ -n "$RPW" ] && [ "$RPW" != "*" ]; }; then
   say "- root account: appears enabled"; finding MA-ACCOUNTS-003 MEDIUM Accounts "The root account appears to be enabled."
 else say "- root account: disabled"; fi
+UID0=$(dscl . -list /Users UniqueID 2>/dev/null | awk '$2 == 0 && $1 != "root" {print $1}' | paste -sd, -)
+say "- Accounts other than root with UID 0: $(mdesc "${UID0:-none}")"
+[ -n "$UID0" ] && finding MA-ACCOUNTS-012 HIGH Accounts "Accounts other than root have UID 0: $UID0"
+dscl . -list /Users IsHidden 2>/dev/null | awk '$2 == 1 || $2 == "YES" {print $1}' | while read -r n; do
+  u=$(dscl . -read "/Users/$n" UniqueID 2>/dev/null | awk '{print $2}')
+  a=no; dsmemberutil checkmembership -U "$n" -G admin 2>/dev/null | grep -q 'is a member' && a=yes
+  echo "$n ${u:-0} $a"
+done | hidden_findings > "$TMP/hid"
+if [ -s "$TMP/hid" ]; then
+  while IFS=$'\t' read -r id _ n; do
+    say "- Hidden account: $(mdesc "$n")"
+    case "$id" in
+      MA-ACCOUNTS-013) finding MA-ACCOUNTS-013 MEDIUM Accounts "Hidden administrator account: $n" ;;
+      *) finding MA-ACCOUNTS-014 LOW Accounts "Hidden account: $n" ;;
+    esac
+  done < "$TMP/hid"
+else say "- Hidden accounts (UID 500 and above): none"; fi
+for d in /Users/*; do [ -d "$d" ] || continue; [ "${d##*/}" = Shared ] && continue
+  read -r perm gid own <<< "$(stat -f '%Sp %g %Su' "$d" 2>/dev/null)"
+  r=$(home_write_risk "$perm" "$gid" "$own"); [ -n "$r" ] && finding MA-ACCOUNTS-015 HIGH Accounts "Home folder $d is $r."
+done
 run "Recent logins" sh -c 'last -25 | grep -v "^$"'
 GU=$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)
 say "- Guest account enabled: ${GU:-not set (off)}"; [ "$GU" = 1 ] && finding MA-ACCOUNTS-004 LOW Accounts "The guest account is enabled."
@@ -1072,6 +1129,13 @@ sudo_file(){ # LABEL PATH
     return 0
   fi
   say "- $2: skipped ($(skip_reason "$1"))"; return 1; }
+: > "$TMP/sown"
+for p in /etc/sudoers /etc/sudoers.d /etc/sudoers.d/* /usr/bin/sudo; do [ -e "$p" ] || continue
+  o=$(stat -f '%Su:%Sg %Sp' "$p" 2>/dev/null); echo "$o $p"
+  r=$(sudo_owner_risk "$p" "$o"); [ -n "$r" ] && echo "$p $r" >> "$TMP/sown"
+done | block "Sudo files (owner, mode, path)"
+SOWN=$(paste -sd';' - < "$TMP/sown")
+[ -n "$SOWN" ] && finding MA-ACCOUNTS-016 HIGH Accounts "Sudo files have a wrong owner or mode: $SOWN"
 sudo_file "sudoers" /etc/sudoers
 for f in /etc/sudoers.d/*; do [ -f "$f" ] || continue
   n=${f##*/}; case "$n" in macassay|*.*|*~) continue ;; esac

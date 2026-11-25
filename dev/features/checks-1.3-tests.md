@@ -46,6 +46,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 - G17. User trust: a `TrustRoot` entry, an entry with no result type, and a certificate with zero trust settings count; `Deny` and `Unspecified` entries do not. The admin-domain parser gives the same counts.
 - G20. `chain_writable` and NOPASSWD: an admin-writable folder under `/Applications` gives MEDIUM and one under `/Library` gives HIGH; a NOPASSWD rule for a script in a user-writable folder gives HIGH; a home folder and an rc file writable by `staff` give HIGH.
 - G21. Recent installs: an install by softwareupdated and an install older than the cutoff are skipped; a nested package list does not break the entry.
+- G22. Sudo file owner and mode: stock owner and modes give nothing; another owner, a group write bit, and a sudo without setuid each give a finding.
 - G23. Remote-support tools: Apple's screen sharing server (AppleVNCServer) does not count; TeamViewer and vncserver do; sshd does not.
 - G14. Hidden accounts: a hidden admin and a hidden non-admin fixture give MEDIUM and LOW; system accounts under UID 500 are ignored.
 
