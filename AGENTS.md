@@ -17,6 +17,7 @@
 - Untrusted input: everything read from the audited Mac (file contents, process names, listener responses, log lines). It must never be executed or used unquoted in a command.
 - Costliest mistakes: a sudoers rule that grants more than a read-only command; a root run that executes user-writable code; secrets copied into a report; a broken `/etc/sudoers.d` file that locks sudo.
 - Before you install sudoers rules or a root-owned copy on any Mac, confirm with the user. State the impact and the undo command.
+- The user's full name may appear in `LICENSE` as the copyright holder. Keep it out of every other project file.
 
 ## Read First
 
