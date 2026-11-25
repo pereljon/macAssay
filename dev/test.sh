@@ -232,5 +232,12 @@ check "F16 every ID has a label and three digits" [ -z "$(grep -vxE "MA-($LABRE)
 grep -oE 'finding MA-[A-Z]+-[0-9]+' macassay | sort | uniq -d > "$T/f16d"
 check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007)' "$T/f16d")" ]
 
+# G1: long hex runs in certificate labels are masked; dashed UUIDs are still replaced.
+h32=0123456789abcdef0123456789ABCDEF; h31=${h32:0:31}
+check "G1 32 hex characters masked" [ "$(echo "CA $h32" | mask_hex)" = "CA <ID>" ]
+check "G1 64 hex characters masked" [ "$(echo "CA $h32$h32 x" | mask_hex)" = "CA <ID> x" ]
+check "G1 31 hex characters kept" [ "$(echo "CA $h31" | mask_hex)" = "CA $h31" ]
+check "G1 redact_ids still replaces a UUID" [ "$(echo 11111111-2222-3333-4444-555555555555 | redact_ids)" = "<UUID>" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

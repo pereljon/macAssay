@@ -134,3 +134,5 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 1 review, Minor 1: Results line stated an inferred cause as fact and named lsof instead of netstat: fixed; root AGENTS.md (say what was verified).
 - Task 1 review, Minor 2: listener row counts disagreed (10 and 11): fixed with Minor 1; no requirement, fixed in the same line.
 - Task 1 review, Minor 3: commit trailer names Opus, reviewer expected Sonnet: dropped; the controller specified that trailer, no requirement broken.
+- Task 2 review, Minor 1: F15 does not check that a label matches its ID prefix: dropped; no requirement, and the design lets an ID keep its label after its check moves.
+- Task 2 review, Minor 2: the F15 call count and the F16 shared-ID list are loose guards: dropped; no requirement.

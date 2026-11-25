@@ -146,6 +146,8 @@ classify_sudoers() {
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
 redact_ids() { sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
+# Certificate labels can hold account identifiers as long hex strings.
+mask_hex() { sed -E 's/[0-9A-Fa-f]{32,}/<ID>/g'; }
 filter_bputil() { grep -iE 'security mode|system integrity|sip|kext|kernel extension|mdm|user-approved' | drop_ids; }
 # stdin: bputil -d output. Prints the boot security mode word (Full, Reduced, Permissive) from the smb0 line.
 bputil_mode() { awk -F: '/^Security Mode:/ { split($2, w, " "); print w[1]; exit }'; }
@@ -729,8 +731,8 @@ h2 "12. Shell, developer and AI tools"
 # ---------- 13. Trust and privacy ----------
 h2 "13. Trust and privacy"
 NC=$(security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | grep -c '"labl"')
-security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | sort -u | block "Certificates in the System keychain ($NC)"
-TS=$(security dump-trust-settings -d 2>&1 | grep -E '^Cert [0-9]+:' )
+security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | mask_hex | sort -u | block "Certificates in the System keychain ($NC)"
+TS=$(security dump-trust-settings -d 2>&1 | grep -E '^Cert [0-9]+:' | mask_hex)
 if [ -n "$TS" ]; then echo "$TS" | block "Admin trust settings (certificates trusted by an administrator)"; finding MA-TRUST-001 MEDIUM Trust "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
 TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
 if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
