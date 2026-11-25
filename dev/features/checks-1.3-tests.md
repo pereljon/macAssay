@@ -189,3 +189,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - MA-PLATFORM-008 path with a 13-digit folder number: no finding; not a timestamp, hardware ID, account ID, or secret, and the user needs the path.
 - The reviewer saw one piped `dev/test.sh` invocation take over 120 s, cause not found: dropped as uncertain; the suite passed in every run.
 - Task 12 re-review notes (nested parentheses, a comma inside parentheses in an argument): the final review agrees with the drop.
+- Re-review of the fixes: items 1 to 5 addressed, no new Critical or Important breakage.
+- Re-review Minor, the `(ok)` conviction on the 2026-11-25 decision: no change; the controller gave that wording, from the user's "Agreed" to the recommendation.
+- Re-review note, an escaped space inside an option value (`CWD=/tmp\ x`) is not stripped: dropped as uncertain; not verified as valid sudoers, and no requirement covers it.
+- Re-review note, sudo-rules.md says the renamed function "decides the SSH authentication flag": dropped; a 1.2 design doc that records past design.
