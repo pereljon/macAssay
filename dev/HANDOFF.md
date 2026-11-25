@@ -17,14 +17,14 @@ The script started as a scripted version of a manual review of the user's Mac mi
 - It runs locally, or on a remote Mac over SSH when a host, a user and an SSH key path are given.
 - It needs a `-h` help.
 - Privileged checks must run through sudo rules that allow only read-only commands with exact arguments.
-- An install command, run with sudo, adds the sudoers rules if the mac-audit rules are not already present.
+- An install command, run with sudo, adds the sudoers rules if the macassay rules are not already present.
 
 ## Design constraints
 
 - Bash 3.2 compatible, because `/bin/bash` on macOS is 3.2. No Python, Node or Homebrew tools are required.
 - macOS Local Network privacy blocks agent-launched Python, Node and Homebrew tools from reaching LAN hosts. Use `/usr/bin/curl`, `/usr/bin/ssh` and `/usr/bin/nc` for any LAN access.
 - Remote mode base64-encodes the script and runs it inside the SSH command: `ssh host "bash -c \"\$(printf %s 'B64' | base64 -D)\" mac-audit --stdout ..."`. Nothing is copied to the remote disk in version 1.1. The report is saved on the local Mac.
-- Side effects of a run: a temporary folder `/tmp/mac-audit.XXXXXX` that is removed on exit; `softwareupdate -l` refreshes Apple's update catalog cache (skipped with `--offline`); `brew outdated` may first run Homebrew's auto-update, at most once a day by default, which updates Homebrew and its package lists but no installed package (skipped with `--offline`); one HTTP GET to each LAN listener; `nc -z` connect tests to the sharing ports; one SSH connection as `nobody` to 127.0.0.1, which sshd logs. From version 1.2: with the mac-audit sudo rules installed, sudo logs each privileged command; without them the script makes no sudo call. The installer, run only by the user, writes `/etc/sudoers.d/mac-audit`; a remote install logs the script as the sudo command line on the remote Mac.
+- Side effects of a run: a temporary folder `/tmp/macassay.XXXXXX` (`/tmp/mac-audit.XXXXXX` in 1.1) that is removed on exit; `softwareupdate -l` refreshes Apple's update catalog cache (skipped with `--offline`); `brew outdated` may first run Homebrew's auto-update, at most once a day by default, which updates Homebrew and its package lists but no installed package (skipped with `--offline`); one HTTP GET to each LAN listener; `nc -z` connect tests to the sharing ports; one SSH connection as `nobody` to 127.0.0.1, which sshd logs. From version 1.2: with the macassay sudo rules installed, sudo logs each privileged command; without them the script makes no sudo call. The installer, run only by the user, writes `/etc/sudoers.d/macassay`; a remote install logs the script as the sudo command line on the remote Mac.
 - Keep secrets out of the report. Serial numbers and UUIDs are omitted. `authorized_keys` shows key type and comment only. Shell startup files are only searched for suspicious patterns; their contents are never copied into the report.
 
 ## Current state (version 1.1)

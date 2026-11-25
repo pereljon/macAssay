@@ -100,6 +100,12 @@ Code review before merge, 2026-11-24 (opus, high effort). Each line gives the fi
 - CR-11 A granted user named `ALL` or like a User_Alias passes validation: fixed after the user's decision; F4 covers it.
 - CR-12 Design text differs from the code: fixed in the design doc.
 - CR-13 A remote install logs the script as the sudo command line: listed as a side effect. Breaks the Read-only rule (every side effect listed).
+- PM-1 When the rollback cannot restore the old file, it leaves the new file that failed `visudo -c` in place: asked the user. Critical (sudo lockout path); no realistic trigger beyond an I/O failure; no requirement.
+- PM-2 `dev/HANDOFF.md` side effects use the old names: fixed. Breaks the Read-only rule (every side effect listed).
+- PM-3 `docs/ISSUES.md` lists bugs this branch fixed as open: fixed. Breaks the Change Checklist.
+- PM-4 The writable-folder check runs only at install time: dropped. No requirement, not Critical; the actor who loosens another home's permissions is outside the Security Context.
+- PM-5 The SSH password flag uses `sshd -G`, which ignores `Match` blocks: dropped. No requirement, not Critical; `sshd -T` without `-C` had the same limit.
+- PM-6 A certificate label carries a 32-character hex identifier: dropped for 1.2, recorded in `docs/ISSUES.md`. Present in 1.1; No secrets names serials and UUIDs only.
 - T9-1 The secure boot flag read the `Security Mode (CSEC): 1` line, which never says Full, so a Full Security Mac would get the MEDIUM flag: fixed. Breaks the design (Secure boot policy) and fires on every Full Security Mac; `bputil_mode` reads the `smb0` line, and F7 covers both modes.
 
 Architecture review, 2026-11-24 (opus, high effort). Each line gives the finding, the outcome, and the reason.
@@ -148,4 +154,5 @@ Run on the Mac mini, 2026-11-24, macOS 27.2.1.
 - T8: pass. Full run 4 minutes 45 seconds; privileged checks 17 ran, 0 skipped. Section 15 shows every listed part; `httpd`, `kill`, and `killall` NOPASSWD rules are LOW; no dashed UUID or `sudo:` line. The device profile check found none installed, so CR-4's output check is still open.
 - T9: the raw output was read through the installed rules. It found finding T9-1 below; the F7 fixture now follows the real format. `filter_bputil` drops the chip ID, UUIDs, and hashes.
 - T11: pass. All four commands were refused with `sudo: a password is required` and no prompt; `pfctl -s info` ran.
-- Not run yet: T10 (needs the user to run sudo), T19 (no second Mac).
+- T10: pass; the user ran it. It printed "already installed", and the file kept its 17:12 timestamp.
+- Not run yet: T19 (no second Mac).
