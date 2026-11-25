@@ -416,8 +416,8 @@ screen_lock_sev() {
   case "$1" in *immediate*) return 0 ;; *[Oo]ff*) printf 'MEDIUM\toff\n'; return 0 ;; esac
   s=$(printf '%s' "$1" | sed -n 's/.* \([0-9][0-9]*\) seconds.*/\1/p')
   [ -n "$s" ] || return 0
-  if [ "$s" -gt 3600 ]; then printf 'MEDIUM\tdelay %s seconds\n' "$s"
-  elif [ "$s" -gt 300 ]; then printf 'LOW\tdelay %s seconds\n' "$s"; fi; }
+  if [ "$s" -gt 3600 ]; then printf 'MEDIUM\tset to %s seconds\n' "$s"
+  elif [ "$s" -gt 300 ]; then printf 'LOW\tset to %s seconds\n' "$s"; fi; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
