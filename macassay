@@ -176,14 +176,15 @@ classify_sudoers() {
       else print "MA-ACCOUNTS-006\tLOW\t" line "\t" progs }'; }
 
 # sudoers_findings PATH; stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>text" for each rule that gives a finding.
-# A rule whose program a non-root account can change gives one finding at the chain_writable severity (decision G2).
+# A rule whose program a non-root account can change gives one HIGH finding whatever severity chain_writable
+# returns, because the rule is a configured grant (decision G2). The reason text comes from chain_writable.
 sudoers_findings() {
   local id sev rule progs w pa
   classify_sudoers | while IFS=$'\t' read -r id sev rule progs; do
     if [ -n "$progs" ]; then
       read -ra pa <<< "$progs"; w=$(chain_writable "${pa[@]}")
       if [ -n "$w" ]; then
-        printf 'MA-ACCOUNTS-008\t%s\tNOPASSWD rule in %s runs a program that a non-root account can change (%s): %s\n' "${w%%$'\t'*}" "$1" "${w#*$'\t'}" "$rule"
+        printf 'MA-ACCOUNTS-008\tHIGH\tNOPASSWD rule in %s runs a program that a non-root account can change (%s): %s\n' "$1" "${w#*$'\t'}" "$rule"
         continue; fi
     fi
     case "$id" in

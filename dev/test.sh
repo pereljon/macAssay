@@ -278,6 +278,9 @@ check "G20 admin-writable folder under /Applications is MEDIUM" [ $? -eq 0 ]
 check "G20 admin-writable folder under /Library is HIGH" [ $? -eq 0 ]
 printf 'bob ALL = (root) NOPASSWD: %s\n' "$T/prog" | sudoers_findings /etc/sudoers > "$T/g20s"
 check "G20 NOPASSWD for a user-writable program is HIGH" [ "$(cut -f1,2 "$T/g20s")" = $'MA-ACCOUNTS-008\tHIGH' ]
+( chain_writable() { printf 'MEDIUM\tadmin group can write /Applications\n'; }
+  printf 'bob ALL = (root) NOPASSWD: /Applications/Tool\n' | sudoers_findings /etc/sudoers | cut -f1,2 | grep -qx $'MA-ACCOUNTS-008\tHIGH' )
+check "G20 NOPASSWD for an admin-writable program is HIGH" [ $? -eq 0 ]
 ( group_has_others() { [ "$1" = 20 ]; }
   printf '%s\n' '-rw-rw-r--  1 501  20  10 Nov 1 10:00 /Users/a/.zshrc' \
                 '-rw-r--r--  1 502  20  10 Nov 1 10:00 /Users/a/.bashrc' \
