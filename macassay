@@ -261,13 +261,16 @@ print_sudoers_mode() {
 
 sudoers_ok() { /usr/sbin/visudo -c >/dev/null 2>&1; }
 
-# Puts back $TMP/old as $RULES, or removes $RULES when there was none. Fails when sudo still does not parse.
+# Puts back $TMP/old as $RULES, or removes $RULES when there was none or it cannot be put back.
+# Returns 0 when the previous state is back, 2 when the old rules were lost but sudo parses, 1 when sudo still does not parse.
 rollback_rules() {
   local new; new="$(dirname "$RULES")/.macassay.new"
-  if [ -f "$TMP/old" ]; then
-    { /usr/bin/install -o root -g wheel -m 0440 "$TMP/old" "$new" && mv -f "$new" "$RULES"; } 2>/dev/null || rm -f "$new"
-  else rm -f "$RULES"; fi
-  sudoers_ok; }
+  if [ -f "$TMP/old" ] && { /usr/bin/install -o root -g wheel -m 0440 "$TMP/old" "$new" && mv -f "$new" "$RULES"; } 2>/dev/null; then
+    sudoers_ok; return; fi
+  rm -f "$new" "$RULES"
+  sudoers_ok || return 1
+  [ -f "$TMP/old" ] && return 2
+  return 0; }
 
 install_mode() {
   local user="${SUSER:-$SUDO_USER}" d
@@ -287,7 +290,10 @@ $(cat "$TMP/writable")"
   /usr/bin/install -o root -g wheel -m 0440 "$TMP/rules" /etc/sudoers.d/.macassay.new || die "Could not write /etc/sudoers.d/.macassay.new"
   mv -f /etc/sudoers.d/.macassay.new "$RULES" || { rm -f /etc/sudoers.d/.macassay.new; die "Could not install $RULES"; }
   if ! sudoers_ok; then
-    rollback_rules && die "visudo -c failed after the install, so the previous state was restored."
+    rollback_rules; case $? in
+      0) die "visudo -c failed after the install, so the previous state was restored." ;;
+      2) die "visudo -c failed after the install, and the previous rules could not be put back. $RULES was removed; sudo works without the macassay rules." ;;
+    esac
     die "visudo -c failed after the install, and restoring the previous state also failed. sudo may refuse every command. Recover without sudo:
 osascript -e 'do shell script \"rm $RULES\" with administrator privileges'"
   fi

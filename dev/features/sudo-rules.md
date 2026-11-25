@@ -50,6 +50,7 @@ A normal-user run, local or remote, gets the privileged checks without full root
 - 2026-11-24: The device profiles rule is `profiles list -type configuration` instead of `profiles show` (code review finding CR-4). Conviction: `ok`. `list` prints names and identifiers, so payload contents never reach the audit's temporary files. Rejected: keeping `show` and testing it with an installed test profile; dropping the check. That `list` prints no payload contents is not yet verified on a Mac with a device profile.
 - 2026-11-24: The installer stops before writing when the backup copy of the old rules fails. After a failed rollback, it says so and prints a recovery command that does not use sudo (code review finding CR-5). Conviction: `ok`.
 - 2026-11-24: The granted user name must not look like a sudoers alias or `ALL` (code review finding CR-11). Conviction: `ok`. A rule for user `ALL` grants the commands to every account.
+- 2026-11-24: When the rollback cannot put back the old rules file, it removes `/etc/sudoers.d/macassay`, so sudo keeps working without the macassay rules (pre-merge review finding PM-1). Rejected: leaving the file that failed `visudo -c` in place and relying on the recovery command.
 
 ## Verified facts
 
@@ -192,7 +193,7 @@ USER ALL = (root) NOPASSWD: MACASSAY
 4. Check that the granted user cannot write any folder on the path to a file that a rule names. The check runs `sudo -u USER /bin/test -w FOLDER` for each folder from the parent up to `/`. If any folder is writable, stop and name it.
 5. If `/etc/sudoers.d/macassay` exists with identical content, print "already installed" and stop. If it differs, print the differences.
 6. Copy the old file, if any, to `$TMP`, and stop if the copy fails. Write the new file to `/etc/sudoers.d/.macassay.new` with owner root:wheel and mode 0440, then rename it to `macassay`.
-7. Run `visudo -c`. If it fails, restore the old file or remove the new one, then run `visudo -c` again. If that passes, exit with an error that says the previous state was restored. If it fails, say that sudo may refuse every command, and print the recovery command `osascript -e 'do shell script "rm /etc/sudoers.d/macassay" with administrator privileges'`.
+7. Run `visudo -c`. If it fails, restore the old file or remove the new one. If the old file cannot be restored, remove the new one. Then run `visudo -c` again. If that passes, exit with an error that says the previous state was restored, or that the old rules were removed. If it fails, say that sudo may refuse every command, and print the recovery command `osascript -e 'do shell script "rm /etc/sudoers.d/macassay" with administrator privileges'`.
 8. Verify from the granted user with `sudo -u USER /usr/bin/sudo -n -k /sbin/pfctl -s info >/dev/null`. This runs one read-only rule for real; the `-l` form would pass without the rule. It also fails when a later line in `/etc/sudoers` overrides the rule, because sudo applies the last matching entry. On failure, keep the file and print a warning, since the file is valid.
 9. Warn when `/etc/sudoers` has no `#includedir` or `@includedir` line for `/private/etc/sudoers.d` or `/etc/sudoers.d`.
 10. Print the undo command: `sudo rm /etc/sudoers.d/macassay`.

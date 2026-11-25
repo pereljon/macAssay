@@ -12,7 +12,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 ## Planned
 
-- [/] Version 1.2 (built, code-reviewed, and install-tested on `feature/sudo-rules`; pre-merge review done, one question open): per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`.
+- [/] Version 1.2 (built, code-reviewed, and install-tested on `feature/sudo-rules`; pre-merge review done and its findings decided): per-command sudo rules and installer, no root audits, mode dispatch, skipped-check record, `dev/test.sh`, the handoff's new checks, root-run programs that a user can write, and the 1.1 fixes. Design: `dev/features/sudo-rules.md`.
 
 Version 1.3, checks proposed by the architecture review (2026-11-24), ranked by value. More proposals, ranked, are in `dev/prior-art-ideas.md`:
 
@@ -44,7 +44,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Run an architecture review and decide its findings. (resolved 2026-11-24): the user approved A1 to A3, B1, and B2; the design doc and test plan are revised.
 - [x] The user reviews the revised `dev/features/sudo-rules.md` and `dev/features/sudo-rules-tests.md`; code starts after approval. (resolved 2026-11-24): approved and built.
 - [x] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule. (resolved 2026-11-24): all four approved and built; see `dev/features/sudo-rules.md` (Decisions).
-- [/] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. T5 and T7 to T11 pass; the pre-merge review is left.
+- [/] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. T5 and T7 to T11 pass; the pre-merge review is done; the merge is left.
 - [ ] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
 

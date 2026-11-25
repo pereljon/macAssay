@@ -209,8 +209,12 @@ sudoers_ok() { ! grep -qs BAD "$RULES"; }
 check "F14 no backup: bad file removed, rollback succeeds" [ $? -eq 0 ]
 ( RULES="$T/sd/macassay"; TMP="$T/r2"; mkdir "$TMP"; echo BAD > "$RULES"; echo good > "$TMP/old"
   rollback_rules ) 2>/dev/null
-check "F14 backup not installable: rollback fails" [ $? -ne 0 ]
+check "F14 backup not installable: rollback returns 2" [ $? -eq 2 ]
+check "F14 backup not installable: bad file removed" [ ! -e "$T/sd/macassay" ]
 check "F14 no .macassay.new left behind" [ ! -e "$T/sd/.macassay.new" ]
+( RULES="$T/sd/macassay"; TMP="$T/r3"; mkdir "$TMP"; sudoers_ok() { false; }; echo BAD > "$RULES"
+  rollback_rules ) 2>/dev/null
+check "F14 sudo still broken: rollback returns 1" [ $? -eq 1 ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

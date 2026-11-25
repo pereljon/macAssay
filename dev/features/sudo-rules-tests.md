@@ -27,7 +27,7 @@ Two kinds of test cover version 1.2:
 - F11. `redact_ids` replaces dashed UUIDs in upper and lower case.
 - F12. `crontab_summary` shows schedule and command name, names variables without values, and hides commands with inline variables. No planted secret appears.
 - F13. `chain_writable` rates a program owned by the test user HIGH.
-- F14. `rollback_rules`, with `RULES` in a test folder and a stub `sudoers_ok` that fails while the rules file holds a bad line (CR-5): with no backup, it removes the bad file and succeeds; when the backup cannot be installed, it fails and leaves no `.macassay.new` file behind.
+- F14. `rollback_rules`, with `RULES` in a test folder and a stub `sudoers_ok` that fails while the rules file holds a bad line (CR-5): with no backup, it removes the bad file and succeeds; when the backup cannot be installed, it removes the bad file, returns 2, and leaves no `.macassay.new` file behind; when sudo still does not parse, it returns 1.
 
 ## Manual runs without rules installed
 
@@ -100,7 +100,7 @@ Code review before merge, 2026-11-24 (opus, high effort). Each line gives the fi
 - CR-11 A granted user named `ALL` or like a User_Alias passes validation: fixed after the user's decision; F4 covers it.
 - CR-12 Design text differs from the code: fixed in the design doc.
 - CR-13 A remote install logs the script as the sudo command line: listed as a side effect. Breaks the Read-only rule (every side effect listed).
-- PM-1 When the rollback cannot restore the old file, it leaves the new file that failed `visudo -c` in place: asked the user. Critical (sudo lockout path); no realistic trigger beyond an I/O failure; no requirement.
+- PM-1 When the rollback cannot restore the old file, it leaves the new file that failed `visudo -c` in place: fixed after the user's decision; the rollback removes the file, and F14 covers it. Critical (sudo lockout path); no realistic trigger beyond an I/O failure; no requirement.
 - PM-2 `dev/HANDOFF.md` side effects use the old names: fixed. Breaks the Read-only rule (every side effect listed).
 - PM-3 `docs/ISSUES.md` lists bugs this branch fixed as open: fixed. Breaks the Change Checklist.
 - PM-4 The writable-folder check runs only at install time: dropped. No requirement, not Critical; the actor who loosens another home's permissions is outside the Security Context.
@@ -140,7 +140,7 @@ Architecture review, 2026-11-24 (opus, high effort). Each line gives the finding
 Run on the Mac mini, 2026-11-24, macOS 27.2.1.
 
 - B1: 1.1 baseline recorded: 41 flags (HIGH 0, MEDIUM 14, LOW 19, INFO 8); ShellCheck 10 findings.
-- F1 to F14: pass (`dev/test.sh`), rerun after the CR-4, CR-5, CR-11, and `sshd -G` changes.
+- F1 to F14: pass (`dev/test.sh`), rerun after the CR-4, CR-5, CR-11, `sshd -G`, and PM-1 changes.
 - T4 after those changes: pass. Privileged checks 0 ran, 15 skipped; section 7 shows the `sshd -G` settings, and the SSH password flag cites `sshd -G`.
 - T1: pass. ShellCheck leaves the 3 historical `ls` findings and nothing new; 3 verified false positives are suppressed inline with reasons.
 - T2, T3, T6, T12 to T16: pass.
