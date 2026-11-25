@@ -43,3 +43,6 @@ build/
 # Audit reports describe a real Mac
 macassay-*.md
 mac-audit-*.md
+
+# Scratch that must outlive a session
+.scratch/

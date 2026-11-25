@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: ready
-status: 2026-11-24 approved by the user after the architecture review and the delta review; implementation plan next
+lifecycle: building
+status: 2026-11-24 approved after the architecture and delta reviews; building per docs/superpowers/plans/2026-11-24-checks-1.3.md
 ---
 
 # Report by theme and new checks (version 1.3)
@@ -257,7 +257,7 @@ The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a r
 
 ## Side effects
 
-None new. `cupsctl` can start cupsd on demand, so the printer sharing check runs it only when cupsd is already running. `tmutil isexcluded`, `system_profiler SPPowerDataType`, `codesign -dv`, and `sysadminctl -screenLock status` only read. No check runs `git`, `ssh -G`, `ssh-keygen` on a private key, or a helper inside an app.
+None new. The printer sharing check reads `/etc/cups/cupsd.conf` and never runs `cupsctl`, which can start cupsd. `tmutil isexcluded`, `system_profiler SPPowerDataType`, `codesign -dv`, and `sysadminctl -screenLock status` only read. No check runs `git`, `ssh -G`, `ssh-keygen` on a private key, or a helper inside an app.
 
 ## Out of scope
 
