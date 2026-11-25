@@ -415,7 +415,7 @@ DPCT=$(df -k /System/Volumes/Data | awk 'NR==2{gsub("%","",$5); print $5}')
 DFREE=$(df -k /System/Volumes/Data | awk 'NR==2{printf "%.1f", $4/1048576}')
 if [ "${DPCT:-0}" -ge 95 ]; then finding MA-HEALTH-003 HIGH Health "Data volume ${DPCT}% used, ${DFREE} GB free.";
 elif [ "${DPCT:-0}" -ge 85 ]; then finding MA-HEALTH-003 MEDIUM Health "Data volume ${DPCT}% used, ${DFREE} GB free."; fi
-system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name|S.M.A.R.T|Capacity|Free' | block "Drives and SMART status"
+system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name|S.M.A.R.T|Capacity|Free' | mask_hex | block "Drives and SMART status"
 system_profiler SPStorageDataType 2>/dev/null | grep 'S.M.A.R.T' | grep -qv Verified && finding MA-HEALTH-004 HIGH Health "A drive reports a SMART status other than Verified."
 h3 "Crash reports"
 find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | sed 's#.*/##' | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+.*//' | sort | uniq -c | sort -rn | head -25 | block "Crash and diagnostic reports, last 14 days (count by kind)"
