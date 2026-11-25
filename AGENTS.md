@@ -14,7 +14,7 @@
 ## Terminology
 
 - Use the terms of security assessment standards (NIST OSCAL, SARIF, the AWS Security Finding Format).
-- A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the Summary.
+- A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the report's Findings section.
 - A flag is a command-line option, such as `--quick`. Do not call a finding a flag.
 
 ## Security Context

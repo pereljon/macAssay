@@ -18,7 +18,7 @@ Make the report cover the security exposure that the architecture review and the
 
 Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSUES.md` and below) or to `AGENTS.md`.
 
-1. The report has the 14 sections in "Report outline", in that order, followed by the Summary and Limitations as now. Source: user decision.
+1. The report has the 14 sections in "Report outline", in that order, followed by the Findings and Limitations sections, which keep their place before the evidence. Source: user decision.
 2. Each finding's category is the short label of its section. Source: user decision.
 3. The "Privileged checks" section is removed; each privileged check moves to its topic section. Source: user decision.
 4. Every check group in "New checks" is built. Source: user decision (scope).
@@ -41,8 +41,17 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 - 2026-11-24: The architecture review of this design must review every severity, existing and new, for consistency and correctness. Source: the user.
 - 2026-11-24: The review's severity recommendations are adopted (architecture review A-SEV, user decisions A1 to A10, B1 to B14, C1). "Severities" and "Changes to 1.2 findings" show the result. This supersedes the earlier severity decision where they differ; for forced extensions, the user's HIGH stays for managed preferences on a Mac without MDM enrollment.
 - 2026-11-24: Scale rule for passwordless root: HIGH when someone configured the grant (`NOPASSWD: ALL`, NOPASSWD for a code-loading program); MEDIUM when it comes from default macOS permissions, such as a root daemon in an admin-writable folder under `/Applications` (decision C1). Rejected: HIGH for both, which gives 9 HIGH findings on this Mac for Apple's default layout.
-- 2026-11-24: Each check gets a stable ID, `MA-<LABEL>-NNN`, where LABEL is the section label in capitals (decisions E1, E2). An ID names the check, not one occurrence; it never changes and is never reused. A standard export can build a per-run ID from the check ID, the host, and the date. Rejected: standard catalogs as IDs; CCE changes with each macOS version, NIST 800-53 controls are too coarse, and CIS numbers change between benchmark versions. References to mSCP rules, NIST 800-53 controls, and ATT&CK techniques come later (register I076, decision E3).
+- 2026-11-24: Each check gets a stable ID, `MA-<LABEL>-NNN`, where LABEL is the section label in capitals (decisions E1, E2). An ID names one risk that a check reports, not one occurrence. A call site that reports several risks gives each risk its own ID; for example `classify_sudoers` has separate IDs for `NOPASSWD: ALL`, code-loading programs, `!authenticate`, weak `Defaults`, and other NOPASSWD rules. An ID never changes and is never reused, and it keeps its label if its check later moves to another section. A check can give several findings with one ID in a run (root daemons, firewall rules); an export builds a per-occurrence ID from the check ID, the host, the date, and a hash of the finding text. A standard export can build a per-run ID from the check ID, the host, and the date. Rejected: standard catalogs as IDs; CCE changes with each macOS version, NIST 800-53 controls are too coarse, and CIS numbers change between benchmark versions. References to mSCP rules, NIST 800-53 controls, and ATT&CK techniques come later (register I076, decision E3).
 - 2026-11-24: The script's `flag` function is renamed `finding`, per the project terminology in `AGENTS.md`.
+
+## Decision record, 2026-11-24
+
+The user decided each item below after the architecture review. In each, the rejected option is keeping the earlier severity (the 1.2 one, or the one approved in design part 3), unless the item names another.
+
+- A1 swap over 75% LOW. A2 application firewall off MEDIUM. A3 Time Machine not encrypted MEDIUM. A4 auto-login MEDIUM. A5 another account's shell startup file HIGH. A6 shell startup patterns split, HIGH and MEDIUM. A7 firewall rule for a missing program LOW. A8 Permissive secure boot HIGH. A9 tunnels (cloudflared, ngrok, frpc) LOW. A10 App Translocation paths left out of the temporary-folder finding.
+- B1 other boot arguments LOW. B2 debug port by bind address; no finding for `--remote-debugging-pipe`. B3 forced extensions by source and MDM enrollment; rejected: the review's MEDIUM for managed preferences without enrollment. B4 authorization plugin LOW when signed with a team ID, MEDIUM when unsigned. B5 writable plugin or PAM module by `chain_writable`. B6 StartupItems LOW. B7 missing native-messaging host program LOW. B8 NOPASSWD for a code-loading program HIGH. B9 no `secure_path` check dropped. B10 `credential.helper store` check dropped. B11 Remote Apple Events and Apache LOW. B12 macOS auto-install off INFO. B13 home folder writable by its group added, MEDIUM. B14 login items in apps added, MEDIUM when unsigned, HIGH in an unusual path.
+- C1 passwordless root: HIGH when configured, MEDIUM from default macOS permissions; rejected: HIGH for both.
+- E1 stable check IDs in 1.3. E2 format `MA-<LABEL>-NNN`. E3 standard references later; rejected: in 1.3.
 
 ## Verified facts
 
@@ -105,23 +114,26 @@ Each section has a short label, used as the finding category. Content moved from
 | 13 | Trust and privacy | Trust | 14 certificates, admin trust, privacy permissions | User-domain trust |
 | 14 | Security events from the logs | Events | 12 XProtect messages, failed SSH sign-ins | None |
 
-1.2 categories map to labels: Memory, Stability, and Storage (disk use) go to Health; Backup to Backups; Security and Firewall go to Platform, except failed SSH sign-ins, which go to Events; Malware (XProtect detections) goes to Events; Processes and Apps go to Apps; the rest keep their meaning under the new label. Finding texts that cite a section number are updated.
+Each 1.2 finding gets its new label from the section that holds its check, not from its old category. For example, the 1.2 "Security" findings for sudoers go to Accounts and the admin trust finding goes to Trust, while SIP and Gatekeeper go to Platform. R5 lists every finding call with its old category, new label, and ID. Finding texts that cite a section number are updated.
 
-Five 1.2 items from section 14 move as follows: the guest account to Accounts; `DYLD_INSERT_LIBRARIES` to Persistence; Gatekeeper-rejected apps to Apps; the 1.2 screen lock line to Platform, where the new screen lock check replaces it; the "rules not installed" notice to Limitations.
+Five 1.2 items from section 14 move as follows, and the per-account loop for other accounts (authorized_keys, LaunchAgents, shell startup files) moves whole to Persistence, so commit 1 does not split it: the guest account to Accounts; `DYLD_INSERT_LIBRARIES` to Persistence; Gatekeeper-rejected apps to Apps; the 1.2 screen lock line to Platform, where the new screen lock check replaces it; the "rules not installed" notice to Limitations.
 
 ## Build order
 
-1. Commit 1 moves blocks into the outline, renames categories, folds the privileged checks into topic sections, renames `flag` to `finding`, and assigns IDs to the 1.2 checks. It adds no check and changes no check logic or severity. The comparisons below strip IDs along with headings and categories. Verification, in three parts:
-   - Script check: sort the non-heading lines of the 1.2 script and the commit 1 script, apply the category map, and diff. This covers blocks that a quick run skips.
-   - Report check: run 1.2 twice to measure run-to-run noise, then run 1.2 and commit 1 with the same flags, normalize headings and categories, sort, and diff. Differences beyond the measured noise fail.
-   - Placement check: a table of every `h3`, `block`, and `run` label with its expected section, checked against the commit 1 report; and a list of every finding text with its new label, reviewed by hand.
-2. Commit 2 adds hex masking.
-3. Commit 3 applies "Changes to 1.2 findings".
-4. Later commits add the new checks, one section per commit, with fixture tests for each parser.
+1. Commit 1 moves blocks into the outline and folds the privileged checks into topic sections. It renames nothing and changes no logic, category, or severity. Verification:
+   - Script check (R0): sort the non-heading lines of the 1.2 script and the commit 1 script and diff. Only headings and section-number references may differ.
+   - Report check (R1): run 1.2 twice to measure run-to-run noise, then compare 1.2 and commit 1, sorted and with headings stripped. Run it twice: `--quick --offline --skip-du` without the sudo rules, and a full run with the rules installed, so the privileged blocks are covered. Differences beyond the noise fail.
+   - Order check: `bash -n`, and in the full run no "unbound" or empty-variable output in a moved block. A sorted comparison cannot see a variable used before it is set.
+   - Placement check (R2): a table of every `h3`, `block`, and `run` label with its expected section.
+2. Commit 2 renames `flag` to `finding`, sets each finding's label, and assigns IDs. It also renames the report strings "Automatic flags", "No automatic flags", and "(N flags)" to use "findings". Verification: a mechanical diff, in which every changed line is a finding call, a report string, or the findings table; plus R3, R5, and R6.
+3. Commit 3 adds hex masking.
+4. Commit 4 applies "Changes to 1.2 findings", except the screen lock removal, which moves to the Platform commit with its replacement.
+5. Later commits add the new checks, one section per commit, with fixture tests for each parser.
 
 ## Shared helpers
 
-- `finding ID SEVERITY LABEL TEXT` replaces `flag SEVERITY CATEGORY TEXT`. The findings file gains an ID column, and the Summary shows the ID with each finding. Commit 1 assigns IDs to the 1.2 checks; each new check gets its ID when it is built.
+- `finding ID SEVERITY LABEL TEXT` replaces `flag SEVERITY CATEGORY TEXT`. The findings file gains an ID column, and the report's Findings table shows it. Every ID is a literal string in the source, including in functions that compute a severity, such as `classify_sudoers`, which prints the ID with each result.
+- One item gives one finding, at its highest severity. For example, an unsigned authorization plugin that the user can write gives one HIGH finding; a debug port that is running and set in a launch item gives one finding. Commit 2 assigns IDs to the 1.2 checks; each new check gets its ID when it is built.
 
 - `mask_hex`: replaces runs of 32 or more hex characters with `<ID>`. Applied to certificate labels in section 13 (both trust checks and the System keychain list).
 - `default_line LABEL VALUE DEFAULT`: prints `- LABEL: VALUE`, or `- LABEL: not set (macOS default: DEFAULT)` when VALUE is empty.
@@ -157,7 +169,7 @@ Each check runs as the user. Severity labels follow "Severities".
 
 ### 6. Sharing and remote access
 
-- More sharing services, each from one key or listener: Remote Apple Events (`launchctl print system/com.apple.AEServer` succeeds), Internet Sharing (`com.apple.nat` `NAT` `Enabled`), SMB guest access (`AllowGuestAccess`), Apache (`org.apache.httpd` loaded), NFS (`/etc/exports` with entries), printer sharing (cupsd listening on a non-loopback TCP 631 in the privileged listener list; without the rules, `cupsctl` `_share_printers=1` only when `ps` shows cupsd already running, because `cupsctl` can start cupsd), AirDrop (`DiscoverableMode`), AirPlay receiver (ControlCenter listening on TCP 5000 or 7000), media sharing (`home-sharing-enabled`), content caching (`AssetCache` `Activated`).
+- More sharing services, each from one key or listener: Remote Apple Events (`launchctl print system/com.apple.AEServer` succeeds), Internet Sharing (`com.apple.nat` `NAT` `Enabled`), SMB guest access (`AllowGuestAccess`), Apache (`org.apache.httpd` loaded), NFS (`/etc/exports` with entries), printer sharing (read the world-readable `/etc/cups/cupsd.conf`: on when it has a `Port` line or a `Listen` line that is not localhost or a socket; this Mac shows `Listen localhost:631`. No `cupsctl`, which can start cupsd), AirDrop (`DiscoverableMode`), AirPlay receiver (ControlCenter listening on TCP 5000 or 7000), media sharing (`home-sharing-enabled`), content caching (`AssetCache` `Activated`).
 - Remote-support tools: process names from `ps -axo comm=` matched against TeamViewer, AnyDesk, RustDesk, ScreenConnect, Splashtop, BeyondTrust, LogMeIn, RealVNC, TigerVNC, and JumpCloud Assist.
 - More sshd settings, only when SSH listens, from the existing `sshd -G` output: `permituserenvironment`, `gatewayports`, `hostbasedauthentication`, `x11forwarding`, `maxauthtries`.
 
@@ -173,7 +185,7 @@ Each check runs as the user. Severity labels follow "Severities".
 
 - Forced extensions: `ExtensionInstallForcelist` (Chrome, Edge, Brave) and Firefox `ExtensionSettings` with `force_installed`, from `/Library/Managed Preferences`, `/Library/Managed Preferences/<user>`, `/Library/Preferences`, and `~/Library/Preferences`, plus Firefox `distribution/policies.json` inside the app bundle. The source and the MDM enrollment state (from the existing `profiles status -type enrollment`) set the severity. Extension IDs only.
 - Native-messaging hosts: count per folder; for each host manifest, the `path` key read with `plutil -extract path raw` (JSON). Findings: a path under `/tmp`, `/private/tmp`, `/private/var/folders`, or `/Users/Shared`; a missing path. Hidden folders give no finding here, because Claude Code and Codex install hosts under `~/.claude` and `~/.codex`.
-- Debug ports: match `ps -axwwo pid=,command=` in a pipe for `--remote-debugging-port` or a word-bounded `--inspect` (`--inspect`, `--inspect=`, `--inspect-brk`), excluding the check's own process. `--remote-debugging-pipe` opens no socket and is ignored. For each match, the name comes from `ps -o comm= -p PID` and the bind address from `lsof -nP -a -p PID -iTCP -sTCP:LISTEN`. `ps` output is never written to the temporary folder. Launch items whose `ProgramArguments` contain the flags are also listed; `--remote-debugging-address` with a non-loopback value counts as non-loopback.
+- Debug ports: match `ps -axwwo pid=,command=` in a pipe for `--remote-debugging-port` or a word-bounded `--inspect` (`--inspect`, `--inspect=`, `--inspect-brk`), excluding the check's own process. `--remote-debugging-pipe` opens no socket and is ignored. For each match, the name comes from `ps -o comm= -p PID` and the bind address from `lsof -nP -a -p PID -iTCP -sTCP:LISTEN`. `ps` output is never written to the temporary folder. Launch items whose `ProgramArguments` contain the flags are also listed, by label and program path only, never other arguments; `--remote-debugging-address` with a non-loopback value counts as non-loopback. Without the sudo rules, `lsof` sees only the user's own processes, so another account's process gets the bind address from the privileged listener list, or "unknown" when that is skipped.
 
 ### 10. Accounts and privileges
 
@@ -186,9 +198,9 @@ Each check runs as the user. Severity labels follow "Severities".
 ### 11. Credentials and keys
 
 - Credential files in the home folder: `.netrc`, `.aws/credentials`, `.git-credentials`, `.npmrc`, `.pypirc`, `.docker/config.json`, `.kube/config`, `.config/gh/hosts.yml`. For each: presence, owner, mode (`stat -L`, so a symlink reports its target), and whether `has_key` finds an inline secret: `password` in `.netrc`; `aws_secret_access_key` or `aws_session_token`; any line in `.git-credentials`; `_authToken`, `_auth`, or `_password` in `.npmrc`; `password` in `.pypirc`; `"auth":` or `"identitytoken":`; `token:`, `password:`, or `client-key-data:` in `.kube/config`; `oauth_token:`. A value that starts with `${` names an environment variable and does not count. The report never names profiles or sections.
-- SSH private keys: files in `~/.ssh` whose line 1 is a private-key header. Report file name, mode (`stat -L`), and passphrase state from the header only. For OpenSSH keys, compare the start of line 2 with the fixed base64 prefix `b3BlbnNzaC1rZXktdjEAAAAABG5vbmU` (cipher `none`) without decoding, because a key written as one line holds the private material on line 2. Never run `ssh-keygen` on a private key. File names are printed, because the user needs them to fix a finding; key file names are not secrets under `AGENTS.md`.
+- SSH private keys: files in `~/.ssh` whose line 1 is a private-key header. Report file name, mode (`stat -L`), and passphrase state from the header only. For OpenSSH keys, take only the first 31 characters of line 2 (`cut -c1-31`) and compare them with the fixed base64 prefix `b3BlbnNzaC1rZXktdjEAAAAABG5vbmU` (cipher `none`) without decoding, because a key written as one line holds the private material on line 2. A PKCS#8 `BEGIN ENCRYPTED PRIVATE KEY` line 1 counts as encrypted; for other PEM keys, `ENCRYPTED` is searched in the first 3 lines only. Never run `ssh-keygen` on a private key. File names are printed, because the user needs them to fix a finding; key file names are not secrets under `AGENTS.md`.
 - SSH public keys: `ssh-keygen -l -f` on each `~/.ssh/*.pub`; print bits and type only, never the comment, which `AGENTS.md` allows only from `authorized_keys`.
-- SSH client options: parse `~/.ssh/config`, `/etc/ssh/ssh_config`, `/etc/ssh/ssh_config.d/*`, and every `Include` target they name, for `ForwardAgent yes` and `StrictHostKeyChecking no` or `off`. Accept `Key value` and `Key=value`, any case. Options before the first `Host` or `Match` apply to every host, like `Host *`. Report whether each applies to every host, and a count of other `Host` blocks. Host names are not reported.
+- SSH client options: parse `~/.ssh/config`, `/etc/ssh/ssh_config`, `/etc/ssh/ssh_config.d/*`, and every `Include` target they name, for `ForwardAgent yes` and `StrictHostKeyChecking no` or `off`. Accept `Key value` and `Key=value`, any case. Options before the first `Host` or `Match` apply to every host, like `Host *`. Report whether each applies to every host, and a count of other `Host` blocks. Host names are not reported. `Include` handling: expand a leading `~/` by hand, expand globs with `compgen -G "$pattern"` (quoted, so the text is never split or run), skip patterns that contain `%` or `$` tokens, keep a list of files already read, and stop at a depth of 16, as ssh does. PAM `include` and `substack` use the same list of files read.
 
 ### 12. Shell, developer and AI tools
 
@@ -196,7 +208,7 @@ Each check runs as the user. Severity labels follow "Severities".
 
 ### 13. Trust and privacy
 
-- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. Only certificates with a `TrustRoot` or `TrustAsRoot` result count toward the finding, so a "Never Trust" entry does not raise it.
+- User-domain trust: `security dump-trust-settings`, certificate names only through `mask_hex`; policy strings are dropped. A certificate counts as trusted when it has a `TrustRoot` or `TrustAsRoot` result, has a trust setting with no result type (the default is TrustRoot), or has zero trust settings ("always trust"), per `SecTrustSettings.h`. `Deny` and `Unspecified` results do not count. The 1.2 admin-domain trust finding uses the same rule (see "Changes to 1.2 findings").
 
 ## Changes to 1.2 findings
 
@@ -206,14 +218,17 @@ Decided by the user on 2026-11-24 (A1 to A10). Commit 1 keeps 1.2 severities so 
 - Application firewall off: HIGH to MEDIUM.
 - Time Machine backup not encrypted: LOW to MEDIUM.
 - Auto-login: LOW to MEDIUM.
-- Another account's shell startup file owned by another account or writable by others: MEDIUM to HIGH; MEDIUM when only its group can write it.
+- Another account's shell startup file owned by an account other than its user or root, or writable by others: MEDIUM to HIGH. Root-owned files give no finding. Group-writable: see the open question in the test plan's review findings (D-2.3).
 - Shell startup patterns: download-and-run, `/dev/tcp`, and `nc -e` stay HIGH; `base64` decoding and `osascript -e` become MEDIUM.
 - Firewall allow rule for a program that no longer exists: MEDIUM to LOW; unsigned and ad hoc programs stay MEDIUM.
 - Secure boot policy: Permissive is HIGH; Reduced stays MEDIUM.
 - Tunnels: cloudflared INFO to LOW; ngrok and frpc processes give the same LOW finding.
 - Programs running from `/private/var/folders`: paths containing `/AppTranslocation/` are left out of the HIGH finding.
 - `NOPASSWD: ALL`: MEDIUM to HIGH.
-- The 1.2 screen lock finding is removed; the new screen lock check replaces it.
+- The 1.2 screen lock finding is removed in the Platform commit, which adds its replacement.
+- Admin-domain trusted certificates count by the same rule as the user domain: Deny and Unspecified results no longer count.
+- `chain_writable` and decision C1: open question D-2.2 in the test plan's review findings.
+- Shell startup patterns: the MEDIUM part gets its own ID; the HIGH part keeps the 1.2 check's ID.
 
 ## Severities
 
@@ -229,7 +244,7 @@ The security scale is: HIGH for direct exposure or tampering now, MEDIUM for a r
 | Platform | Signed system volume off; boot arguments with `amfi_` or `cs_enforcement_disable`; quarantine off | Library validation off; world-writable app; screen lock over 1 hour or off | Other boot arguments; screen lock over 5 minutes; world-writable `/Library` folder without the sticky bit | |
 | Sharing | | Internet Sharing, SMB guest, NFS; remote-support tool running; `PermitUserEnvironment`, `GatewayPorts`, or `HostbasedAuthentication` on | Remote Apple Events, Apache, printer sharing, AirDrop to everyone, AirPlay receiver, media sharing, content caching; `X11Forwarding` on; `MaxAuthTries` over 6 | |
 | Persistence | Authorization plugin or PAM module that the user can write (`chain_writable` HIGH); login item in an app in an unusual path | Unsigned or ad hoc authorization plugin; plugin or PAM module that only the admin group can write; PAM module outside `/usr/lib/pam`; any ScriptingAddition or directory service plug-in; unsigned login item in an app | Authorization plugin signed with a team ID; any StartupItem | Audio plug-ins; login items in apps |
-| Apps | Debug port listening on a non-loopback address, running or set in a launch item; forced extensions in managed preferences on a Mac without MDM enrollment | Debug port on loopback only; forced extensions in local preferences only; native-messaging host under a temporary or shared folder | Native-messaging host whose program is missing | Forced extensions on an MDM-enrolled Mac; native-messaging host count |
+| Apps | Debug port listening on a non-loopback address, running or set in a launch item; forced extensions in managed preferences or Firefox `policies.json` on a Mac without MDM enrollment | Debug port on loopback only, or with an unknown bind address; forced extensions in local preferences only; native-messaging host under a temporary or shared folder | Native-messaging host whose program is missing | Forced extensions (any source) on an MDM-enrolled Mac; native-messaging host count |
 | Accounts | Extra UID 0; home folder writable by others; sudoers file or `sudo` with wrong owner or writable by others; `NOPASSWD: ALL`; `!authenticate`; NOPASSWD for a code-loading program | Hidden admin account; home folder writable by its group; weak `Defaults` | Hidden non-admin account | |
 | Credentials | Credential file with an inline secret, or a private key, readable by group or others | Weak SSH key; `ForwardAgent yes` or `StrictHostKeyChecking no` for every host | Private keys without a passphrase; owner-only credential files with inline secrets; the same SSH options for specific hosts | |
 | Developer | | | Global `hooksPath` | |
