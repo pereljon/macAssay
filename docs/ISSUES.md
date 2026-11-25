@@ -34,6 +34,7 @@ Version 1.3 (designing on `feature/checks-1.3`; design `dev/features/checks-1.3.
 Later:
 
 - [ ] Run selected report sections only (an `--only` option), with the skipped sections listed under Limitations.
+- [ ] Export findings in a standard security format beside the Markdown report (candidates: NIST OSCAL assessment results, the AWS Security Finding Format, SARIF; register I084, I086). The Markdown report stays the default, for LLMs and people.
 
 ## Publish checklist
 
