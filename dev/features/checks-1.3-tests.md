@@ -45,6 +45,7 @@ Each case that touches secret-bearing input plants fake values (`SECRET_A`, `SEC
 - G16. PAM parser: a bracketed control field, an absolute module path outside `/usr/lib/pam`, and an `include` of another `/etc/pam.d` file.
 - G17. User trust: a `TrustRoot` entry, an entry with no result type, and a certificate with zero trust settings count; `Deny` and `Unspecified` entries do not. The admin-domain parser gives the same counts.
 - G20. `chain_writable` and NOPASSWD: an admin-writable folder under `/Applications` gives MEDIUM and one under `/Library` gives HIGH; a NOPASSWD rule for a script in a user-writable folder gives HIGH; a home folder and an rc file writable by `staff` give HIGH.
+- G21. Recent installs: an install by softwareupdated and an install older than the cutoff are skipped; a nested package list does not break the entry.
 - G14. Hidden accounts: a hidden admin and a hidden non-admin fixture give MEDIUM and LOW; system accounts under UID 500 are ignored.
 
 ## Manual runs (no sudo rules)

@@ -230,7 +230,7 @@ check "F15 no flag calls left" [ -z "$(grep -v '^[[:space:]]*#' macassay | grep 
 grep -oE 'MA-[A-Za-z]+-[0-9]+' macassay | sort > "$T/f16"
 check "F16 every ID has a label and three digits" [ -z "$(grep -vxE "MA-($LABRE)-[0-9]{3}" "$T/f16")" ]
 grep -oE 'finding MA-[A-Z]+-[0-9]+' macassay | sort | uniq -d > "$T/f16d"
-check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007|MA-PLATFORM-009)' "$T/f16d")" ]
+check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007|MA-PLATFORM-009|MA-UPDATES-003)' "$T/f16d")" ]
 
 # G1: long hex runs in certificate labels are masked; dashed UUIDs are still replaced.
 h32=0123456789abcdef0123456789ABCDEF; h31=${h32:0:31}
@@ -306,6 +306,45 @@ check "R7 App Translocation path is not a temporary program" not temp_program /p
 check "R7 plain /private/var/folders path is a temporary program" temp_program /private/var/folders/ab/T/x/prog
 check "R7 /Users/Shared path is a temporary program" temp_program /Users/Shared/prog
 check "R7 /Applications program is not a temporary program" not temp_program /Applications/X.app/Contents/MacOS/X
+
+# G11: missing update settings print the macOS default; the SoftwareUpdate domain is read one key at a time.
+BODY="$T/g11"; : > "$BODY"
+default_line "Automatic checks (AutomaticCheckEnabled)" "" "1, on"
+default_line "Automatic download (AutomaticDownload)" 0 "1, on"
+check "G11 missing key prints the macOS default" has "$T/g11" "- Automatic checks (AutomaticCheckEnabled): not set (macOS default: 1, on)"
+check "G11 set key prints its value" has "$T/g11" "- Automatic download (AutomaticDownload): 0"
+check "G11 no whole-domain read of SoftwareUpdate" [ -z "$(grep -E 'defaults read [^ ]*SoftwareUpdate[^ ]* *(2>/dev/null)? *(\||$)' macassay)" ]
+check "G11 AutoInstallProductKeys is never read" hasnt macassay "AutoInstallProductKeys"
+
+# G21: recent installs list non-Apple installs since the cutoff, without nested package lists.
+cat > "$T/ih" <<'EOF'
+[
+  0 => {
+    "date" => 2026-10-01 05:33:25 +0000
+    "displayName" => "macOS 27.1"
+    "displayVersion" => "27.1"
+    "processName" => "softwareupdated"
+  }
+  1 => {
+    "date" => 2026-11-20 05:39:05 +0000
+    "displayName" => "Example App"
+    "displayVersion" => "2.0"
+    "packageIdentifiers" => [
+      0 => "com.example.app"
+    ]
+    "processName" => "installer"
+  }
+  2 => {
+    "date" => 2026-09-01 01:00:00 +0000
+    "displayName" => "Old App"
+    "displayVersion" => "1.0"
+    "processName" => "installer"
+  }
+]
+EOF
+recent_installs 2026-10-25 < "$T/ih" > "$T/g21"
+check "G21 recent non-Apple install listed" has "$T/g21" "2026-11-20  Example App 2.0"
+check "G21 Apple and old installs skipped" [ "$(grep -c . "$T/g21")" -eq 1 ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

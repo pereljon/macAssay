@@ -398,6 +398,16 @@ remote_mode() {
   if [ "$rc" -ne 0 ] || [ ! -s "$OUT.part" ]; then rm -f "$OUT.part"; die "Remote audit failed (exit $rc)."; fi
   mv "$OUT.part" "$OUT"; echo "Report written to $OUT" >&2; exit 0; }
 
+# recent_installs CUTOFF; stdin: plutil -p of /Library/Receipts/InstallHistory.plist.
+# Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that softwareupdated did not make.
+recent_installs() {
+  awk -v c="$1" '
+    /^  [0-9]+ => \{/ { d = n = v = p = ""; next }
+    /^    "date" => / { d = $3 }
+    /^    "displayName" => / { n = $0; sub(/^[^>]*> "/, "", n); sub(/"$/, "", n) }
+    /^    "displayVersion" => / { v = $0; sub(/^[^>]*> "/, "", v); sub(/"$/, "", v) }
+    /^    "processName" => / { p = $0; sub(/^[^>]*> "/, "", p); sub(/"$/, "", p) }
+    /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " n (v != "" ? " " v : "") }'; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -539,7 +549,25 @@ fi
 
 # ---------- 3. Updates and installs ----------
 h2 "3. Updates and installs"
-defaults read /Library/Preferences/com.apple.SoftwareUpdate 2>/dev/null | grep -E 'Automatic|Critical|ConfigData|LastSuccessfulDate' | block "Software Update settings"
+SUP=/Library/Preferences/com.apple.SoftwareUpdate
+supd() { defaults read "$SUP" "$1" 2>/dev/null; }
+ACE=$(supd AutomaticCheckEnabled); LFS=$(supd LastFullSuccessfulDate); ADL=$(supd AutomaticDownload)
+AIM=$(supd AutomaticallyInstallMacOSUpdates); CUI=$(supd CriticalUpdateInstall); CDI=$(supd ConfigDataInstall)
+ASU=$(defaults read /Library/Preferences/com.apple.commerce AutoUpdate 2>/dev/null)
+say "**Software Update settings**"; say ""
+default_line "Automatic checks (AutomaticCheckEnabled)" "$ACE" "1, on"
+default_line "Last full successful check (LastFullSuccessfulDate)" "$LFS" "unknown"
+default_line "Automatic download (AutomaticDownload)" "$ADL" "1, on"
+default_line "Install macOS updates automatically (AutomaticallyInstallMacOSUpdates)" "$AIM" "0, off"
+default_line "Security responses and system files (CriticalUpdateInstall)" "$CUI" "1, on"
+default_line "XProtect and other data updates (ConfigDataInstall)" "$CDI" "1, on"
+default_line "App Store app updates (com.apple.commerce AutoUpdate)" "$ASU" "1, on"
+LFSD=""; [ -n "$LFS" ] && LFSD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d %H:%M:%S +0000' "$LFS" +%s 2>/dev/null || date +%s) ) / 86400 ))
+if [ "$ACE" = 0 ]; then finding MA-UPDATES-003 MEDIUM Updates "Automatic software update checks are off."
+elif [ -n "$LFSD" ] && [ "$LFSD" -gt 30 ]; then finding MA-UPDATES-003 MEDIUM Updates "The last full software update check was $LFSD days ago."; fi
+{ [ "$CUI" = 0 ] || [ "$CDI" = 0 ]; } && finding MA-UPDATES-004 MEDIUM Updates "Security responses (CriticalUpdateInstall=${CUI:-default}) or XProtect data updates (ConfigDataInstall=${CDI:-default}) are off."
+{ [ "$ADL" = 0 ] || [ "$ASU" = 0 ]; } && finding MA-UPDATES-006 LOW Updates "Automatic download of macOS updates (${ADL:-default}) or App Store auto-update (${ASU:-default}) is off."
+[ "$AIM" = 1 ] || finding MA-UPDATES-007 INFO Updates "macOS updates are not installed automatically."
 if [ "$OFFLINE" -eq 0 ]; then
   SU=$(softwareupdate -l 2>&1); echo "$SU" | block "softwareupdate -l"
   echo "$SU" | grep -q '^\* Label' && finding MA-UPDATES-001 MEDIUM Updates "macOS updates are available: $(echo "$SU" | awk -F': ' '/^\* Label/{print $2}' | paste -sd';' -)"
@@ -550,6 +578,17 @@ if [ "$OFFLINE" -eq 0 ]; then
   fi
 else say "Skipped (--offline)."; skip "macOS and Homebrew update checks" "--offline"; fi
 system_profiler SPInstallHistoryDataType 2>/dev/null | grep -A1 -E '^\s+XProtect' | grep Version | tail -2 | block "XProtect versions (latest installs)"
+XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
+if [ -n "$XPI" ]; then
+  XPD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d' "$XPI" +%s 2>/dev/null || date +%s) ) / 86400 ))
+  say "- XProtect installed: $XPI ($XPD days ago)"
+  [ "$XPD" -gt 60 ] && finding MA-UPDATES-005 MEDIUM Updates "XProtect was last updated $XPD days ago."
+else say "- XProtect installed: unknown"; fi
+plutil -p /Library/Receipts/InstallHistory.plist 2>/dev/null | recent_installs "$(date -u -v-30d +%Y-%m-%d)" > "$TMP/inst"
+say "- Non-Apple installer packages recorded: $(pkgutil --pkgs 2>/dev/null | grep -vc '^com\.apple\.')"
+if [ -s "$TMP/inst" ]; then block "Non-Apple installs in the last 30 days (date, name, version)" < "$TMP/inst"
+  finding MA-UPDATES-008 INFO Updates "$(grep -c . "$TMP/inst") non-Apple installs in the last 30 days (see section 3)."
+else say "- Non-Apple installs in the last 30 days: none"; fi
 
 # ---------- 4. Platform security ----------
 h2 "4. Platform security"
