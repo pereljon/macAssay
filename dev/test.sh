@@ -387,5 +387,45 @@ check "G23 TeamViewer is listed" [ "$(rs /Applications/TeamViewer.app/Contents/M
 check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = vncserver ]
 check "G23 sshd gives nothing" [ -z "$(rs /usr/sbin/sshd)" ]
 
+# G8: debug ports. Only PIDs, classes and program paths leave the parsers.
+printf '%s\n' '101 /Applications/Foo App.app/Contents/MacOS/Foo --remote-debugging-port=9222 --token=SECRET_A' \
+  '102 /usr/bin/node --inspect-brk=0.0.0.0:9229 app.js' '103 /usr/bin/node --inspect-wait app.js' \
+  '104 /usr/bin/node --inspect-port=9229 app.js' '105 /x/chrome --remote-debugging-pipe' \
+  '106 awk / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}' \
+  '107 /usr/bin/node --inspect' | debug_pids > "$T/g8"
+check "G8 PIDs of debug-port processes only" [ "$(paste -sd, - < "$T/g8")" = "101,102,103,107" ]
+check "G8 no command text in the output" hasnt "$T/g8" "SECRET"
+printf '%s\n' /usr/bin/node --inspect=0.0.0.0:9229 --token=SECRET_B | launch_debug_class > "$T/g8l"
+check "G8 launch item non-loopback inspect" [ "$(cat "$T/g8l")" = nonloopback ]
+check "G8 launch item output has no arguments" hasnt "$T/g8l" SECRET
+check "G8 remote-debugging-address" [ "$(printf '%s\n' /x/Chrome --remote-debugging-port=9222 --remote-debugging-address=0.0.0.0 | launch_debug_class)" = nonloopback ]
+check "G8 loopback by default" [ "$(printf '%s\n' /x/Chrome --remote-debugging-port=9222 | launch_debug_class)" = loopback ]
+check "G8 pipe gives nothing" [ -z "$(printf '%s\n' /x/Chrome --remote-debugging-pipe | launch_debug_class)" ]
+check "G8 bind loopback" [ "$(bind_class '127.0.0.1:9222')" = loopback ]
+check "G8 bind on all addresses" [ "$(bind_class $'127.0.0.1:9222\n*:9229')" = nonloopback ]
+check "G8 bind unknown" [ "$(bind_class '')" = unknown ]
+# G15: a debug port running and set in a launch item gives one finding.
+printf '%s\n' $'/x/Foo App\tloopback\trunning' $'/x/Foo App\tnonloopback\tlaunch item a.plist' | debug_findings > "$T/g15d"
+check "G15 one debug finding per program" [ "$(grep -c . "$T/g15d")" -eq 1 ]
+check "G15 that finding is HIGH" [ "$(cut -f1 "$T/g15d")" = HIGH ]
+# G12: native-messaging host paths.
+check "G12 host in /tmp is MEDIUM" [ "$(nmh_risk /tmp/x/host)" = MEDIUM ]
+check "G12 missing host is LOW" [ "$(nmh_risk /var/empty/no/such/host)" = LOW ]
+check "G12 normal host gives nothing" [ -z "$(nmh_risk /bin/ls)" ]
+# G13: forced extensions by source and enrollment.
+cat > "$T/chrome.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>ExtensionInstallForcelist</key><array>
+<string>abcdefghijklmnopabcdefghijklmnop;https://clients2.google.com/service/update2/crx</string>
+</array></dict></plist>
+PLIST
+printf '{"policies":{"ExtensionSettings":{"a@b":{"installation_mode":"force_installed"},"c@d":{"installation_mode":"allowed"}}}}\n' > "$T/policies.json"
+check "G13 Chromium forced ID without its update URL" [ "$(forced_ext_ids "$T/chrome.plist" ExtensionInstallForcelist)" = abcdefghijklmnopabcdefghijklmnop ]
+check "G13 Firefox policies.json forced ID only" [ "$(forced_ext_ids "$T/policies.json" policies.ExtensionSettings)" = "a@b" ]
+check "G13 managed, not enrolled is HIGH" [ "$(printf 'managed\tcom.google.Chrome\tx\n' | forced_ext_finding 0 | cut -f1,2)" = $'MA-APPS-005\tHIGH' ]
+check "G13 local only, not enrolled is MEDIUM" [ "$(printf 'local\tcom.google.Chrome\tx\n' | forced_ext_finding 0 | cut -f1,2)" = $'MA-APPS-006\tMEDIUM' ]
+check "G13 enrolled is INFO" [ "$(printf 'managed\tcom.google.Chrome\tx\n' | forced_ext_finding 1 | cut -f1,2)" = $'MA-APPS-007\tINFO' ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

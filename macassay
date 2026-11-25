@@ -444,6 +444,43 @@ pam_modules() {
 auth_plugin_finding() {
   if [ -n "$2" ]; then printf 'MA-PERSISTENCE-012\t%s\n' "${2%%$'\t'*}"; return; fi
   case "$1" in Apple) ;; unsigned|"ad hoc") printf 'MA-PERSISTENCE-013\tMEDIUM\n' ;; *) printf 'MA-PERSISTENCE-014\tLOW\n' ;; esac; }
+# forced_ext_ids FILE KEY: prints the IDs of force-installed extensions under KEY in a plist or JSON file.
+# Chromium lists hold "ID;update URL" strings; Firefox ExtensionSettings maps an ID to its installation_mode.
+forced_ext_ids() {
+  plutil -extract "$2" xml1 -o - "$1" 2>/dev/null | plutil -p - 2>/dev/null | awk '
+    /^  [0-9]+ => "/ { s = $0; sub(/^[^"]*"/, "", s); sub(/[;"].*/, "", s); print s; next }
+    /^  "/ { k = $0; sub(/^  "/, "", k); sub(/" => .*/, "", k); next }
+    /"installation_mode" => "force_installed"/ { print k }'; }
+# forced_ext_finding ENROLLED; stdin: "source<TAB>browser<TAB>IDs" lines, source managed or local.
+# Prints "ID<TAB>SEVERITY<TAB>browsers" for the one finding they give.
+forced_ext_finding() {
+  awk -F'\t' -v e="$1" '{ b[$2] = 1; if ($1 == "managed") m[$2] = 1 }
+    END { for (k in b) n++; if (!n) exit
+      if (e == 1) { id = "MA-APPS-007"; sv = "INFO"; for (k in b) l = l (l == "" ? "" : ",") k }
+      else { for (k in m) l = l (l == "" ? "" : ",") k
+        if (l != "") { id = "MA-APPS-005"; sv = "HIGH" } else { id = "MA-APPS-006"; sv = "MEDIUM"; for (k in b) l = l (l == "" ? "" : ",") k } }
+      print id "\t" sv "\t" l }'; }
+# nmh_risk PATH: prints MEDIUM for a native-messaging host program in a temporary or shared folder, LOW for a missing one.
+nmh_risk() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) echo MEDIUM ;; /*) [ -e "$1" ] || echo LOW ;; esac; }
+# debug_pids; stdin: "PID command" lines from ps. Prints the PID of each process started with a debug port flag.
+# The pattern text has "--(" where a match needs "--r" or "--i", so this awk never matches its own command line.
+debug_pids() { awk '/ --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}'; }
+# launch_debug_class; stdin: a launch item's arguments, one per line. Prints nonloopback or loopback for an item with a debug port flag.
+launch_debug_class() { awk '
+  prev == "--remote-debugging-address" { a = $0 }
+  /^--remote-debugging-address=/ { a = substr($0, index($0, "=") + 1) }
+  /^--remote-debugging-port(=|$)/ || /^--inspect(-brk|-wait)?(=|$)/ { f = 1 }
+  /^--inspect(-brk|-wait)?=/ { h = substr($0, index($0, "=") + 1); if (h ~ /:/) { sub(/:[0-9]+$/, "", h); a = h } }
+  { prev = $0 }
+  END { if (!f) exit; if (a != "" && a !~ /^(127\.|localhost$|::1$|\[::1\]$)/) print "nonloopback"; else print "loopback" }'; }
+# bind_class ADDRESSES: prints nonloopback, loopback, or unknown for lsof listen addresses, one per line.
+bind_class() {
+  [ -n "$1" ] || { echo unknown; return; }
+  printf '%s\n' "$1" | awk '{ a = $0; sub(/:[0-9]+$/, "", a); if (a !~ /^(127\.|\[::1\]$|localhost$)/) n = 1 } END { print (n ? "nonloopback" : "loopback") }'; }
+# debug_findings; stdin: "program<TAB>class<TAB>where" lines. Prints one "SEVERITY<TAB>program<TAB>where list" line per program.
+debug_findings() {
+  awk -F'\t' '{ if (!($1 in w)) { o[++n] = $1; w[$1] = $3 } else w[$1] = w[$1] "; " $3; if ($2 == "nonloopback") h[$1] = 1 }
+    END { for (i = 1; i <= n; i++) print (h[o[i]] ? "HIGH" : "MEDIUM") "\t" o[i] "\t" w[o[i]] }'; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -949,6 +986,65 @@ for prof in "$THOME/Library/Application Support/Google/Chrome"/*/Extensions; do 
     echo "$(basename "$(dirname "$prof")") $id $n"; done
 done | sort -u | block "Chrome extensions (profile, ID, name; __MSG_ names are localized)"
 if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.web-extension 2>/dev/null | grep -E 'Path|Parent' | sed 's/^ *//' | block "Safari web extensions"; fi
+h3 "Browser policies and extensions"
+case "$(profiles status -type enrollment 2>/dev/null | awk -F': ' '/^MDM enrollment/ {print $2; exit}')" in Yes*) ENROLLED=1 ;; *) ENROLLED=0 ;; esac
+: > "$TMP/fx"
+for dom in com.google.Chrome com.microsoft.Edge com.brave.Browser org.mozilla.firefox; do
+  case "$dom" in org.mozilla.firefox) key=ExtensionSettings ;; *) key=ExtensionInstallForcelist ;; esac
+  for src in "managed:/Library/Managed Preferences/$dom.plist" "managed:/Library/Managed Preferences/$TUSER/$dom.plist" "local:/Library/Preferences/$dom.plist" "local:$THOME/Library/Preferences/$dom.plist"; do
+    f="${src#*:}"; [ -f "$f" ] || continue
+    ids=$(forced_ext_ids "$f" "$key" | paste -sd, -)
+    [ -n "$ids" ] && printf '%s\t%s\t%s\n' "${src%%:*}" "$dom" "$ids" >> "$TMP/fx"
+  done
+done
+FFP=/Applications/Firefox.app/Contents/Resources/distribution/policies.json
+if [ -f "$FFP" ]; then ids=$(forced_ext_ids "$FFP" policies.ExtensionSettings | paste -sd, -); [ -n "$ids" ] && printf 'managed\torg.mozilla.firefox (policies.json)\t%s\n' "$ids" >> "$TMP/fx"; fi
+if [ -s "$TMP/fx" ]; then
+  awk -F'\t' '{print $2 " (" $1 "): " $3}' "$TMP/fx" | block "Forced browser extensions (browser, source, extension IDs)"
+  IFS=$'\t' read -r fid _ fbr <<< "$(forced_ext_finding "$ENROLLED" < "$TMP/fx")"
+  case "$fid" in
+    MA-APPS-005) finding MA-APPS-005 HIGH Apps "Browser extensions are force-installed by managed preferences or policies.json, and this Mac is not enrolled in MDM: $fbr" ;;
+    MA-APPS-006) finding MA-APPS-006 MEDIUM Apps "Browser extensions are force-installed by local preferences: $fbr" ;;
+    MA-APPS-007) finding MA-APPS-007 INFO Apps "Browser extensions are force-installed by policy on this MDM-enrolled Mac: $fbr" ;;
+  esac
+else say "- Forced browser extensions: none"; fi
+{ find "$THOME/Library/Application Support" -maxdepth 4 -type d -name NativeMessagingHosts 2>/dev/null
+  for d in /Library/Google/Chrome/NativeMessagingHosts "/Library/Application Support/Mozilla/NativeMessagingHosts"; do [ -d "$d" ] && echo "$d"; done; } > "$TMP/nmd"
+NNMH=0; : > "$TMP/nmr"
+while IFS= read -r d; do
+  n=0
+  for m in "$d"/*.json; do [ -f "$m" ] || continue
+    n=$((n+1)); hp=$(plutil -extract path raw -o - "$m" 2>/dev/null)
+    r=$(nmh_risk "$hp"); [ -n "$r" ] && printf '%s\t%s\t%s\n' "$r" "${m##*/}" "$hp" >> "$TMP/nmr"
+  done
+  NNMH=$((NNMH+n)); say "- Native-messaging hosts in $(mdesc "${d#"$THOME"/}"): $n"
+done < "$TMP/nmd"
+[ "$NNMH" -gt 0 ] && finding MA-APPS-010 INFO Apps "$NNMH native-messaging hosts let browser extensions start local programs (see section 9)."
+NMM=$(awk -F'\t' '$1 == "MEDIUM" {print $2 " -> " $3}' "$TMP/nmr" | paste -sd';' -)
+[ -n "$NMM" ] && finding MA-APPS-008 MEDIUM Apps "Native-messaging host runs a program from a temporary or shared folder: $NMM"
+NML=$(awk -F'\t' '$1 == "LOW" {print $2 " -> " $3}' "$TMP/nmr" | paste -sd';' -)
+[ -n "$NML" ] && finding MA-APPS-009 LOW Apps "Native-messaging host points to a missing program: $NML"
+h3 "Debug ports"
+# ps command lines go straight into debug_pids and never reach $TMP; only PIDs come out.
+ps -axwwo pid=,command= 2>/dev/null | debug_pids | while read -r pid; do
+  pp=$(ps -o comm= -p "$pid" 2>/dev/null); [ -n "$pp" ] || continue
+  la=$(lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}')
+  [ -z "$la" ] && [ "$LSOFL" -eq 1 ] && la=$(awk -v p="$pid" '$2 == p {print $9}' "$TMP/lsofl")
+  printf '%s\t%s\trunning\n' "$pp" "$(bind_class "$la")"
+done > "$TMP/dbg"
+for f in /Library/LaunchDaemons/*.plist /Library/LaunchAgents/*.plist "$THOME"/Library/LaunchAgents/*.plist; do [ -e "$f" ] || continue
+  c=$(plutil -extract ProgramArguments xml1 -o - "$f" 2>/dev/null | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p' | launch_debug_class)
+  [ -n "$c" ] && printf '%s\t%s\tlaunch item %s\n' "$(plistprog "$f")" "$c" "${f##*/}" >> "$TMP/dbg"
+done
+if [ -s "$TMP/dbg" ]; then
+  awk -F'\t' '{print $3 ": " $1 " (" $2 ")"}' "$TMP/dbg" | block "Programs with a debug port (where, program, bind address)"
+  debug_findings < "$TMP/dbg" | while IFS=$'\t' read -r sev prog where; do
+    case "$sev" in
+      HIGH) finding MA-APPS-003 HIGH Apps "Debug port on a non-loopback address: $prog ($where)." ;;
+      *) finding MA-APPS-004 MEDIUM Apps "Debug port on loopback or an unknown address: $prog ($where)." ;;
+    esac
+  done
+else say "- Debug ports: none found"; fi
 
 # ---------- 10. Accounts and privileges ----------
 h2 "10. Accounts and privileges"
