@@ -35,11 +35,21 @@ Version 1.3 (released 2026-11-25 as v1.3.0; design `dev/features/checks-1.3.md`;
 Version 1.4 (needs a design doc and test plan):
 
 - [ ] Homebrew packages and casks: count outdated formulae and casks separately and list their names; add an optional `--greedy` count for casks that update themselves or track `latest`; report third-party taps and the tap of each installed package, and Homebrew settings such as `HOMEBREW_CASK_OPTS` (`--no-quarantine`) and `HOMEBREW_VERIFY_ATTESTATIONS` (register I018); check cask apps for removed quarantine and missing notarization. 1.3 reports only one `brew outdated --quiet` count (MA-UPDATES-002). The design must weigh the run time and network use of `brew info --json=v2 --installed` and `--greedy`.
+- [ ] Report formats: `--format md|json|ocsf|html`. Markdown stays the default, and one run can write more than one format. Build every format at the end of the run from `findings.tsv` and `skipped.tsv`.
+  - `json`: macassay's own documented schema: host, date, version, findings (ID, severity, section, text), limitations, and skipped checks.
+  - `ocsf`: the Open Cybersecurity Schema Framework, likely its Compliance Finding class (training knowledge; verify the schema in the design).
+  - `html`: one self-contained page with no JavaScript. Build the header, counts, and findings from the data, and convert the evidence from macassay's own Markdown subset. Use inline CSS for severity colors, `<details>` sections, links from each finding to its evidence, a severity filter, and print styles. Add a Content-Security-Policy that blocks scripts, and escape every value from the audited Mac with one tested function.
+  - Escape text from the audited Mac correctly in JSON with stock tools only. Verify `plutil -convert json` and the presence of `jq` on the oldest supported macOS.
+- [ ] Compare two runs: `--compare OLD.json` reports new and resolved findings by their stable IDs.
+- [ ] CSV of the findings table, and an exit status by severity (for example 2 when a HIGH finding exists) for scheduled runs.
+- [ ] Run status on stderr: at the end of each section, print a line such as `[3/14] Updates and installs: 2 findings (1 MEDIUM, 1 LOW), 1 check skipped, 12 s`, with counts only, never finding text. End with a total line. Open: a count of checks run needs an explicit marker in each check; leave it out unless the user asks for it.
+- [ ] Report display: move the per-severity counts from below the findings table into the header, and show HIGH and MEDIUM in bold.
 
 Later:
 
 - [ ] Run selected report sections only (an `--only` option), with the skipped sections listed under Limitations.
-- [ ] Export findings in a standard security format beside the Markdown report (candidates: NIST OSCAL assessment results, the AWS Security Finding Format, SARIF; register I084, I086). The Markdown report stays the default, for LLMs and people.
+- [-] Export findings in a standard security format beside the Markdown report (candidates: NIST OSCAL assessment results, the AWS Security Finding Format, SARIF; register I084, I086). The Markdown report stays the default, for LLMs and people. (moved 2026-11-25 to Version 1.4 as `--format json|ocsf`; SARIF, OSCAL, and ASFF wait for a consumer.)
+- [ ] Partial report when a run is stopped: write the finished sections, marked incomplete with the section where the run stopped.
 
 ## Publish checklist
 
@@ -81,3 +91,5 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-24: The command is `macassay` with no `.sh` extension. The rename happens on `feature/sudo-rules`, so 1.2 ships as macassay 1.2. `dev/HANDOFF.md` keeps its history and updates its paths. Conviction: `ok`.
 - 2026-11-24: The code is on GitHub at `pereljon/macassay`, private until the project is ready, then public. The license is MIT, with the user's full name as the copyright holder in `LICENSE` only. Rejected: the GitHub username or "the macassay contributors" as the holder.
 - 2026-11-24: Version 1.3 takes every proposed check group (the 1.3 list here and the priority-A register ideas) plus the certificate-label bug, in one release. Rejected: splitting the inventory checks into 1.4, which repeats the design and review cycle for the lowest-risk checks. Section selection waits for a later release.
+- 2026-11-25: Version 1.4 adds `--format md|json|ocsf|html`, with Markdown as the default. OCSF is the standard export because a finding about a Mac's settings fits its finding classes. Rejected for now: SARIF (built for code locations), OSCAL (needs a control catalog first), and ASFF (needs AWS account fields). Conviction: `ok`.
+- 2026-11-25: The HTML report is a custom page built from the findings data, interactive through CSS only, with no JavaScript and a Content-Security-Policy that blocks scripts. Rejected: converting the Markdown report as is (adds little over a Markdown viewer), and JavaScript interactivity (text from the audited Mac is untrusted, and a script turns an escaping bug into code execution). A fixed script allowed by its hash can come later if search or sorting is needed. Conviction: `ok`.
