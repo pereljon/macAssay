@@ -124,4 +124,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 
 ## Results
 
-None yet.
+- R0, R1, R2 (commit 1): pass.
+- R1 reviewed by hand as noise: process lists, memory and CPU rows, and established outbound connections (live state).
+- R1 reviewed by hand as environment: the quick run lists fewer listeners and no UDP 69 line because unprivileged lsof now sees no root-owned sockets; the 1.2 script run now against the same Mac gives the same 11 listener rows as commit 1.
+- R1 reviewed by hand as Mac state: the full run lists new Google Drive and launchd listener rows and no UDP 69 TFTP finding.
