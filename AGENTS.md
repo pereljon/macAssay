@@ -2,7 +2,7 @@
 
 ## Project
 
-**mac-audit**: `mac-audit.sh`, a read-only macOS health and security audit in Bash. It writes one Markdown report for a person or an LLM to review. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
+**macassay**: `macassay`, a read-only macOS health and security audit in Bash. It writes one Markdown report for a person or an LLM to review. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
 
 ## Design Principles
 
@@ -24,13 +24,15 @@
 
 ## Workflow
 
-- Check syntax with `bash -n mac-audit.sh`.
-- Test run: `./mac-audit.sh -o <path in the session temp folder>`, then review the report. A full local run takes about 2 minutes; `--quick --offline --skip-du` is faster.
+- Check syntax with `bash -n macassay`.
+- Lint with `shellcheck macassay`. ShellCheck comes from Homebrew and is a development tool only; the script still uses stock tools. Three historical findings remain (`ls` parsing, SC2010 and SC2012); compare against the base branch to find the ones a diff adds.
+- Run the fixture tests with `dev/test.sh`; they need no root and no network.
+- Test run: `./macassay -o <path in the session temp folder>`, then review the report. A full local run takes about 3 minutes; `--quick --offline --skip-du` is faster.
 - Do not commit generated reports. They describe a real Mac.
 
 ## Change Checklist
 
 Project rows, in addition to `../AGENTS.md`:
 
-- Help text: the header comment block in `mac-audit.sh` matches the options.
-- Version: `VERSION` in `mac-audit.sh`.
+- Help text: the header comment block in `macassay` matches the options.
+- Version: `VERSION` in `macassay`.
