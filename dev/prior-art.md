@@ -8,7 +8,7 @@ Last full review: 2026-11-24.
 
 None of the reviewed tools should run on the audited Macs as they stand, and none replaces macassay. Deep reviews of the two closest peers, mac-posture-audit and macharden, found that neither has a remote mode or a sudo-rule model, both cover about half of macassay's host checks, and mac-posture-audit's written rules forbid both features. mac-posture-audit, macharden, Pareto, and NIST mSCP are the best sources of checks to borrow. Most of the others install root daemons, change settings, or reach the network, which conflicts with macassay's read-only, stock-tools, least-privilege design.
 
-The 2026-11-24 discovery run added 15 reviews. Most of the 115 relevant repos the macOS audit searches found are small, recent, and often written with AI assistance; few add checks. The best new sources are drduh's launchd script (launch item flags), sudo-check (sudoers rules), mac-compass (signing and baseline design), and the agentic toolkit (Homebrew and MCP settings).
+The 2026-11-24 discovery run added 15 reviews. Most of the 115 relevant repos the macOS audit searches found are small, recent, and often written with AI assistance; few add checks. The best new sources are drduh's launchd script (launch item findings), sudo-check (sudoers rules), mac-compass (signing and baseline design), and the agentic toolkit (Homebrew and MCP settings).
 
 The recommendations from these reviews are in `dev/prior-art-ideas.md`: priority A checks for 1.3, and the `sshd -G` and `profiles list` changes for 1.2.
 
@@ -123,7 +123,7 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 - **How it works:** Python, `maid audit` and `maid clean [--dry-run]`.
 - **Tests:** mostly empty audits; the real one parses `lsof` and `scutil --nc list`.
 - **Safety:** `maid clean` deletes caches, empties the Trash, removes saved Wi-Fi networks, and deletes merged git branches.
-- **Adopt:** privileged helpers declared inside app bundles, flagged when unsigned.
+- **Adopt:** privileged helpers declared inside app bundles, reported when unsigned.
 
 ### 0xmachos/mOSL
 
@@ -150,10 +150,10 @@ Each review lists what the tool does, how it works, the tests it runs, its safet
 ### drduh/macOS-Security-and-Privacy-Guide
 
 - **What it is:** a long community guide to securing macOS (22.6k stars), with three small scripts and a pf rule file. MIT.
-- **How it works:** the guide is `README.md` (1,761 lines). `scripts/printPersistent.sh` prints launchd jobs as JSON with signing and anomaly flags; `printSystemInfo.sh` prints system facts; `printKeychainCerts.sh` prints certificates by expiry.
-- **Tests:** the persistence script flags a wrapper script, an unsigned target, a target in a temp folder or `~/Downloads`, a timed job without `RunAtLoad`, `AbandonProcessGroup`, and a quarantined target.
+- **How it works:** the guide is `README.md` (1,761 lines). `scripts/printPersistent.sh` prints launchd jobs as JSON with signing and anomaly findings; `printSystemInfo.sh` prints system facts; `printKeychainCerts.sh` prints certificates by expiry.
+- **Tests:** the persistence script reports a wrapper script, an unsigned target, a target in a temp folder or `~/Downloads`, a timed job without `RunAtLoad`, `AbandonProcessGroup`, and a quarantined target.
 - **Safety:** the scripts are read-only. `printSystemInfo.sh:3` says no sudo is needed. The guide itself tells readers to run many changing commands; none run from the scripts.
-- **Adopt:** the launch item flags (the existing `/tmp` executable check covers only part), and a check that a user umask is set (`launchctl config user umask`, README section "Custom umask").
+- **Adopt:** the launch item findings (the existing `/tmp` executable check covers only part), and a check that a user umask is set (`launchctl config user umask`, README section "Custom umask").
 
 ### jimididit/mac-compass
 
@@ -443,7 +443,7 @@ Candidates that passed the discovery filter but are not reviewed yet, most promi
 | [CAUCOLabs/aisosec-audit](https://github.com/CAUCOLabs/aisosec-audit) | 2026-07-10 | 1 | AisoSec Audit is a macOS-friendly security assessment and reporting tool focused on author | `macos auditing security`, `macos audit security` |
 | [Runpoint-Partners/personal-security-audit](https://github.com/Runpoint-Partners/personal-security-audit) | 2026-07-17 | 0 | Private automated personal security audit for macOS | `macos auditing security`, `macos audit security` |
 | [krewdev/privacy-kit](https://github.com/krewdev/privacy-kit) | 2026-07-09 | 0 | Local macOS privacy audits, permissions, trackers, tunnels, listeners, MDM | `macos auditing security`, `macos audit security` |
-| [LunaParker/macos-permission-report](https://github.com/LunaParker/macos-permission-report) | 2026-11-21 | 0 | Python tool that audits macOS TCC privacy permissions, flags ghost entries from uninstalle | `macos auditing security`, `macos audit security` |
+| [LunaParker/macos-permission-report](https://github.com/LunaParker/macos-permission-report) | 2026-11-21 | 0 | Python tool that audits macOS TCC privacy permissions, reports ghost entries from uninstalle | `macos auditing security`, `macos audit security` |
 | [diskyer2025-rgb/macos-security-audit](https://github.com/diskyer2025-rgb/macos-security-audit) | 2026-08-09 | 0 | 对 macOS 本机做只读安全审计与卸载残留核验（进程、端口、启动项、代理、证书、Keychain、包残留、skills 接管路径），并对 skill 包做安装前/安装后静态安全扫 | `macos auditing security`, `macos audit security` |
 | [carringtonabarnes-lab/security-compliance-checker](https://github.com/carringtonabarnes-lab/security-compliance-checker) | 2026-07-28 | 0 | Python application that audits macOS security settings by checking FileVault, Firewall, an | `macos auditing security`, `macos audit security` |
 | [cancelself/local-security-agent](https://github.com/cancelself/local-security-agent) | 2026-07-15 | 0 | Claude Code agent that audits a macOS machine phase-by-phase; phase 1: startup agents/serv | `macos auditing security`, `macos audit security` |

@@ -43,7 +43,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.2 (2026-11-24)"
+VERSION="1.3 (2026-11-25)"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay
@@ -128,24 +128,121 @@ gen_rules() {
 # classify_refusal EXIT_STATUS STDERR_FILE: succeeds when sudo itself refused or could not run the command.
 classify_refusal() { [ "$1" -eq 1 ] && grep -qE '^sudo: |is not allowed to execute|may not run sudo' "$2"; }
 
-# stdin: sudoers text. Prints "SEVERITY<TAB>rule" for each NOPASSWD rule; joins continued lines.
+# stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>rule<TAB>programs" for each NOPASSWD rule and each weak Defaults line.
+# Joins continued lines and expands Cmnd_Alias names. Programs lists the absolute paths in a LOW rule, for the
+# writable check in sudoers_findings. Program names match exactly: ssh does not match ssh-keygen.
 classify_sudoers() {
   awk '
+    function trim(s) { sub(/^ +/, "", s); sub(/ +$/, "", s); return s }
+    function expand(item, depth,   n, parts, i, out) {
+      if (depth > 8 || !(item in alias)) return item
+      n = split(alias[item], parts, ","); out = ""
+      for (i = 1; i <= n; i++) out = out (out == "" ? "" : ",") expand(trim(parts[i]), depth + 1)
+      return out }
+    function loads_code(p) {
+      sub(/.*\//, "", p)
+      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|osascript|vim?|less|more|find|awk|sed|tar|zip|git|ssh|scp|rsync|tee|cp|mv|dd|chmod|chown|curl|wget)$/ }
     { sub(/\r$/, "") }
     cont == "" && /^[[:space:]]*#/ && !/^[[:space:]]*#[0-9]/ { next }
     { line = cont $0 }
     /\\$/ { sub(/\\$/, "", line); cont = line " "; next }
     { cont = ""; gsub(/[[:space:]]+/, " ", line); sub(/^ /, "", line) }
-    line ~ /^Defaults/ { next }
+    line ~ /^Cmnd_Alias / {
+      nd = split(substr(line, 12), defs, ":")
+      for (i = 1; i <= nd; i++) { eq = index(defs[i], "="); if (eq) alias[trim(substr(defs[i], 1, eq - 1))] = substr(defs[i], eq + 1) }
+      next }
+    line ~ /^Defaults/ {
+      if (line ~ /!authenticate/) print "MA-ACCOUNTS-010\tHIGH\t" line "\t"
+      else if (line ~ /!env_reset|!tty_tickets|timestamp_type *= *"?global|timestamp_timeout *= *-/ || (line ~ /env_(keep|check)/ && line ~ /[" =](DYLD_[A-Z_]*|LD_[A-Z_]*|PYTHONPATH|PERL5LIB|RUBYLIB|NODE_OPTIONS|BASH_ENV|ENV|PATH)([ "]|$)/)) print "MA-ACCOUNTS-011\tMEDIUM\t" line "\t"
+      next }
     line !~ /NOPASSWD/ { next }
-    { rest = substr(line, index(line, "NOPASSWD") + 8) }
-    rest ~ /(^|[:, ])ALL( |,|$)/ { print "MEDIUM\t" line; next }
-    { print "LOW\t" line }'
-}
+    { rest = substr(line, index(line, "NOPASSWD") + 8)
+      while (match(rest, /\([^)]*,[^)]*\)/)) { g = substr(rest, RSTART, RLENGTH); gsub(/,/, " ", g); rest = substr(rest, 1, RSTART - 1) g substr(rest, RSTART + RLENGTH) }
+      n = split(rest, items, ","); all = 0; code = 0; progs = ""; pw = 1
+      for (i = 1; i <= n; i++) {
+        c = trim(items[i]); sub(/^:/, "", c); c = trim(c)
+        while (c ~ /^\([^)]*\)/ || c ~ /^[A-Z_]+:/ || tolower(c) ~ /^sha(224|256|384|512):[^ ]/ || c ~ /^(CWD|CHROOT|TIMEOUT|NOTBEFORE|NOTAFTER|ROLE|TYPE)=[^ ]/) {
+          if (c ~ /^\(/) sub(/^\([^)]*\) */, "", c)
+          else if (tolower(c) ~ /^sha(224|256|384|512):[^ ]/ || c ~ /^[A-Z_]+=/) sub(/^[^ ]+ */, "", c)
+          else { if (c ~ /^NOPASSWD:/) pw = 1; else if (c ~ /^PASSWD:/) pw = 0; sub(/^[A-Z_]+: */, "", c) } }
+        if (!pw) continue
+        m = split(expand(c, 0), ex, ",")
+        for (j = 1; j <= m; j++) {
+          split(trim(ex[j]), w, " ")
+          if (w[1] == "ALL") all = 1
+          else if (w[1] ~ /^\//) { if (loads_code(w[1])) code = 1; progs = progs (progs == "" ? "" : " ") w[1] } } }
+      if (all) print "MA-ACCOUNTS-005\tHIGH\t" line "\t"
+      else if (code) print "MA-ACCOUNTS-009\tHIGH\t" line "\t"
+      else print "MA-ACCOUNTS-006\tLOW\t" line "\t" progs }'; }
+
+# sudoers_findings PATH; stdin: sudoers text. Prints "ID<TAB>SEVERITY<TAB>text" for each rule that gives a finding.
+# A rule whose program a non-root account can change gives one HIGH finding whatever severity chain_writable
+# returns, because the rule is a configured grant (decision G2). The reason text comes from chain_writable.
+sudoers_findings() {
+  local id sev rule progs w pa
+  classify_sudoers | while IFS=$'\t' read -r id sev rule progs; do
+    if [ -n "$progs" ]; then
+      read -ra pa <<< "$progs"; w=$(chain_writable "${pa[@]}")
+      if [ -n "$w" ]; then
+        printf 'MA-ACCOUNTS-008\tHIGH\tNOPASSWD rule in %s runs a program that a non-root account can change (%s): %s\n' "$1" "${w#*$'\t'}" "$rule"
+        continue; fi
+    fi
+    case "$id" in
+      MA-ACCOUNTS-010) printf '%s\t%s\tsudo asks no password for the rules that this line covers (Defaults !authenticate), in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      MA-ACCOUNTS-011) printf '%s\t%s\tWeak sudo default in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      MA-ACCOUNTS-009) printf '%s\t%s\tNOPASSWD rule in %s allows a program that can run other code: %s\n' "$id" "$sev" "$1" "$rule" ;;
+      *) printf '%s\t%s\tNOPASSWD rule in %s: %s\n' "$id" "$sev" "$1" "$rule" ;;
+    esac
+  done; }
+
+# group_has_others GID USER: succeeds when an account other than USER and root is in group GID,
+# as its primary group or a listed member.
+group_has_others() {
+  local g
+  dscl . -list /Users PrimaryGroupID 2>/dev/null | awk -v g="$1" -v u="$2" '$2 == g && $1 != u && $1 != "root" {f = 1} END {exit !f}' && return 0
+  g=$(dscl . -search /Groups PrimaryGroupID "$1" 2>/dev/null | awk 'NR == 1 {print $1}')
+  [ -n "$g" ] || return 1
+  dscl . -read "/Groups/$g" GroupMembership 2>/dev/null | cut -d: -f2- | tr ' ' '\n' | grep -vxF -e "$2" -e root -e '' | grep -q .; }
+# home_write_risk PERM GID OWNER: prints why another account can write a home folder or a file in it, or nothing.
+home_write_risk() {
+  [ "${1:8:1}" = w ] && { echo "writable by everyone"; return; }
+  [ "${1:5:1}" = w ] && [ "$2" != 0 ] && group_has_others "$2" "$3" && echo "writable by group $2, which has other members"; }
+# hidden_findings; stdin: "NAME UID ADMIN" lines for hidden accounts, ADMIN yes or no.
+# Prints "ID<TAB>SEVERITY<TAB>NAME" for each account with UID 500 or above.
+hidden_findings() { awk '$2 ~ /^[0-9]+$/ && $2 >= 500 { if ($3 == "yes") print "MA-ACCOUNTS-013\tMEDIUM\t" $1; else print "MA-ACCOUNTS-014\tLOW\t" $1 }'; }
+# sudo_owner_risk PATH "OWNER:GROUP MODE": prints what is wrong with a sudo file's owner or mode, or nothing.
+sudo_owner_risk() {
+  local og="${2%% *}" perm="${2#* }"
+  [ "$og" = root:wheel ] || { echo "owned by $og"; return; }
+  { [ "${perm:5:1}" = w ] || [ "${perm:8:1}" = w ]; } && { echo "writable by group or others ($perm)"; return; }
+  [ "$1" = /usr/bin/sudo ] && [ "${perm:3:1}" != s ] && echo "not setuid ($perm)"; }
+# rc_file_risks UID USER; stdin: ls -lnd lines. Prints "path<TAB>reason" for each startup file another account can change.
+rc_file_risks() {
+  local perm o g p r
+  while read -r perm _ o g _ _ _ _ p; do
+    case "$perm" in -*) ;; *) continue ;; esac
+    if [ "$o" != 0 ] && [ "$o" != "$1" ]; then r="owned by UID $o"; else r=$(home_write_risk "$perm" "$g" "$2"); fi
+    [ -n "$r" ] && printf '%s\t%s\n' "$p" "$r"
+  done; }
+
+# trusted_certs; stdin: security dump-trust-settings output. Prints the name of each certificate that counts as
+# trusted: a TrustRoot or TrustAsRoot result, a setting without a result (the default is TrustRoot), or no
+# settings at all ("always trust"), per SecTrustSettings.h. Deny and Unspecified do not count.
+trusted_certs() {
+  awk '
+    function close_setting() { if (inset && !hasres) trust = 1; inset = 0 }
+    function flush() { close_setting(); if (name != "" && (n == 0 || trust)) print name; name = "" }
+    /^Cert [0-9]+:/ { flush(); name = $0; sub(/^Cert [0-9]+: */, "", name); n = -1; trust = 0; next }
+    /Number of trust settings/ { n = $NF + 0; next }
+    /^[[:space:]]+Trust Setting [0-9]+:/ { close_setting(); inset = 1; hasres = 0; next }
+    /Result Type/ { hasres = 1; if ($0 ~ /kSecTrustSettingsResultTrust(Root|AsRoot)/) trust = 1; next }
+    END { flush() }'; }
 
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
 redact_ids() { sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
+# Certificate labels can hold account identifiers as long hex strings.
+mask_hex() { sed -E 's/[0-9A-Fa-f]{32,}/<ID>/g'; }
 filter_bputil() { grep -iE 'security mode|system integrity|sip|kext|kernel extension|mdm|user-approved' | drop_ids; }
 # stdin: bputil -d output. Prints the boot security mode word (Full, Reduced, Permissive) from the smb0 line.
 bputil_mode() { awk -F: '/^Security Mode:/ { split($2, w, " "); print w[1]; exit }'; }
@@ -160,6 +257,14 @@ rc_hits() {
       grep -nE -- "$re" "$f" 2>/dev/null | while IFS=: read -r ln _; do printf '%s:%s: %s\n' "$f" "$ln" "$name"; done
     done
   done | sort -u; }
+# rc_pattern_sevs FILE: reads rc_hits output; prints HIGH if a line names a pattern other than base64 decode or osascript -e, and MEDIUM if one names either.
+rc_pattern_sevs() {
+  grep -qvE ': (base64 decode|osascript -e)$' "$1" && echo HIGH
+  grep -qE ': (base64 decode|osascript -e)$' "$1" && echo MEDIUM; }
+# boot_policy_sev MODE: prints the severity for a secure boot mode (HIGH for Permissive, MEDIUM for another non-Full mode), nothing for Full or empty.
+boot_policy_sev() { case "$1" in ''|Full) ;; Permissive) echo HIGH ;; *) echo MEDIUM ;; esac; }
+# temp_program PATH: succeeds for a program in a temporary or shared folder, except one under App Translocation.
+temp_program() { case "$1" in */AppTranslocation/*) return 1 ;; /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) return 0 ;; *) return 1 ;; esac; }
 
 # stdin: crontab lines. Prints the schedule and command name; arguments and variable values may hold secrets.
 crontab_summary() {
@@ -170,8 +275,8 @@ crontab_summary() {
       if (c ~ /=/) c = "(command with inline variables)"; else sub(/.*\//, "", c)
       print s "  " c " (arguments hidden)" }'; }
 
-# ssh_methods_flag METHODS: succeeds when the offered methods accept a password.
-ssh_methods_flag() { case "$1" in *password*|*keyboard-interactive*) return 0 ;; esac; return 1; }
+# ssh_accepts_password METHODS: succeeds when the offered methods accept a password.
+ssh_accepts_password() { case "$1" in *password*|*keyboard-interactive*) return 0 ;; esac; return 1; }
 
 # ---------- system readers ----------
 collect_accounts() {
@@ -197,9 +302,11 @@ run()  { local t="$1"; shift; say "**$t**"; say ""; say '```text'; say "\$ $*"
          ( "$@" ) 2>&1 | clean | trunc >> "$BODY"; say '```'; say ""; }
 # block "title" < text
 block(){ say "**$1**"; say ""; say '```text'; clean | trunc >> "$BODY"; say '```'; say ""; }
-# flag SEVERITY "area" "finding"
-flag() { printf '%s\t%s\t%s\n' "$1" "$2" "$(printf '%s' "$3" | clean_field)" >> "$FIND"; }
+# finding ID SEVERITY LABEL TEXT
+finding() { printf '%s\t%s\t%s\t%s\n' "$2" "$1" "$3" "$(printf '%s' "$4" | clean_field)" >> "$FIND"; }
 mdesc(){ printf '%s' "$1" | clean_field; }                  # safe for table cells
+# default_line LABEL VALUE DEFAULT: a setting's value, or its macOS default when the setting is absent.
+default_line() { if [ -n "$2" ]; then say "- $1: $(mdesc "$2")"; else say "- $1: not set (macOS default: $3)"; fi; }
 # skip LABEL REASON: record a check that could not run.
 skip() { printf 'other\t%s\t%s\n' "$1" "$2" >> "$SKIPS"; }
 skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }
@@ -224,8 +331,8 @@ sig()  { # signer summary for a path
   esac; }
 plistprog(){ plutil -extract Program raw -o - "$1" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$1" 2>/dev/null; }
 # chain_writable PATH...: prints "SEVERITY<TAB>reason" for the worst item on the paths, or a folder above
-# them, that a non-root account can change. MEDIUM only for write access through the admin group;
-# group wheel holds only root on macOS.
+# them, that a non-root account can change. Admin-group write is MEDIUM only under /Applications, where
+# macOS grants it by default (decision G3); group wheel holds only root on macOS.
 chain_writable() {
   local p d o perm grp hit=""
   for p in "$@"; do
@@ -243,7 +350,10 @@ chain_writable() {
           if [ "${perm:5:1}" = w ]; then
             case "$grp" in
               wheel) ;;
-              admin) [ -z "$hit" ] && hit="$d is writable by the admin group" ;;
+              admin) case "$d" in
+                       /Applications|/Applications/*) [ -z "$hit" ] && hit="$d is writable by the admin group" ;;
+                       *) printf 'HIGH\t%s is writable by the admin group\n' "$d"; return 0 ;;
+                     esac ;;
               *) printf 'HIGH\t%s is writable by group %s\n' "$d" "$grp"; return 0 ;;
             esac
           elif [ -w "$d" ]; then printf 'HIGH\t%s is writable by %s through an ACL\n' "$d" "$(id -un)"; return 0; fi
@@ -331,6 +441,157 @@ remote_mode() {
   if [ "$rc" -ne 0 ] || [ ! -s "$OUT.part" ]; then rm -f "$OUT.part"; die "Remote audit failed (exit $rc)."; fi
   mv "$OUT.part" "$OUT"; echo "Report written to $OUT" >&2; exit 0; }
 
+# recent_installs CUTOFF; stdin: plutil -p of /Library/Receipts/InstallHistory.plist.
+# Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that softwareupdated did not make.
+recent_installs() {
+  awk -v c="$1" '
+    /^  [0-9]+ => \{/ { d = n = v = p = ""; next }
+    /^    "date" => / { d = $3 }
+    /^    "displayName" => / { n = $0; sub(/^[^>]*> "/, "", n); sub(/"$/, "", n) }
+    /^    "displayVersion" => / { v = $0; sub(/^[^>]*> "/, "", v); sub(/"$/, "", v) }
+    /^    "processName" => / { p = $0; sub(/^[^>]*> "/, "", p); sub(/"$/, "", p) }
+    /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " n (v != "" ? " " v : "") }'; }
+# boot_args_sev ARGS: prints HIGH for boot arguments that turn off code-signing enforcement, LOW for others.
+boot_args_sev() { case "$1" in '') ;; *amfi_*|*cs_enforcement_disable*) echo HIGH ;; *) echo LOW ;; esac; }
+# cups_shared FILE: succeeds when cupsd.conf listens beyond localhost, which printer sharing turns on.
+cups_shared() { awk 'tolower($1) == "port" {f = 1} tolower($1) == "listen" && $2 !~ /^(localhost|127\.0\.0\.1|\[::1\]):/ && $2 !~ /^\// {f = 1} END {exit !f}' "$1" 2>/dev/null; }
+# remote_support_names; stdin: program paths from ps. Prints the names of known remote-support tools; Apple's own screen sharing server does not count.
+remote_support_names() { awk -F/ '{print $NF}' | grep -iE 'teamviewer|anydesk|rustdesk|screenconnect|splashtop|beyondtrust|bomgar|logmein|realvnc|vncserver|tigervnc|jumpcloud.?assist' | grep -vix applevncserver | sort -u; }
+# screen_lock_sev TEXT: prints "SEVERITY<TAB>description" for a screen lock that is off or slow, from sysadminctl -screenLock status.
+screen_lock_sev() {
+  local s
+  case "$1" in *immediate*) return 0 ;; *[Oo]ff*) printf 'MEDIUM\toff\n'; return 0 ;; esac
+  s=$(printf '%s' "$1" | sed -n 's/.* \([0-9][0-9]*\) seconds.*/\1/p')
+  [ -n "$s" ] || return 0
+  if [ "$s" -gt 3600 ]; then printf 'MEDIUM\tset to %s seconds\n' "$s"
+  elif [ "$s" -gt 300 ]; then printf 'LOW\tset to %s seconds\n' "$s"; fi; }
+# unusual_path PATH: succeeds for a temporary, shared or hidden folder.
+unusual_path() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*|*/.[!.]*/*) return 0 ;; esac; return 1; }
+# pam_modules FILE DEPTH: prints each module given as an absolute path outside /usr/lib/pam. Follows include and
+# substack targets inside ${PAMD:-/etc/pam.d}; the PAM_SEEN list and a depth limit of 16 stop loops.
+pam_modules() {
+  local f="$1" depth="$2" ty ctl rest mod
+  if [ "$depth" -gt 16 ] || [ ! -f "$f" ]; then return 0; fi
+  printf '%s\n' "$PAM_SEEN" | grep -qxF -- "$f" && return 0
+  PAM_SEEN="$PAM_SEEN"$'\n'"$f"
+  while read -r ty rest; do
+    case "$ty" in ''|'#'*) continue ;; esac
+    if [ "${rest:0:1}" = "[" ]; then ctl="${rest%%]*}]"; rest="${rest#*]}"
+    else ctl="${rest%%[[:space:]]*}"; rest="${rest#"$ctl"}"; fi
+    rest="${rest#"${rest%%[![:space:]]*}"}"; mod="${rest%%[[:space:]]*}"
+    case "$ctl" in include|substack)
+      case "$mod" in */*) ;; ?*) pam_modules "${PAMD:-/etc/pam.d}/$mod" $((depth + 1)) ;; esac; continue ;; esac
+    case "$mod" in /usr/lib/pam/*) ;; /*) echo "$mod" ;; esac
+  done < "$f"; }
+# auth_plugin_finding SIGNER WRITABLE: prints "ID<TAB>SEVERITY" for an authorization plugin; WRITABLE is chain_writable output.
+auth_plugin_finding() {
+  if [ -n "$2" ]; then printf 'MA-PERSISTENCE-012\t%s\n' "${2%%$'\t'*}"; return; fi
+  case "$1" in Apple) ;; unsigned|"ad hoc") printf 'MA-PERSISTENCE-013\tMEDIUM\n' ;; *) printf 'MA-PERSISTENCE-014\tLOW\n' ;; esac; }
+# forced_ext_ids FILE KEY: prints the IDs of force-installed extensions under KEY in a plist or JSON file.
+# Chromium lists hold "ID;update URL" strings; Firefox ExtensionSettings maps an ID to its installation_mode.
+forced_ext_ids() {
+  plutil -extract "$2" xml1 -o - "$1" 2>/dev/null | plutil -p - 2>/dev/null | awk '
+    /^  [0-9]+ => "/ { s = $0; sub(/^[^"]*"/, "", s); sub(/[;"].*/, "", s); print s; next }
+    /^  "/ { k = $0; sub(/^  "/, "", k); sub(/" => .*/, "", k); next }
+    /"installation_mode" => "force_installed"/ { print k }'; }
+# forced_ext_finding ENROLLED; stdin: "source<TAB>browser<TAB>IDs" lines, source managed or local.
+# Prints "ID<TAB>SEVERITY<TAB>browsers" for the one finding they give.
+forced_ext_finding() {
+  awk -F'\t' -v e="$1" '{ b[$2] = 1; if ($1 == "managed") m[$2] = 1 }
+    END { for (k in b) n++; if (!n) exit
+      if (e == 1) { id = "MA-APPS-007"; sv = "INFO"; for (k in b) l = l (l == "" ? "" : ",") k }
+      else { for (k in m) l = l (l == "" ? "" : ",") k
+        if (l != "") { id = "MA-APPS-005"; sv = "HIGH" } else { id = "MA-APPS-006"; sv = "MEDIUM"; for (k in b) l = l (l == "" ? "" : ",") k } }
+      print id "\t" sv "\t" l }'; }
+# nmh_risk PATH: prints MEDIUM for a native-messaging host program in a temporary or shared folder, LOW for a missing one.
+nmh_risk() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) echo MEDIUM ;; /*) [ -e "$1" ] || echo LOW ;; esac; }
+# debug_pids; stdin: "PID command" lines from ps. Prints the PID of each process started with a debug port flag.
+# The pattern text has "--(" where a match needs "--r" or "--i", so this awk never matches its own command line.
+debug_pids() { awk '/ --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}'; }
+# launch_debug_class; stdin: a launch item's arguments, one per line. Prints nonloopback or loopback for an item with a debug port flag.
+launch_debug_class() { awk '
+  prev == "--remote-debugging-address" { a = $0 }
+  /^--remote-debugging-address=/ { a = substr($0, index($0, "=") + 1) }
+  /^--remote-debugging-port(=|$)/ || /^--inspect(-brk|-wait)?(=|$)/ { f = 1 }
+  /^--inspect(-brk|-wait)?=/ { h = substr($0, index($0, "=") + 1); if (h ~ /:/) { sub(/:[0-9]+$/, "", h); a = h } }
+  { prev = $0 }
+  END { if (!f) exit; if (a != "" && a !~ /^(127\.|localhost$|::1$|\[::1\]$)/) print "nonloopback"; else print "loopback" }'; }
+# bind_class ADDRESSES: prints nonloopback, loopback, or unknown for lsof listen addresses, one per line.
+bind_class() {
+  [ -n "$1" ] || { echo unknown; return; }
+  printf '%s\n' "$1" | awk '{ a = $0; sub(/:[0-9]+$/, "", a); if (a !~ /^(127\.|\[::1\]$|localhost$)/) n = 1 } END { print (n ? "nonloopback" : "loopback") }'; }
+# debug_findings; stdin: "program<TAB>class<TAB>where" lines. Prints one "SEVERITY<TAB>program<TAB>where list" line per program.
+debug_findings() {
+  awk -F'\t' '{ if (!($1 in w)) { o[++n] = $1; w[$1] = $3 } else w[$1] = w[$1] "; " $3; if ($2 == "nonloopback") h[$1] = 1 }
+    END { for (i = 1; i <= n; i++) print (h[o[i]] ? "HIGH" : "MEDIUM") "\t" o[i] "\t" w[o[i]] }'; }
+# Credential files under the home folder, a tab, then an extended regex for an inline secret.
+# A value that starts with $ names an environment variable and does not count.
+CRED_FILES=$(printf '%s\n' \
+  $'.netrc\t(^|[[:space:]])password[[:space:]]+[^$[:space:]]' \
+  $'.aws/credentials\t^[[:space:]]*(aws_secret_access_key|aws_session_token)[[:space:]]*=[[:space:]]*[^$[:space:]]' \
+  $'.git-credentials\t[^[:space:]]' \
+  $'.npmrc\t(_authToken|_auth|_password)[[:space:]]*=[[:space:]]*[^$[:space:]]' \
+  $'.pypirc\t^[[:space:]]*password[[:space:]]*[=:][[:space:]]*[^$[:space:]]' \
+  $'.docker/config.json\t"(auth|identitytoken)"[[:space:]]*:[[:space:]]*"[^"$]' \
+  $'.kube/config\t^[[:space:]]*(token|password|client-key-data):[[:space:]]*[^$[:space:]]' \
+  $'.config/gh/hosts.yml\t^[[:space:]]*oauth_token:[[:space:]]*[^$[:space:]]')
+# has_key FILE PATTERN: succeeds when FILE has a line that matches PATTERN. Prints nothing; the only way credential files are read.
+has_key() { grep -qsE -- "$2" "$1"; }
+# cred_scan HOME: prints "path<TAB>mode owner<TAB>yes|no" for each credential file present; yes means an inline secret.
+cred_scan() {
+  local rel re f o s
+  printf '%s\n' "$CRED_FILES" | while IFS=$'\t' read -r rel re; do
+    f="$1/$rel"; [ -e "$f" ] || continue
+    o=$(stat -L -f '%Sp %Su' "$f" 2>/dev/null) || continue
+    if has_key "$f" "$re"; then s=yes; else s=no; fi
+    printf '%s\t%s\t%s\n' "$rel" "$o" "$s"
+  done; }
+# ssh_key_state FILE: prints "no passphrase" or "passphrase" for a private key file, nothing for other files.
+# Reads the header line and at most 31 characters of line 2; never decodes or runs a tool on the key.
+ssh_key_state() {
+  local l1
+  l1=$(head -n 1 "$1" 2>/dev/null)
+  l1=${l1%$'\r'}
+  case "$l1" in
+    "-----BEGIN OPENSSH PRIVATE KEY-----")
+      if [ "$(sed -n 2p "$1" | cut -c1-31)" = b3BlbnNzaC1rZXktdjEAAAAABG5vbmU ]; then echo "no passphrase"; else echo passphrase; fi ;;
+    "-----BEGIN ENCRYPTED PRIVATE KEY-----") echo passphrase ;;
+    "-----BEGIN "*"PRIVATE KEY-----") if head -n 3 "$1" | grep -q ENCRYPTED; then echo passphrase; else echo "no passphrase"; fi ;;
+  esac; }
+# ssh_pub_summary FILE: prints "file<TAB>bits<TAB>(TYPE)" for a public key, without its comment.
+ssh_pub_summary() { ssh-keygen -l -f "$1" 2>/dev/null | awk -v f="${1##*/}" '{print f "\t" $1 "\t" $NF}'; }
+# ssh_cfg FILE DEPTH SCOPE: prints "SCOPE ForwardAgent" for ForwardAgent yes, "SCOPE StrictHostKeyChecking" for
+# StrictHostKeyChecking no or off, and "block" for each Host or Match block that is not for every host.
+# SCOPE is "all" before the first Host or Match line and under Host *, and "host" elsewhere.
+# Follows Include like ssh does; the SSH_SEEN list and a depth limit of 16 stop loops. Config text is never run.
+ssh_cfg() {
+  local f="$1" depth="$2" scope="$3" line key val pat g base
+  local -a pats
+  if [ "$depth" -gt 16 ] || [ ! -f "$f" ] || [ ! -r "$f" ]; then return 0; fi
+  printf '%s\n' "$SSH_SEEN" | grep -qxF -- "$f" && return 0
+  SSH_SEEN="$SSH_SEEN"$'\n'"$f"
+  case "$f" in /etc/ssh/*) base=/etc/ssh ;; *) base="$THOME/.ssh" ;; esac
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|'#'*) continue ;; esac
+    key=$(printf '%s' "${line%%[[:space:]=]*}" | tr '[:upper:]' '[:lower:]')
+    val="${line#*[[:space:]=]}"; val="${val#"${val%%[![:space:]=]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+    case "$key" in
+      host) if [ "$val" = "*" ]; then scope=all; else scope=host; echo block; fi ;;
+      match) case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" in all) scope=all ;; *) scope=host; echo block ;; esac ;;
+      include)
+        read -ra pats <<< "$val"
+        for pat in "${pats[@]}"; do
+          case "$pat" in *%*|*'$'*) continue ;; \~/*) pat="$THOME/${pat#\~/}" ;; /*) ;; *) pat="$base/$pat" ;; esac
+          while IFS= read -r g; do ssh_cfg "$g" $((depth + 1)) "$scope"; done < <(compgen -G "$pat")
+        done ;;
+      forwardagent) [ "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" = yes ] && echo "$scope ForwardAgent" ;;
+      stricthostkeychecking) case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')" in no|off) echo "$scope StrictHostKeyChecking" ;; esac ;;
+    esac
+  done < "$f"; }
+# git_hooks_path FILE: prints each core.hooksPath value in a git config file. git itself is never run.
+git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/, "", s); next }
+  s ~ /^\[core\]/ && tolower($0) ~ /^[[:space:]]*hookspath[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); print v }' "$1" 2>/dev/null; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -387,36 +648,61 @@ LANIP=$(ipconfig getifaddr "${LANIF:-en0}" 2>/dev/null)
 priv "lsof listeners" /usr/sbin/lsof -nP -iTCP -sTCP:LISTEN > "$TMP/lsofl" 2>/dev/null && LSOFL=1 || LSOFL=0
 if /usr/sbin/sshd -G > "$TMP/sshdg" 2>/dev/null; then SSHDG=1; else SSHDG=0; skip "Effective sshd settings" "sshd -G failed"; fi
 
-# ---------- 1. System and hardware ----------
-h2 "1. System and hardware"
+
+# ---------- 1. System health ----------
+h2 "1. System health"
+h3 "System and hardware"
 run "macOS" sw_vers
 run "Kernel" uname -a
 system_profiler SPHardwareDataType 2>/dev/null | grep -vE 'Serial|UUID|UDID|^\s*$' | block "Hardware (serial and UUIDs omitted)"
 run "Uptime and load" uptime
-
-# ---------- 2. Memory ----------
-h2 "2. Memory"
+h3 "Memory"
 MEMGB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
 SW=$(sysctl -n vm.swapusage)
 say "- Installed memory: ${MEMGB} GB"; say "- Swap: \`$SW\`"
 SWT=$(echo "$SW" | awk '{gsub("M","",$3); print int($3)}'); SWU=$(echo "$SW" | awk '{gsub("M","",$6); print int($6)}')
-if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then flag MEDIUM Memory "Swap ${SWU} of ${SWT} MB used ($(( SWU * 100 / SWT ))%)."; fi
+if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then finding MA-HEALTH-001 LOW Health "Swap ${SWU} of ${SWT} MB used ($(( SWU * 100 / SWT ))%)."; fi
 run "Memory pressure" sh -c 'memory_pressure | tail -2; vm_stat | grep -E "Pageouts|Swapouts"'
 ps -axo rss=,pcpu=,pid=,user=,comm= | sort -rn | head -15 | awk '{printf "%7.0f MB %5s%% %6s %-10s %s\n",$1/1024,$2,$3,$4,$5}' | block "Top 15 processes by memory"
 ps -axo pcpu=,rss=,pid=,comm= | sort -rn | head -10 | block "Top 10 processes by CPU"
 JET=$(find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -name 'JetsamEvent-*' -mtime -7 2>/dev/null | wc -l | tr -d ' ')
 say "- Out-of-memory (Jetsam) reports in the last 7 days: $JET"
-[ "$JET" -ge 3 ] && flag MEDIUM Memory "$JET out-of-memory (Jetsam) events in 7 days; macOS is killing processes to free memory."
-
-# ---------- 3. Storage and backups ----------
-h2 "3. Storage and backups"
+[ "$JET" -ge 3 ] && finding MA-HEALTH-002 MEDIUM Health "$JET out-of-memory (Jetsam) events in 7 days; macOS is killing processes to free memory."
+h3 "Storage"
 run "Volumes" df -h / /System/Volumes/Data
 DPCT=$(df -k /System/Volumes/Data | awk 'NR==2{gsub("%","",$5); print $5}')
 DFREE=$(df -k /System/Volumes/Data | awk 'NR==2{printf "%.1f", $4/1048576}')
-if [ "${DPCT:-0}" -ge 95 ]; then flag HIGH Storage "Data volume ${DPCT}% used, ${DFREE} GB free.";
-elif [ "${DPCT:-0}" -ge 85 ]; then flag MEDIUM Storage "Data volume ${DPCT}% used, ${DFREE} GB free."; fi
-system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name|S.M.A.R.T|Capacity|Free' | block "Drives and SMART status"
-system_profiler SPStorageDataType 2>/dev/null | grep 'S.M.A.R.T' | grep -qv Verified && flag HIGH Storage "A drive reports a SMART status other than Verified."
+if [ "${DPCT:-0}" -ge 95 ]; then finding MA-HEALTH-003 HIGH Health "Data volume ${DPCT}% used, ${DFREE} GB free.";
+elif [ "${DPCT:-0}" -ge 85 ]; then finding MA-HEALTH-003 MEDIUM Health "Data volume ${DPCT}% used, ${DFREE} GB free."; fi
+system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name|S.M.A.R.T|Capacity|Free' | mask_hex | block "Drives and SMART status"
+system_profiler SPStorageDataType 2>/dev/null | grep 'S.M.A.R.T' | grep -qv Verified && finding MA-HEALTH-004 HIGH Health "A drive reports a SMART status other than Verified."
+h3 "Crash reports"
+find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | sed 's#.*/##' | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+.*//' | sort | uniq -c | sort -rn | head -25 | block "Crash and diagnostic reports, last 14 days (count by kind)"
+NP=$(find /Library/Logs/DiagnosticReports -name '*.panic' -mtime -30 2>/dev/null | wc -l | tr -d ' ')
+say "- Kernel panics in 30 days: $NP"; [ "$NP" -gt 0 ] && finding MA-HEALTH-005 HIGH Health "$NP kernel panic(s) in the last 30 days."
+h3 "Disk usage"
+if [ "$SKIPDU" -eq 0 ]; then
+  echo "Measuring home folder usage..." >&2
+  ( cd "$THOME" && du -sh -x -- .[!.]* * Library/* 2>/dev/null | sort -rh | head -25 ) | block "Largest items in $THOME (top 25)"
+  : > "$TMP/du"
+  priv "du /Users" /usr/bin/du -h -d 1 -x /Users >> "$TMP/du" 2>/dev/null
+  priv "du system folders" /usr/bin/du -sh -x /Library /Applications /opt /private/var >> "$TMP/du" 2>/dev/null
+  if [ -s "$TMP/du" ]; then grep -v '^du:' "$TMP/du" | sort -rh | block "Top-level usage"
+  else say "- Top-level usage: skipped ($(skip_reason "du /Users"))"; fi
+else say "Skipped (--skip-du)."; skip "Disk usage" "--skip-du"; fi
+h3 "Power"
+run "Power and sleep" pmset -g
+if pmset -g batt 2>/dev/null | grep -q InternalBattery; then
+  system_profiler SPPowerDataType 2>/dev/null | grep -E '^[[:space:]]*(Condition|Maximum Capacity):' | sed 's/^[[:space:]]*//' > "$TMP/bat"
+  block "Battery" < "$TMP/bat"
+  BCAP=$(awk -F': ' '/^Maximum Capacity/ {gsub("%", "", $2); print $2 + 0; exit}' "$TMP/bat")
+  BCOND=$(awk -F': ' '/^Condition/ {print $2; exit}' "$TMP/bat")
+  if { [ -n "$BCAP" ] && [ "$BCAP" -lt 80 ]; } || { [ -n "$BCOND" ] && [ "$BCOND" != Normal ]; }; then
+    finding MA-HEALTH-006 LOW Health "Battery health: condition ${BCOND:-unknown}, maximum capacity ${BCAP:-unknown}%."; fi
+else say "- Battery: none"; fi
+
+# ---------- 2. Backups ----------
+h2 "2. Backups"
 run "Local snapshots" tmutil listlocalsnapshots /
 NSNAP=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c TimeMachine)
 TMP_PL=/Library/Preferences/com.apple.TimeMachine.plist
@@ -430,59 +716,141 @@ TMENC=$(plutil -extract Destinations.0.LastKnownEncryptionState raw -o - "$TMP_P
 say "- Time Machine destinations: ${TMDEST:-none}"; say "- Local snapshots: $NSNAP"
 say "- Latest backup on first destination: ${LASTBK:-unknown} (UTC); backups recorded: ${NSD:-unknown}"
 say "- First destination encryption: ${TMENC:-unknown}"
-[ -z "$TMDEST" ] && flag MEDIUM Backup "No Time Machine destination configured."
-[ "$TMENC" = "NotEncrypted" ] && flag LOW Backup "Time Machine disk is not encrypted."
+[ -z "$TMDEST" ] && finding MA-BACKUPS-001 MEDIUM Backups "No Time Machine destination configured."
+[ "$TMENC" = "NotEncrypted" ] && finding MA-BACKUPS-002 MEDIUM Backups "Time Machine disk is not encrypted."
 if [ -n "$LASTBK" ]; then
   AGE=$(( ( $(date +%s) - $(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$LASTBK" +%s 2>/dev/null || date +%s) ) / 3600 ))
-  say "- Hours since latest backup: $AGE"; [ "$AGE" -ge 48 ] && flag MEDIUM Backup "Latest Time Machine backup is $AGE hours old."
+  say "- Hours since latest backup: $AGE"; [ "$AGE" -ge 48 ] && finding MA-BACKUPS-003 MEDIUM Backups "Latest Time Machine backup is $AGE hours old."
+fi
+if [ -n "$TMDEST" ]; then
+  AB=$(defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2>/dev/null)
+  default_line "Automatic backups (AutoBackup)" "$AB" "1, on"
+  [ "$AB" = 0 ] && finding MA-BACKUPS-004 MEDIUM Backups "Time Machine has a destination, but automatic backups are off."
+  EXC=$(tmutil isexcluded "$THOME" 2>/dev/null | awk '{print $1}')
+  say "- Home folder in Time Machine: ${EXC:-unknown}"
+  [ "$EXC" = "[Excluded]" ] && finding MA-BACKUPS-005 MEDIUM Backups "The home folder is excluded from Time Machine."
 fi
 
-# ---------- 4. Updates ----------
-h2 "4. Updates"
-defaults read /Library/Preferences/com.apple.SoftwareUpdate 2>/dev/null | grep -E 'Automatic|Critical|ConfigData|LastSuccessfulDate' | block "Software Update settings"
+# ---------- 3. Updates and installs ----------
+h2 "3. Updates and installs"
+SUP=/Library/Preferences/com.apple.SoftwareUpdate
+supd() { defaults read "$SUP" "$1" 2>/dev/null; }
+ACE=$(supd AutomaticCheckEnabled); LFS=$(supd LastFullSuccessfulDate); ADL=$(supd AutomaticDownload)
+AIM=$(supd AutomaticallyInstallMacOSUpdates); CUI=$(supd CriticalUpdateInstall); CDI=$(supd ConfigDataInstall)
+ASU=$(defaults read /Library/Preferences/com.apple.commerce AutoUpdate 2>/dev/null)
+say "**Software Update settings**"; say ""
+default_line "Automatic checks (AutomaticCheckEnabled)" "$ACE" "1, on"
+default_line "Last full successful check (LastFullSuccessfulDate)" "$LFS" "unknown"
+default_line "Automatic download (AutomaticDownload)" "$ADL" "1, on"
+default_line "Install macOS updates automatically (AutomaticallyInstallMacOSUpdates)" "$AIM" "0, off"
+default_line "Security responses and system files (CriticalUpdateInstall)" "$CUI" "1, on"
+default_line "XProtect and other data updates (ConfigDataInstall)" "$CDI" "1, on"
+default_line "App Store app updates (com.apple.commerce AutoUpdate)" "$ASU" "1, on"
+LFSD=""; [ -n "$LFS" ] && LFSD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d %H:%M:%S +0000' "$LFS" +%s 2>/dev/null || date +%s) ) / 86400 ))
+if [ "$ACE" = 0 ]; then finding MA-UPDATES-003 MEDIUM Updates "Automatic software update checks are off."
+elif [ -n "$LFSD" ] && [ "$LFSD" -gt 30 ]; then finding MA-UPDATES-003 MEDIUM Updates "The last full software update check was $LFSD days ago."; fi
+{ [ "$CUI" = 0 ] || [ "$CDI" = 0 ]; } && finding MA-UPDATES-004 MEDIUM Updates "Security responses (CriticalUpdateInstall=${CUI:-default}) or XProtect data updates (ConfigDataInstall=${CDI:-default}) are off."
+{ [ "$ADL" = 0 ] || [ "$ASU" = 0 ]; } && finding MA-UPDATES-006 LOW Updates "Automatic download of macOS updates (${ADL:-default}) or App Store auto-update (${ASU:-default}) is off."
+[ "$AIM" = 1 ] || finding MA-UPDATES-007 INFO Updates "macOS updates are not installed automatically."
 if [ "$OFFLINE" -eq 0 ]; then
   SU=$(softwareupdate -l 2>&1); echo "$SU" | block "softwareupdate -l"
-  echo "$SU" | grep -q '^\* Label' && flag MEDIUM Updates "macOS updates are available: $(echo "$SU" | awk -F': ' '/^\* Label/{print $2}' | paste -sd';' -)"
+  echo "$SU" | grep -q '^\* Label' && finding MA-UPDATES-001 MEDIUM Updates "macOS updates are available: $(echo "$SU" | awk -F': ' '/^\* Label/{print $2}' | paste -sd';' -)"
   BREW=""; for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$b" ] && { BREW="$b"; break; }; done
   if [ -n "$BREW" ]; then
     NB=$("$BREW" outdated --quiet 2>/dev/null | wc -l | tr -d ' ')
-    say "- Homebrew packages outdated: $NB"; [ "$NB" -ge 20 ] && flag LOW Updates "$NB Homebrew packages are outdated."
+    say "- Homebrew packages outdated: $NB"; [ "$NB" -ge 20 ] && finding MA-UPDATES-002 LOW Updates "$NB Homebrew packages are outdated."
   fi
 else say "Skipped (--offline)."; skip "macOS and Homebrew update checks" "--offline"; fi
 system_profiler SPInstallHistoryDataType 2>/dev/null | grep -A1 -E '^\s+XProtect' | grep Version | tail -2 | block "XProtect versions (latest installs)"
+XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
+if [ -n "$XPI" ]; then
+  XPD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d' "$XPI" +%s 2>/dev/null || date +%s) ) / 86400 ))
+  say "- XProtect installed: $XPI ($XPD days ago)"
+  [ "$XPD" -gt 60 ] && finding MA-UPDATES-005 MEDIUM Updates "XProtect was last updated $XPD days ago."
+else say "- XProtect installed: unknown"; fi
+plutil -p /Library/Receipts/InstallHistory.plist 2>/dev/null | recent_installs "$(date -u -v-30d +%Y-%m-%d)" > "$TMP/inst"
+say "- Non-Apple installer packages recorded: $(pkgutil --pkgs 2>/dev/null | grep -vc '^com\.apple\.')"
+if [ -s "$TMP/inst" ]; then block "Non-Apple installs in the last 30 days (date, name, version)" < "$TMP/inst"
+  finding MA-UPDATES-008 INFO Updates "$(grep -c . "$TMP/inst") non-Apple installs in the last 30 days (see section 3)."
+else say "- Non-Apple installs in the last 30 days: none"; fi
 
-# ---------- 5. Security baseline ----------
-h2 "5. Security baseline"
+# ---------- 4. Platform security ----------
+h2 "4. Platform security"
 SIP=$(csrutil status 2>&1); FV=$(fdesetup status 2>&1); GK=$(spctl --status 2>&1)
 FW=/usr/libexec/ApplicationFirewall/socketfilterfw
 FWS=$($FW --getglobalstate 2>&1); FWST=$($FW --getstealthmode 2>&1); FWSIG=$($FW --getallowsigned 2>&1)
 AUTOL=$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)
 printf '%s\n' "$SIP" "$FV" "Gatekeeper: $GK" "$FWS" "$FWST" "$FWSIG" "Auto-login user: ${AUTOL:-none}" | block "Baseline"
-run "MDM and profiles" sh -c 'profiles status -type enrollment 2>&1; profiles list 2>&1 | head -20'
-echo "$SIP" | grep -q enabled || flag HIGH Security "System Integrity Protection is not enabled."
-echo "$GK" | grep -q enabled || flag HIGH Security "Gatekeeper is disabled."
-echo "$FWS" | grep -q 'enabled' || flag HIGH Firewall "Application firewall is off."
-echo "$FWST" | grep -q 'on' || flag LOW Firewall "Firewall stealth mode is off (the Mac answers probes such as ping)."
-echo "$FV" | grep -q 'On' || flag MEDIUM Security "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
-[ -n "$AUTOL" ] && flag LOW Security "Automatic login is on for $AUTOL."
+echo "$SIP" | grep -q enabled || finding MA-PLATFORM-001 HIGH Platform "System Integrity Protection is not enabled."
+echo "$GK" | grep -q enabled || finding MA-PLATFORM-002 HIGH Platform "Gatekeeper is disabled."
+echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 MEDIUM Platform "Application firewall is off."
+echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)."
+echo "$FV" | grep -q 'On' || finding MA-PLATFORM-005 MEDIUM Platform "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
+[ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL."
+SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
+SLR=$(screen_lock_sev "$SL")
+[ -n "$SLR" ] && finding MA-PLATFORM-010 "${SLR%%$'\t'*}" Platform "Screen lock is ${SLR#*$'\t'}."
+BA=$(nvram boot-args 2>/dev/null | cut -f2-)
+say "- Boot arguments: $(mdesc "${BA:-none}")"
+case "$(boot_args_sev "$BA")" in
+  HIGH) finding MA-PLATFORM-013 HIGH Platform "Boot arguments turn off code-signing enforcement: $BA" ;;
+  LOW) finding MA-PLATFORM-014 LOW Platform "Boot arguments are set: $BA" ;;
+esac
+AR=$(csrutil authenticated-root status 2>&1); say "- $(mdesc "$AR")"
+case "$AR" in *disabled*) finding MA-PLATFORM-012 HIGH Platform "The signed system volume (authenticated root) is off." ;; esac
+LV=$(defaults read /Library/Preferences/com.apple.security.libraryvalidation DisableLibraryValidation 2>/dev/null)
+default_line "Library validation disabled (DisableLibraryValidation)" "$LV" "0, library validation on"
+[ "$LV" = 1 ] && finding MA-PLATFORM-016 MEDIUM Platform "Library validation is off, so apps can load libraries signed by other developers."
+LQ=$(defaults read com.apple.LaunchServices LSQuarantine 2>/dev/null)
+default_line "Quarantine for downloads (LSQuarantine)" "$LQ" "1, on"
+[ "$LQ" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off (LSQuarantine=0), so Gatekeeper does not check downloaded files."
+find /Applications -maxdepth 2 -name '*.app' -type d -perm -2 2>/dev/null > "$TMP/wwa"
+if [ -s "$TMP/wwa" ]; then block "Apps writable by everyone" < "$TMP/wwa"
+  finding MA-PLATFORM-017 MEDIUM Platform "$(grep -c . "$TMP/wwa") app(s) in /Applications are writable by everyone: $(sed 's#.*/##' "$TMP/wwa" | paste -sd, -)"
+else say "- Apps writable by everyone: none"; fi
+find /Library -xdev -type d -perm -002 ! -perm -1000 2>/dev/null > "$TMP/wwl"
+NWWL=$(grep -c . "$TMP/wwl"); say "- Folders in /Library writable by everyone without the sticky bit: $NWWL"
+if [ "$NWWL" -gt 0 ]; then head -10 "$TMP/wwl" | block "Folders in /Library writable by everyone (first 10)"
+  finding MA-PLATFORM-018 LOW Platform "$NWWL folder(s) in /Library are writable by everyone without the sticky bit (see section 4)."; fi
 run "System extensions" systemextensionsctl list
-systemextensionsctl list 2>/dev/null | grep -q 'waiting for user' && flag INFO Security "A system extension is waiting for user approval: $(systemextensionsctl list 2>/dev/null | grep 'waiting for user' | awk -F'\t' '{print $(NF-1)}' | paste -sd';' -)"
+systemextensionsctl list 2>/dev/null | grep -q 'waiting for user' && finding MA-PLATFORM-007 INFO Platform "A system extension is waiting for user approval: $(systemextensionsctl list 2>/dev/null | grep 'waiting for user' | awk -F'\t' '{print $(NF-1)}' | paste -sd';' -)"
 kmutil showloaded --list-only 2>/dev/null | grep -v com.apple | awk '{print $6, $7}' | block "Third-party kernel extensions loaded (name and version)"
-
-# ---------- 6. Firewall ----------
-h2 "6. Application firewall"
+h3 "Application firewall"
 say "Each entry below needs a reason to stay Allow. The firewall filters by app, not by source address."
 say ""; say "| Rule | Path | Signer |"; say "|---|---|---|"
 $FW --listapps 2>/dev/null | awk '/^[0-9]+ :/{sub(/^[0-9]+ : /,""); sub(/ +$/,""); app=$0; next} /incoming/{r=($0 ~ /Allow/)?"Allow":"Block"; print r "|" app}' > "$TMP/fw"
 NALLOW=0
 while IFS='|' read -r r p; do
   s=$(sig "$p"); say "| $r | \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in "ad hoc"|unsigned|missing) flag MEDIUM Firewall "Allow rule for a program that is $s: $p";; esac; fi
+  if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in
+    "ad hoc"|unsigned) finding MA-PLATFORM-008 MEDIUM Platform "Allow rule for a program that is $s: $p" ;;
+    missing) finding MA-PLATFORM-011 LOW Platform "Allow rule for a program that no longer exists: $p" ;; esac; fi
 done < "$TMP/fw"
 say ""; say "- Entries: $(wc -l < "$TMP/fw" | tr -d ' '), Allow: $NALLOW"
+h3 "Secure boot policy"
+if [ "$(uname -m)" != arm64 ]; then say "- bputil: not applicable on an Intel Mac"
+elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; then
+  filter_bputil < "$TMP/bp" | block "bputil -d (security settings only)"
+  BPM=$(bputil_mode < "$TMP/bp" | clean_field)
+  case "$(boot_policy_sev "$BPM")" in HIGH) finding MA-PLATFORM-009 HIGH Platform "Secure boot policy is Permissive Security." ;;
+    MEDIUM) finding MA-PLATFORM-009 MEDIUM Platform "Secure boot policy is not Full Security: $BPM." ;; esac
+else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
+h3 "Packet filter"
+: > "$TMP/pf"
+priv "pfctl -s info" /sbin/pfctl -s info 2>/dev/null | head -5 >> "$TMP/pf"
+priv "pfctl -s rules" /sbin/pfctl -s rules 2>/dev/null | head -30 >> "$TMP/pf"
+if [ -s "$TMP/pf" ]; then block "Packet filter (pf)" < "$TMP/pf"; else say "- Packet filter (pf): skipped ($(skip_reason "pfctl -s info"))"; fi
 
-# ---------- 7. Sharing and remote access ----------
-h2 "7. Sharing and remote access"
+# ---------- 5. Device management and security software ----------
+h2 "5. Device management and security software"
+run "MDM and profiles" sh -c 'profiles status -type enrollment 2>&1; profiles list 2>&1 | head -20'
+h3 "Device configuration profiles"
+if priv "profiles (device)" /usr/bin/profiles list -type configuration > "$TMP/prof" 2>/dev/null; then
+  filter_profiles < "$TMP/prof" | block "profiles list -type configuration (names and identifiers only)"
+else say "- Device profiles: skipped ($(skip_reason "profiles (device)"))"; fi
+
+# ---------- 6. Sharing and remote access ----------
+h2 "6. Sharing and remote access"
 launchctl print-disabled system 2>/dev/null | grep -E 'sshd|screensharing|smbd|tftpd|ftp|AppleFileServer|RemoteDesktop|ARDAgent' | block "launchd services (enabled means not disabled)"
 NET_T=$(netstat -anv -p tcp 2>/dev/null | grep LISTEN); NET_U=$(netstat -anv -p udp 2>/dev/null)
 # TCP connect test to this Mac (no data sent); works without sudo for root-owned services
@@ -490,36 +858,69 @@ listening(){ /usr/bin/nc -z -G 2 127.0.0.1 "$1" >/dev/null 2>&1 || { [ -n "$LANI
 for pair in "22:SSH" "445:SMB file sharing" "548:AFP file sharing" "5900:Screen Sharing (VNC)" "3283:Remote Management (ARD)" "88:Kerberos kdc"; do
   pt=${pair%%:*}; nm=${pair#*:}; if listening "$pt"; then say "- $nm: listening on TCP $pt"; else say "- $nm: not listening"; fi
 done
-echo "$NET_U" | awk '{print $4}' | grep -qE '[.]69$' && { say "- TFTP: listening on UDP 69"; flag MEDIUM Sharing "TFTP server is listening on UDP 69."; }
-launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.tftpd" => enabled' && { [ -e /Library/LaunchDaemons/tftp.plist ] || [ -e /System/Library/LaunchDaemons/tftp.plist ]; } && flag LOW Sharing "TFTP (com.apple.tftpd) is enabled in launchd; it starts on the first request."
-listening 445 && flag LOW Sharing "SMB file sharing is on: $(sharing -l 2>/dev/null | awk -F'\t+' '/^name:/{print $2}' | paste -sd';' -)"
+echo "$NET_U" | awk '{print $4}' | grep -qE '[.]69$' && { say "- TFTP: listening on UDP 69"; finding MA-SHARING-001 MEDIUM Sharing "TFTP server is listening on UDP 69."; }
+launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.tftpd" => enabled' && { [ -e /Library/LaunchDaemons/tftp.plist ] || [ -e /System/Library/LaunchDaemons/tftp.plist ]; } && finding MA-SHARING-002 LOW Sharing "TFTP (com.apple.tftpd) is enabled in launchd; it starts on the first request."
+listening 445 && finding MA-SHARING-003 LOW Sharing "SMB file sharing is on: $(sharing -l 2>/dev/null | awk -F'\t+' '/^name:/{print $2}' | paste -sd';' -)"
 RM=/Library/Preferences/com.apple.RemoteManagement.plist
 if listening 3283 || pgrep -x ARDAgent >/dev/null; then
   say ""; defaults read "$RM" 2>/dev/null | grep -E 'ARD_AllLocalUsers|VNCLegacy|allowInsecureDH|ScreenSharingReqPerm' | block "Remote Management settings"
-  [ "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)" = 1 ] && flag MEDIUM Sharing "Remote Management (ARD) is on for all local users."
-  [ "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)" = 1 ] && flag MEDIUM Sharing "Remote Management allows legacy VNC password connections."
-  [ "$(defaults read "$RM" allowInsecureDH 2>/dev/null)" = 1 ] && flag MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)."
+  [ "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)" = 1 ] && finding MA-SHARING-004 MEDIUM Sharing "Remote Management (ARD) is on for all local users."
+  [ "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)" = 1 ] && finding MA-SHARING-005 MEDIUM Sharing "Remote Management allows legacy VNC password connections."
+  [ "$(defaults read "$RM" allowInsecureDH 2>/dev/null)" = 1 ] && finding MA-SHARING-006 MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)."
 fi
 if listening 22; then
   AM=$(/usr/bin/ssh -F /dev/null -o PreferredAuthentications=none -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 nobody@127.0.0.1 true </dev/null 2>&1 | grep -o '([^)]*)' | tail -1)
   say "- SSH offers: ${AM:-unknown}"
   if [ "$SSHDG" -eq 1 ]; then
     PWA=$(grep -Ei '^(passwordauthentication|kbdinteractiveauthentication) yes' "$TMP/sshdg" | paste -sd, -)
-    [ -n "$PWA" ] && flag MEDIUM Sharing "SSH accepts passwords (sshd -G: $PWA)."
-  elif ssh_methods_flag "$AM"; then flag MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
+    [ -n "$PWA" ] && finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (sshd -G: $PWA)."
+  elif ssh_accepts_password "$AM"; then finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
   if dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then say "- SSH access group: $(dscl . -read /Groups/com.apple.access_ssh GroupMembership 2>/dev/null | cut -d: -f2)"
-  else say "- SSH access group: absent (every local user may sign in)"; flag LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
+  else say "- SSH access group: absent (every local user may sign in)"; finding MA-SHARING-008 LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
   cat /etc/ssh/sshd_config.d/* 2>/dev/null | grep -vE '^\s*(#|$)' | block "sshd_config.d (non-comment lines)"
   if [ "$SSHDG" -eq 1 ]; then
-    grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam) " "$TMP/sshdg" | block "Effective sshd settings (sshd -G)"
-    grep -qi '^permitrootlogin yes' "$TMP/sshdg" && flag HIGH Sharing "sshd permits root login."
+    grep -iE "^(passwordauthentication|kbdinteractiveauthentication|permitrootlogin|pubkeyauthentication|allowusers|allowgroups|port|usepam|permituserenvironment|gatewayports|hostbasedauthentication|x11forwarding|maxauthtries) " "$TMP/sshdg" | block "Effective sshd settings (sshd -G)"
+    grep -qi '^permitrootlogin yes' "$TMP/sshdg" && finding MA-SHARING-009 HIGH Sharing "sshd permits root login."
+    sshdv() { awk -v k="$1" 'tolower($1) == k {print $2; exit}' "$TMP/sshdg"; }
+    v=$(sshdv permituserenvironment); [ -n "$v" ] && [ "$v" != no ] && finding MA-SHARING-014 MEDIUM Sharing "sshd lets clients set environment variables (PermitUserEnvironment $v)."
+    v=$(sshdv gatewayports); [ -n "$v" ] && [ "$v" != no ] && finding MA-SHARING-015 MEDIUM Sharing "sshd lets forwarded ports listen on all interfaces (GatewayPorts $v)."
+    v=$(sshdv hostbasedauthentication); [ "$v" = yes ] && finding MA-SHARING-016 MEDIUM Sharing "sshd accepts host-based authentication."
+    v=$(sshdv x11forwarding); [ "$v" = yes ] && finding MA-SHARING-017 LOW Sharing "sshd allows X11 forwarding."
+    v=$(sshdv maxauthtries); [ -n "$v" ] && [ "$v" -gt 6 ] 2>/dev/null && finding MA-SHARING-018 LOW Sharing "sshd allows $v authentication attempts per connection (MaxAuthTries)."
   else say "- Effective sshd settings: skipped ($(skip_reason "Effective sshd settings"))"; fi
 fi
 dscl . -read /Groups/com.apple.access_screensharing GroupMembership NestedGroups 2>/dev/null | block "Screen Sharing access group"
 sharing -l 2>/dev/null | grep -E '^name:|path:' | block "File shares"
+h3 "More sharing services"
+if launchctl print system/com.apple.AEServer >/dev/null 2>&1; then say "- Remote Apple Events: on"; finding MA-SHARING-019 LOW Sharing "Remote Apple Events is on (TCP 3031)."; else say "- Remote Apple Events: off"; fi
+NATE=$(plutil -extract NAT.Enabled raw -o - /Library/Preferences/SystemConfiguration/com.apple.nat.plist 2>/dev/null)
+default_line "Internet Sharing (NAT Enabled)" "$NATE" "off"
+case "$NATE" in 1|true) finding MA-SHARING-010 MEDIUM Sharing "Internet Sharing is on; this Mac routes traffic for other devices." ;; esac
+SMBG=$(plutil -extract AllowGuestAccess raw -o - /Library/Preferences/SystemConfiguration/com.apple.smb.server.plist 2>/dev/null)
+default_line "SMB guest access (AllowGuestAccess)" "$SMBG" "off"
+case "$SMBG" in 1|true) finding MA-SHARING-011 MEDIUM Sharing "SMB file sharing allows guest access without a password." ;; esac
+if launchctl print system/org.apache.httpd >/dev/null 2>&1; then say "- Apache web server: loaded"; finding MA-SHARING-020 LOW Sharing "The built-in Apache web server (org.apache.httpd) is loaded."; else say "- Apache web server: not loaded"; fi
+if [ -f /etc/exports ] && grep -qvE '^[[:space:]]*(#|$)' /etc/exports; then say "- NFS exports: present"; finding MA-SHARING-012 MEDIUM Sharing "NFS exports are configured in /etc/exports."; else say "- NFS exports: none"; fi
+if [ ! -r /etc/cups/cupsd.conf ]; then say "- Printer sharing: unknown (cupsd.conf not readable)"
+elif cups_shared /etc/cups/cupsd.conf; then say "- Printer sharing: on"; finding MA-SHARING-021 LOW Sharing "Printer sharing is on (cupsd listens beyond localhost)."; else say "- Printer sharing: off"; fi
+AD=$(defaults read com.apple.sharingd DiscoverableMode 2>/dev/null)
+default_line "AirDrop discoverable by (DiscoverableMode)" "$AD" "Contacts Only"
+[ "$AD" = Everyone ] && finding MA-SHARING-022 LOW Sharing "AirDrop is discoverable by everyone."
+if lsof -nP -a -c ControlCenter -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}' | grep -qE ':(5000|7000)$'; then say "- AirPlay receiver: listening"; finding MA-SHARING-023 LOW Sharing "The AirPlay receiver is listening (TCP 5000 or 7000)."; else say "- AirPlay receiver: not listening"; fi
+MSH=$(defaults read com.apple.amp.mediasharingd home-sharing-enabled 2>/dev/null)
+default_line "Media sharing (home-sharing-enabled)" "$MSH" "0, off"
+[ "$MSH" = 1 ] && finding MA-SHARING-024 LOW Sharing "Media sharing (Home Sharing) is on."
+ACA=$(defaults read /Library/Preferences/com.apple.AssetCache Activated 2>/dev/null)
+default_line "Content caching (AssetCache Activated)" "$ACA" "0, off"
+[ "$ACA" = 1 ] && finding MA-SHARING-025 LOW Sharing "Content caching is on."
+RST=$(ps -axo comm= | remote_support_names | paste -sd, -)
+say "- Remote-support tools running: $(mdesc "${RST:-none}")"
+[ -n "$RST" ] && finding MA-SHARING-013 MEDIUM Sharing "A remote-support tool is running: $RST"
+[ -f "$THOME/.ssh/authorized_keys" ] && ssh-keygen -l -f "$THOME/.ssh/authorized_keys" 2>&1 | block "SSH authorized_keys (bits, fingerprint, comment, type)"
 
-# ---------- 8. Network listeners ----------
-h2 "8. Network listeners reachable from other devices"
+# ---------- 7. Network exposure ----------
+h2 "7. Network exposure"
+h3 "Listeners reachable from other devices"
 say "Listeners bound to all interfaces or a LAN address. Each was sent one HTTP GET on ${LANIP:-the LAN address} to see whether it asks for a login (HTTP code only; 000 = not HTTP or no answer)."
 say ""; say "| Address | Process | PID | Signer | HTTP GET / |"; say "|---|---|---|---|---|"
 if [ -n "$NET_T" ]; then
@@ -546,25 +947,38 @@ while read -r addr proc; do
   code=000; [ -n "$tgt" ] && code=$(/usr/bin/curl -q -s -o /dev/null -m 3 -w '%{http_code}' "http://$tgt:$port/" 2>/dev/null)
   say "| \`$(mdesc "$addr")\` | \`$(mdesc "$path")\` | $(mdesc "$pid") | $(mdesc "$s") | $code |"
   case "$s" in Apple) ;; *)
-    case "$code" in 200) flag MEDIUM Network "Non-Apple listener answers HTTP 200 without a login on $addr ($path). Check whether it needs authentication.";;
-                    *) [ "$host" = "*" ] && flag INFO Network "Non-Apple listener on all interfaces: $addr ($(basename "$path"), HTTP $code)." ;; esac ;;
+    case "$code" in 200) finding MA-NETWORK-001 MEDIUM Network "Non-Apple listener answers HTTP 200 without a login on $addr ($path). Check whether it needs authentication.";;
+                    *) [ "$host" = "*" ] && finding MA-NETWORK-002 INFO Network "Non-Apple listener on all interfaces: $addr ($(basename "$path"), HTTP $code)." ;; esac ;;
   esac
 done < "$TMP/lis"
 [ "$LSOFL" -eq 0 ] && say "" && say "Without the macassay sudo rules, ports owned by root may show without a process name."
-pgrep -fl cloudflared >/dev/null 2>&1 && flag INFO Network "A Cloudflare tunnel (cloudflared) is running; its published hostnames are configured in the Cloudflare dashboard."
+TUN=$(ps -axo comm= | awk -F/ '{print $NF}' | grep -xE 'cloudflared|ngrok|frpc' | sort -u | paste -sd, -)
+[ -n "$TUN" ] && finding MA-NETWORK-003 LOW Network "A tunnel program is running ($TUN); it can publish local services to the internet. Check what it exposes."
 run "VPN and tunnel processes" sh -c 'ps -axo user=,pid=,comm= | grep -iE "cloudflared|tailscale|wireguard|openvpn|nordvpn|anyconnect|ngrok|frpc|zerotier" | grep -v grep'
+h3 "All TCP listeners"
+if [ "$LSOFL" -eq 1 ]; then awk '{print $1, $2, $3, $9}' "$TMP/lsofl" | sort -u | block "All TCP listeners (lsof)"
+else say "- All TCP listeners (lsof): skipped ($(skip_reason "lsof listeners"))"; fi
+h3 "DNS, proxy and hosts"
+scutil --dns 2>/dev/null | grep -E 'nameserver\[' | sort | uniq -c | block "DNS servers in use"
+PX=$(scutil --proxy 2>/dev/null); echo "$PX" | block "Proxy settings"
+echo "$PX" | grep -qE '(HTTPEnable|HTTPSEnable|SOCKSEnable|ProxyAutoConfigEnable) : 1' && finding MA-NETWORK-004 MEDIUM Network "A system proxy or proxy auto-config is set; confirm it is intended."
+HO=$(grep -vE '^\s*(#|$)' /etc/hosts | grep -vE '^(127\.0\.0\.1\s+localhost|255\.255\.255\.255\s+broadcasthost|::1\s+localhost)\s*$')
+if [ -n "$HO" ]; then echo "$HO" | block "Non-default /etc/hosts entries"; finding MA-NETWORK-005 LOW Network "/etc/hosts has $(echo "$HO" | wc -l | tr -d ' ') non-default entries."; else say "- /etc/hosts: default"; fi
+h3 "Outbound connections"
+NETE=$(netstat -anv -p tcp 2>/dev/null | grep ESTABLISHED | awk '{p=""; for(i=6;i<=NF;i++) if($i ~ /^[^ ]+:[0-9]+$/) p=$i; split(p,a,":"); r=$5; sub(/\.[0-9]+$/,"",r); if (r !~ /^(127\.|::1|fe80)/) print a[1], r}' | sort | uniq -c | sort -rn | head -30)
+[ -n "$NETE" ] && echo "$NETE" | block "Established outbound TCP connections (count, process, remote address; top 30)"
 
-# ---------- 9. Persistence and startup items ----------
-h2 "9. Startup items and persistence"
+# ---------- 8. Startup and persistence ----------
+h2 "8. Startup and persistence"
 say "| Location | Label file | Program | Signer | Modified |"; say "|---|---|---|---|---|"
 for d in /Library/LaunchDaemons /Library/LaunchAgents "$THOME/Library/LaunchAgents"; do
   for f in "$d"/*.plist; do [ -e "$f" ] || continue
     prog=$(plistprog "$f"); s=$(sig "$prog"); m=$(stat -f %Sm -t %Y-%m-%d "$f")
     say "| \`$d\` | $(mdesc "$(basename "$f")") | \`$(mdesc "${prog:-?}")\` | $(mdesc "$s") | $m |"
-    case "$prog" in /tmp/*|/private/tmp/*|/Users/Shared/*|*/.[!.]*/*) flag HIGH Persistence "Startup item runs from an unusual path: $f -> $prog";; esac
-    [ "$s" = missing ] && [ -n "$prog" ] && case "$prog" in /*) flag LOW Persistence "Startup item points to a missing program: $f -> $prog";; esac
+    case "$prog" in /tmp/*|/private/tmp/*|/Users/Shared/*|*/.[!.]*/*) finding MA-PERSISTENCE-001 HIGH Persistence "Startup item runs from an unusual path: $f -> $prog";; esac
+    [ "$s" = missing ] && [ -n "$prog" ] && case "$prog" in /*) finding MA-PERSISTENCE-002 LOW Persistence "Startup item points to a missing program: $f -> $prog";; esac
     if [ -n "$(find "$f" -mtime -14 2>/dev/null)" ]; then case "$s" in unsigned|"ad hoc") case "$prog" in /opt/homebrew/*|/usr/local/*) sv=LOW;; *) sv=MEDIUM;; esac
-      flag $sv Persistence "Startup item added or changed in the last 14 days runs a program that is $s: $f";; esac; fi
+      finding MA-PERSISTENCE-003 $sv Persistence "Startup item added or changed in the last 14 days runs a program that is $s: $f";; esac; fi
   done
 done
 # Root daemons whose program, plist or a folder above them a non-root account can change.
@@ -577,145 +991,73 @@ for f in /Library/LaunchDaemons/*.plist; do [ -e "$f" ] || continue
     script=$(plutil -extract ProgramArguments.1 raw -o - "$f" 2>/dev/null); case "$script" in /*) ;; *) script="" ;; esac ;; esac
   w=$(chain_writable "$f" "$prog" "$tgt" "$script")
   if [ -n "$w" ]; then
-    NRW=$((NRW+1)); flag "${w%%$'\t'*}" Persistence "Root daemon $(basename "$f") runs $prog${script:+ $script}, and ${w#*$'\t'}. Whoever can change it can replace what runs as root."
+    NRW=$((NRW+1)); finding MA-PERSISTENCE-004 "${w%%$'\t'*}" Persistence "Root daemon $(basename "$f") runs $prog${script:+ $script}, and ${w#*$'\t'}. Whoever can change it can replace what runs as root."
   fi
 done
 say ""; say "- Root daemons with a program or folder that a non-root account can change: $NRW"
 ls -l /Library/PrivilegedHelperTools 2>/dev/null | tail -n +2 | while read -r l; do f="/Library/PrivilegedHelperTools/${l##* }"; echo "$l  [$(sig "$f")]"; done | block "Privileged helper tools"
 LH=$(defaults read com.apple.loginwindow LoginHook 2>/dev/null; defaults read /Library/Preferences/com.apple.loginwindow LoginHook 2>/dev/null)
-say "- Login hook: $(mdesc "${LH:-none}")"; [ -n "$LH" ] && flag HIGH Persistence "A login hook is set: $LH"
+say "- Login hook: $(mdesc "${LH:-none}")"; [ -n "$LH" ] && finding MA-PERSISTENCE-005 HIGH Persistence "A login hook is set: $LH"
 CT=$(crontab -l 2>/dev/null | grep -vE '^\s*(#|$)')
 say "- User crontab entries: $(printf '%s' "$CT" | grep -c . )"; [ -n "$CT" ] && echo "$CT" | crontab_summary | block "crontab (schedule and command name; arguments hidden)"
 ls /etc/periodic/daily /etc/periodic/weekly /etc/periodic/monthly 2>/dev/null | grep -vE '^[0-9]{3}\.|^$|:$' | block "Non-standard periodic scripts"
-ls -l /etc/sudoers.d 2>&1 | block "/etc/sudoers.d"
-OTHERSD=$(for f in /etc/sudoers.d/*; do [ -e "$f" ] && [ "${f##*/}" != macassay ] && echo "${f##*/}"; done | paste -sd, -)
-[ -n "$OTHERSD" ] && flag INFO Security "Files present in /etc/sudoers.d: $OTHERSD"
-[ -f "$THOME/.ssh/authorized_keys" ] && ssh-keygen -l -f "$THOME/.ssh/authorized_keys" 2>&1 | block "SSH authorized_keys (bits, fingerprint, comment, type)"
 RCF=(); for f in $RC_FILES; do RCF+=("$THOME/$f"); done
 rc_hits "${RCF[@]}" /etc/zshrc /etc/zshenv /etc/zprofile /etc/zlogin /etc/profile /etc/bashrc > "$TMP/rc"
-if [ -s "$TMP/rc" ]; then block "Suspicious patterns in shell startup files (file:line: pattern; line text not shown)" < "$TMP/rc"; flag HIGH Persistence "Shell startup files contain download-and-run or decode patterns (see section 9)."; else say "- Shell startup files: no download-and-run or decode patterns"; fi
+if [ -s "$TMP/rc" ]; then block "Suspicious patterns in shell startup files (file:line: pattern; line text not shown)" < "$TMP/rc"
+  rc_pattern_sevs "$TMP/rc" > "$TMP/rcs"
+  grep -qx HIGH "$TMP/rcs" && finding MA-PERSISTENCE-006 HIGH Persistence "Shell startup files contain download-and-run, /dev/tcp or nc -e patterns (see section 8)."
+  grep -qx MEDIUM "$TMP/rcs" && finding MA-PERSISTENCE-011 MEDIUM Persistence "Shell startup files decode base64 or run osascript -e (see section 8)."
+else say "- Shell startup files: no download-and-run or decode patterns"; fi
 find /Users/Shared /private/tmp /private/var/tmp -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -v '/macassay\.' | head -20 > "$TMP/x"
-if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; flag MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 9)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
+if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; finding MA-PERSISTENCE-007 MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 8)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
 if priv "sfltool dumpbtm" /usr/bin/sfltool dumpbtm > "$TMP/btm" 2>/dev/null; then
   grep -E "^\s+(Name|Developer Name|Type|Disposition|URL|Executable Path):" "$TMP/btm" | grep -v "com.apple" | MAXL=200 block "Background items (sfltool, non-Apple)"
 else say "- Background items (sfltool): skipped ($(skip_reason "sfltool dumpbtm"))"; fi
-
-# ---------- 10. Accounts ----------
-h2 "10. Accounts"
-dscl . -list /Users UniqueID | awk '$2>=500' | block "Local users (UID 500 and above)"
-ADM=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null | cut -d: -f2)
-say "- Admin group: $ADM"
-for u in $ADM; do dscl . -read "/Users/$u" >/dev/null 2>&1 || flag LOW Accounts "Admin group lists a user that does not exist: $u"; done
-RAA=$(dscl . -read /Users/root AuthenticationAuthority 2>/dev/null | grep -v 'No such key')
-RPW=$(dscl . -read /Users/root Password 2>/dev/null | awk '{print $2}')
-if { [ -n "$RAA" ] && ! echo "$RAA" | grep -q DisabledUser; } || { [ -n "$RPW" ] && [ "$RPW" != "*" ]; }; then
-  say "- root account: appears enabled"; flag MEDIUM Accounts "The root account appears to be enabled."
-else say "- root account: disabled"; fi
-run "Recent logins" sh -c 'last -25 | grep -v "^$"'
-
-# ---------- 11. Running processes outside standard locations ----------
-h2 "11. Running programs outside standard locations"
-say "| Program | Signer |"; say "|---|---|"
-ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
-  s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  case "$p" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) flag HIGH Processes "Program running from a temporary or shared folder: $p ($s)";; esac
-done
-
-# ---------- 12. Logs and crash reports ----------
-h2 "12. Logs and crash reports"
-find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | sed 's#.*/##' | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+.*//' | sort | uniq -c | sort -rn | head -25 | block "Crash and diagnostic reports, last 14 days (count by kind)"
-NP=$(find /Library/Logs/DiagnosticReports -name '*.panic' -mtime -30 2>/dev/null | wc -l | tr -d ' ')
-say "- Kernel panics in 30 days: $NP"; [ "$NP" -gt 0 ] && flag HIGH Stability "$NP kernel panic(s) in the last 30 days."
-if [ "$QUICK" -eq 0 ]; then
-  echo "Searching 7 days of logs (this can take a few minutes)..." >&2
-  XP=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND (eventMessage CONTAINS[c] "detected" OR eventMessage CONTAINS[c] "remediat")' 2>/dev/null | grep -viE 'NoThreatDetected|no (threats|detections)|status: 0|^Timestamp ' | tail -20)
-  XN=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND eventMessage CONTAINS "NoThreatDetected"' 2>/dev/null | grep -c NoThreatDetected)
-  say "- XProtect scanner results reporting NoThreatDetected (7 days): $XN"
-  if [ -n "$XP" ]; then echo "$XP" | block "XProtect detection or remediation messages (7 days)"; flag HIGH Malware "XProtect logged detection or remediation messages (see section 12)."; else say "- XProtect detections (7 days): none found"; fi
-  SS=$(log show --last 7d --style compact --predicate 'process BEGINSWITH "sshd" AND (eventMessage CONTAINS "Failed" OR eventMessage CONTAINS "Invalid user" OR eventMessage CONTAINS "Accepted")' 2>/dev/null)
-  say "- SSH log lines (7 days): accepted $(echo "$SS" | grep -c Accepted), failed $(echo "$SS" | grep -c Failed), invalid user $(echo "$SS" | grep -c 'Invalid user'). Without admin rights these lines are often hidden."
-  NF=$(echo "$SS" | grep -c -E 'Failed|Invalid user'); [ "$NF" -ge 20 ] && flag MEDIUM Security "$NF failed SSH sign-in attempts in 7 days."
-else say "Log searches skipped (--quick)."; skip "7-day log searches (XProtect, SSH)" "--quick"; fi
-
-# ---------- 13. Disk usage ----------
-h2 "13. Disk usage"
-if [ "$SKIPDU" -eq 0 ]; then
-  echo "Measuring home folder usage..." >&2
-  ( cd "$THOME" && du -sh -x -- .[!.]* * Library/* 2>/dev/null | sort -rh | head -25 ) | block "Largest items in $THOME (top 25)"
-  : > "$TMP/du"
-  priv "du /Users" /usr/bin/du -h -d 1 -x /Users >> "$TMP/du" 2>/dev/null
-  priv "du system folders" /usr/bin/du -sh -x /Library /Applications /opt /private/var >> "$TMP/du" 2>/dev/null
-  if [ -s "$TMP/du" ]; then grep -v '^du:' "$TMP/du" | sort -rh | block "Top-level usage"
-  else say "- Top-level usage: skipped ($(skip_reason "du /Users"))"; fi
-else say "Skipped (--skip-du)."; skip "Disk usage" "--skip-du"; fi
-
-# ---------- 14. Network configuration, trust and privacy ----------
-h2 "14. Network configuration, trust and privacy"
-scutil --dns 2>/dev/null | grep -E 'nameserver\[' | sort | uniq -c | block "DNS servers in use"
-PX=$(scutil --proxy 2>/dev/null); echo "$PX" | block "Proxy settings"
-echo "$PX" | grep -qE '(HTTPEnable|HTTPSEnable|SOCKSEnable|ProxyAutoConfigEnable) : 1' && flag MEDIUM Network "A system proxy or proxy auto-config is set; confirm it is intended."
-HO=$(grep -vE '^\s*(#|$)' /etc/hosts | grep -vE '^(127\.0\.0\.1\s+localhost|255\.255\.255\.255\s+broadcasthost|::1\s+localhost)\s*$')
-if [ -n "$HO" ]; then echo "$HO" | block "Non-default /etc/hosts entries"; flag LOW Network "/etc/hosts has $(echo "$HO" | wc -l | tr -d ' ') non-default entries."; else say "- /etc/hosts: default"; fi
 DY=$(launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null)
-[ -n "$DY" ] && flag HIGH Persistence "launchd sets DYLD_INSERT_LIBRARIES=$DY (library injection)."
+[ -n "$DY" ] && finding MA-PERSISTENCE-008 HIGH Persistence "launchd sets DYLD_INSERT_LIBRARIES=$DY (library injection)."
 say "- launchd DYLD_INSERT_LIBRARIES: $(mdesc "${DY:-not set}")"
-NC=$(security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | grep -c '"labl"')
-security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | sort -u | block "Certificates in the System keychain ($NC)"
-TS=$(security dump-trust-settings -d 2>&1 | grep -E '^Cert [0-9]+:' )
-if [ -n "$TS" ]; then echo "$TS" | block "Admin trust settings (certificates trusted by an administrator)"; flag MEDIUM Security "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
-NETE=$(netstat -anv -p tcp 2>/dev/null | grep ESTABLISHED | awk '{p=""; for(i=6;i<=NF;i++) if($i ~ /^[^ ]+:[0-9]+$/) p=$i; split(p,a,":"); r=$5; sub(/\.[0-9]+$/,"",r); if (r !~ /^(127\.|::1|fe80)/) print a[1], r}' | sort | uniq -c | sort -rn | head -30)
-[ -n "$NETE" ] && echo "$NETE" | block "Established outbound TCP connections (count, process, remote address; top 30)"
-GU=$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)
-say "- Guest account enabled: ${GU:-not set (off)}"; [ "$GU" = 1 ] && flag LOW Accounts "The guest account is enabled."
-SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
-echo "$SL" | grep -qi 'off' && flag LOW Security "Screen lock after sleep or screen saver is off."
-run "Power and sleep" pmset -g
-TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
-if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
-  sqlite3 -init /dev/null -readonly "$TCCU" "select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service" 2>/dev/null | block "Privacy permissions granted (user database)"
-else say "- Privacy permissions (TCC): not readable from this process (needs Full Disk Access for the terminal app)."
-  skip "Privacy permissions (user TCC database)" "not readable; needs Full Disk Access for the terminal app"; fi
-skip "Privacy permissions (system TCC database)" "needs root and Full Disk Access; the sudo rules do not cover it"
-say ""; say "**Applications that Gatekeeper rejects**"; say ""
-for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
-  r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdesc "$a")\`: rejected"; flag LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
+h3 "Authorization plugins and PAM modules"
+NAP=0
+for b in /Library/Security/SecurityAgentPlugins/*.bundle; do [ -e "$b" ] || continue
+  NAP=$((NAP+1)); s=$(sig "$b"); w=$(chain_writable "$b" "$b"/Contents/MacOS/*)
+  say "- Authorization plugin $(mdesc "${b##*/}"): $(mdesc "$s"), owner $(mdesc "$(stat -f %Su "$b" 2>/dev/null)")"
+  case "$(auth_plugin_finding "$s" "$w" | cut -f1)" in
+    MA-PERSISTENCE-012) finding MA-PERSISTENCE-012 "${w%%$'\t'*}" Persistence "Authorization plugin ${b##*/} can be changed by a non-root account: ${w#*$'\t'}." ;;
+    MA-PERSISTENCE-013) finding MA-PERSISTENCE-013 MEDIUM Persistence "Authorization plugin ${b##*/} is $s." ;;
+    MA-PERSISTENCE-014) finding MA-PERSISTENCE-014 LOW Persistence "Authorization plugin ${b##*/} is installed ($s)." ;;
+  esac
 done
-say ""
-for prof in "$THOME/Library/Application Support/Google/Chrome"/*/Extensions; do [ -d "$prof" ] || continue
-  for m in "$prof"/*/*/manifest.json; do [ -f "$m" ] || continue
-    n=$(grep -m1 -o '"name"[^,]*' "$m" | sed 's/"name" *: *//; s/"//g'); id=$(echo "$m" | awk -F/ '{print $(NF-2)}')
-    echo "$(basename "$(dirname "$prof")") $id $n"; done
-done | sort -u | block "Chrome extensions (profile, ID, name; __MSG_ names are localized)"
-if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.web-extension 2>/dev/null | grep -E 'Path|Parent' | sed 's/^ *//' | block "Safari web extensions"; fi
-
-# ---------- 15. Privileged checks ----------
-h2 "15. Privileged checks"
-[ -e "$RULES" ] || say "The macassay sudo rules are not installed, so these checks are skipped. Review them with \`./macassay --print-sudoers\` and install them with \`sudo ./macassay --install-sudoers\`."
-h3 "Sudo configuration"
-noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#(include|[0-9])/ {next} {print}'; }
-sudo_file(){ # LABEL PATH
-  if priv "$1" /bin/cat "$2" > "$TMP/sud" 2>/dev/null; then
-    noncomment < "$TMP/sud" | block "$2 (non-comment lines)"
-    classify_sudoers < "$TMP/sud" | while IFS=$'\t' read -r sev rule; do flag "$sev" Security "NOPASSWD rule in $2: $rule"; done
-    return 0
-  fi
-  say "- $2: skipped ($(skip_reason "$1"))"; return 1; }
-sudo_file "sudoers" /etc/sudoers
-for f in /etc/sudoers.d/*; do [ -f "$f" ] || continue
-  n=${f##*/}; case "$n" in macassay|*.*|*~) continue ;; esac
-  sudo_file "sudoers.d/$n" "$f" || { [ -e "$RULES" ] && flag INFO Security "/etc/sudoers.d/$n is not covered by the macassay rules; rerun sudo ./macassay --install-sudoers."; }
-done
-h3 "Secure boot policy"
-if [ "$(uname -m)" != arm64 ]; then say "- bputil: not applicable on an Intel Mac"
-elif priv "bputil -d" /usr/bin/bputil -d < /dev/null > "$TMP/bp" 2>/dev/null; then
-  filter_bputil < "$TMP/bp" | block "bputil -d (security settings only)"
-  BPM=$(bputil_mode < "$TMP/bp" | clean_field)
-  [ -n "$BPM" ] && [ "$BPM" != Full ] && flag MEDIUM Security "Secure boot policy is not Full Security: $BPM."
-else say "- bputil -d: skipped ($(skip_reason "bputil -d"))"; fi
-h3 "Device configuration profiles"
-if priv "profiles (device)" /usr/bin/profiles list -type configuration > "$TMP/prof" 2>/dev/null; then
-  filter_profiles < "$TMP/prof" | block "profiles list -type configuration (names and identifiers only)"
-else say "- Device profiles: skipped ($(skip_reason "profiles (device)"))"; fi
+[ "$NAP" -eq 0 ] && say "- Authorization plugins: none outside macOS"
+PAM_SEEN=""; for f in /etc/pam.d/*; do pam_modules "$f" 1; done | sort -u > "$TMP/pam"
+if [ -s "$TMP/pam" ]; then
+  while IFS= read -r m; do
+    w=$(chain_writable "$m"); say "- PAM module $(mdesc "$m"): owner $(mdesc "$(stat -f %Su "$m" 2>/dev/null || echo missing)")"
+    if [ -n "$w" ]; then finding MA-PERSISTENCE-015 "${w%%$'\t'*}" Persistence "PAM module $m can be changed by a non-root account: ${w#*$'\t'}."
+    else finding MA-PERSISTENCE-016 MEDIUM Persistence "PAM module outside /usr/lib/pam: $m"; fi
+  done < "$TMP/pam"
+else say "- PAM modules outside /usr/lib/pam: none"; fi
+h3 "Other plug-ins"
+ents() { find "$@" -mindepth 1 -maxdepth 1 ! -name .DS_Store 2>/dev/null | sed 's#.*/##' | sort -u | paste -sd, -; }
+SI=$(ents /Library/StartupItems); SA=$(ents /Library/ScriptingAdditions "$THOME/Library/ScriptingAdditions"); DSP=$(ents /Library/DirectoryServices/PlugIns)
+say "- StartupItems: $(mdesc "${SI:-none}")"; [ -n "$SI" ] && finding MA-PERSISTENCE-017 LOW Persistence "StartupItems are present (a deprecated startup method): $SI"
+say "- Scripting additions: $(mdesc "${SA:-none}")"; [ -n "$SA" ] && finding MA-PERSISTENCE-018 MEDIUM Persistence "Scripting additions are installed: $SA"
+say "- Directory service plug-ins: $(mdesc "${DSP:-none}")"; [ -n "$DSP" ] && finding MA-PERSISTENCE-019 MEDIUM Persistence "Directory service plug-ins are installed: $DSP"
+AUD=$(ents /Library/Audio/Plug-Ins/HAL); NAUD=$(find /Library/Audio/Plug-Ins/HAL -mindepth 1 -maxdepth 1 ! -name .DS_Store 2>/dev/null | grep -c .)
+say "- Audio plug-ins (HAL): $NAUD ($(mdesc "${AUD:-none}"))"
+[ "$NAUD" -gt 0 ] && finding MA-PERSISTENCE-020 INFO Persistence "$NAUD audio plug-ins (HAL drivers) are installed: $AUD"
+h3 "Login items inside apps"
+find /Applications "$THOME/Applications" -maxdepth 5 \( -path '*.app/Contents/Library/LoginItems/*.app' -prune -print \) -o \( -path '*.app/Contents/Library/LaunchAgents/*.plist' -print \) -o \( -path '*.app/Contents/Library/LaunchDaemons/*.plist' -print \) 2>/dev/null > "$TMP/li"
+NLI=0; : > "$TMP/liu"; : > "$TMP/lix"
+while IFS= read -r p; do
+  NLI=$((NLI+1)); app="${p%%.app/*}.app"; s=$(sig "$app")
+  say "- $(mdesc "${app##*/}"): $(mdesc "${p##*/}") ($(mdesc "$s"))"
+  if unusual_path "$app"; then echo "$app" >> "$TMP/lix"
+  else case "$s" in unsigned|"ad hoc") echo "${app##*/}" >> "$TMP/liu" ;; esac; fi
+done < "$TMP/li"
+say "- Login and launch items inside apps: $NLI"
+[ "$NLI" -gt 0 ] && finding MA-PERSISTENCE-021 INFO Persistence "$NLI login or launch items are registered inside apps (see section 8)."
+[ -s "$TMP/lix" ] && finding MA-PERSISTENCE-023 HIGH Persistence "Login item inside an app in an unusual path: $(sort -u "$TMP/lix" | paste -sd, -)"
+[ -s "$TMP/liu" ] && finding MA-PERSISTENCE-022 MEDIUM Persistence "Login item inside an app that is not signed: $(sort -u "$TMP/liu" | paste -sd, -)"
 h3 "Other accounts and root"
 collect_accounts | other_accounts "$TUSER" 2>/dev/null > "$TMP/others"
 while read -r n u h; do
@@ -725,23 +1067,238 @@ while read -r n u h; do
   RCF=(); for f in $RC_FILES; do RCF+=("$h/$f"); done
   if priv "shell startup files ($n)" /bin/ls -lnd "${RCF[@]}" > "$TMP/rcl" 2>/dev/null; then
     grep -v 'No such file' "$TMP/rcl" | block "Shell startup files ($n; owner, size, date)"
-    grep -v 'No such file' "$TMP/rcl" | awk -v u="$u" '$1 ~ /^-/ && ($3 != u || substr($1, 6, 1) == "w" || substr($1, 9, 1) == "w") {print $NF}' |
-      while read -r p; do flag MEDIUM Persistence "Shell startup file $p is owned by another account or writable by group or others."; done
+    grep -v 'No such file' "$TMP/rcl" | rc_file_risks "$u" "$n" | while IFS=$'\t' read -r p r; do
+      finding MA-PERSISTENCE-009 HIGH Persistence "Shell startup file $p is $r."; done
   else say "- Shell startup files ($n): skipped ($(skip_reason "shell startup files ($n)"))"; fi
 done < "$TMP/others"
 h3 "Crontabs"
 if priv "crontabs" /bin/ls -ln /var/at/tabs > "$TMP/tabs" 2>/dev/null; then
   grep -v '^total' "$TMP/tabs" | block "/var/at/tabs (one file per account with a crontab)"
   grep -v '^total' "$TMP/tabs" | awk '$1 ~ /^-/ {print $NF, $6, $7, $8}' | while read -r cu cd1 cd2 cd3; do
-    [ "$cu" = "$TUSER" ] || flag INFO Persistence "Account $cu has a crontab (changed $cd1 $cd2 $cd3)."; done
+    [ "$cu" = "$TUSER" ] || finding MA-PERSISTENCE-010 INFO Persistence "Account $cu has a crontab (changed $cd1 $cd2 $cd3)."; done
 else say "- Crontabs: skipped ($(skip_reason "crontabs"))"; fi
-h3 "Listeners and packet filter"
-if [ "$LSOFL" -eq 1 ]; then awk '{print $1, $2, $3, $9}' "$TMP/lsofl" | sort -u | block "All TCP listeners (lsof)"
-else say "- All TCP listeners (lsof): skipped ($(skip_reason "lsof listeners"))"; fi
-: > "$TMP/pf"
-priv "pfctl -s info" /sbin/pfctl -s info 2>/dev/null | head -5 >> "$TMP/pf"
-priv "pfctl -s rules" /sbin/pfctl -s rules 2>/dev/null | head -30 >> "$TMP/pf"
-if [ -s "$TMP/pf" ]; then block "Packet filter (pf)" < "$TMP/pf"; else say "- Packet filter (pf): skipped ($(skip_reason "pfctl -s info"))"; fi
+
+# ---------- 9. Apps and browsers ----------
+h2 "9. Apps and browsers"
+h3 "Running programs outside standard locations"
+say "| Program | Signer |"; say "|---|---|"
+ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
+  s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
+  temp_program "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
+done
+say ""; say "**Applications that Gatekeeper rejects**"; say ""
+for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
+  r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdesc "$a")\`: rejected"; finding MA-APPS-002 LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
+done
+say ""
+for prof in "$THOME/Library/Application Support/Google/Chrome"/*/Extensions; do [ -d "$prof" ] || continue
+  for m in "$prof"/*/*/manifest.json; do [ -f "$m" ] || continue
+    n=$(grep -m1 -o '"name"[^,]*' "$m" | sed 's/"name" *: *//; s/"//g'); id=$(echo "$m" | awk -F/ '{print $(NF-2)}')
+    echo "$(basename "$(dirname "$prof")") $id $n"; done
+done | sort -u | block "Chrome extensions (profile, ID, name; __MSG_ names are localized)"
+if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.web-extension 2>/dev/null | grep -E 'Path|Parent' | sed 's/^ *//' | block "Safari web extensions"; fi
+h3 "Browser policies and extensions"
+case "$(profiles status -type enrollment 2>/dev/null | awk -F': ' '/^MDM enrollment/ {print $2; exit}')" in Yes*) ENROLLED=1 ;; *) ENROLLED=0 ;; esac
+: > "$TMP/fx"
+for dom in com.google.Chrome com.microsoft.Edge com.brave.Browser org.mozilla.firefox; do
+  case "$dom" in org.mozilla.firefox) key=ExtensionSettings ;; *) key=ExtensionInstallForcelist ;; esac
+  for src in "managed:/Library/Managed Preferences/$dom.plist" "managed:/Library/Managed Preferences/$TUSER/$dom.plist" "local:/Library/Preferences/$dom.plist" "local:$THOME/Library/Preferences/$dom.plist"; do
+    f="${src#*:}"; [ -f "$f" ] || continue
+    ids=$(forced_ext_ids "$f" "$key" | paste -sd, -)
+    [ -n "$ids" ] && printf '%s\t%s\t%s\n' "${src%%:*}" "$dom" "$ids" >> "$TMP/fx"
+  done
+done
+FFP=/Applications/Firefox.app/Contents/Resources/distribution/policies.json
+if [ -f "$FFP" ]; then ids=$(forced_ext_ids "$FFP" policies.ExtensionSettings | paste -sd, -); [ -n "$ids" ] && printf 'managed\torg.mozilla.firefox (policies.json)\t%s\n' "$ids" >> "$TMP/fx"; fi
+if [ -s "$TMP/fx" ]; then
+  awk -F'\t' '{print $2 " (" $1 "): " $3}' "$TMP/fx" | block "Forced browser extensions (browser, source, extension IDs)"
+  IFS=$'\t' read -r fid _ fbr <<< "$(forced_ext_finding "$ENROLLED" < "$TMP/fx")"
+  case "$fid" in
+    MA-APPS-005) finding MA-APPS-005 HIGH Apps "Browser extensions are force-installed by managed preferences or policies.json, and this Mac is not enrolled in MDM: $fbr" ;;
+    MA-APPS-006) finding MA-APPS-006 MEDIUM Apps "Browser extensions are force-installed by local preferences: $fbr" ;;
+    MA-APPS-007) finding MA-APPS-007 INFO Apps "Browser extensions are force-installed by policy on this MDM-enrolled Mac: $fbr" ;;
+  esac
+else say "- Forced browser extensions: none"; fi
+{ find "$THOME/Library/Application Support" -maxdepth 4 -type d -name NativeMessagingHosts 2>/dev/null
+  for d in /Library/Google/Chrome/NativeMessagingHosts "/Library/Application Support/Mozilla/NativeMessagingHosts"; do [ -d "$d" ] && echo "$d"; done; } > "$TMP/nmd"
+NNMH=0; : > "$TMP/nmr"
+while IFS= read -r d; do
+  n=0
+  for m in "$d"/*.json; do [ -f "$m" ] || continue
+    n=$((n+1)); hp=$(plutil -extract path raw -o - "$m" 2>/dev/null)
+    r=$(nmh_risk "$hp"); [ -n "$r" ] && printf '%s\t%s\t%s\n' "$r" "${m##*/}" "$hp" >> "$TMP/nmr"
+  done
+  NNMH=$((NNMH+n)); say "- Native-messaging hosts in $(mdesc "${d#"$THOME"/}"): $n"
+done < "$TMP/nmd"
+[ "$NNMH" -gt 0 ] && finding MA-APPS-010 INFO Apps "$NNMH native-messaging hosts let browser extensions start local programs (see section 9)."
+NMM=$(awk -F'\t' '$1 == "MEDIUM" {print $2 " -> " $3}' "$TMP/nmr" | paste -sd';' -)
+[ -n "$NMM" ] && finding MA-APPS-008 MEDIUM Apps "Native-messaging host runs a program from a temporary or shared folder: $NMM"
+NML=$(awk -F'\t' '$1 == "LOW" {print $2 " -> " $3}' "$TMP/nmr" | paste -sd';' -)
+[ -n "$NML" ] && finding MA-APPS-009 LOW Apps "Native-messaging host points to a missing program: $NML"
+h3 "Debug ports"
+# ps command lines go straight into debug_pids and never reach $TMP; only PIDs come out.
+ps -axwwo pid=,command= 2>/dev/null | debug_pids | while read -r pid; do
+  pp=$(ps -o comm= -p "$pid" 2>/dev/null); [ -n "$pp" ] || continue
+  la=$(lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}')
+  [ -z "$la" ] && [ "$LSOFL" -eq 1 ] && la=$(awk -v p="$pid" '$2 == p {print $9}' "$TMP/lsofl")
+  printf '%s\t%s\trunning\n' "$pp" "$(bind_class "$la")"
+done > "$TMP/dbg"
+for f in /Library/LaunchDaemons/*.plist /Library/LaunchAgents/*.plist "$THOME"/Library/LaunchAgents/*.plist; do [ -e "$f" ] || continue
+  c=$(plutil -extract ProgramArguments xml1 -o - "$f" 2>/dev/null | sed -n 's/.*<string>\(.*\)<\/string>.*/\1/p' | launch_debug_class)
+  [ -n "$c" ] && printf '%s\t%s\tlaunch item %s\n' "$(plistprog "$f")" "$c" "${f##*/}" >> "$TMP/dbg"
+done
+if [ -s "$TMP/dbg" ]; then
+  awk -F'\t' '{print $3 ": " $1 " (" $2 ")"}' "$TMP/dbg" | block "Programs with a debug port (where, program, bind address)"
+  debug_findings < "$TMP/dbg" | while IFS=$'\t' read -r sev prog where; do
+    case "$sev" in
+      HIGH) finding MA-APPS-003 HIGH Apps "Debug port on a non-loopback address: $prog ($where)." ;;
+      *) finding MA-APPS-004 MEDIUM Apps "Debug port on loopback or an unknown address: $prog ($where)." ;;
+    esac
+  done
+else say "- Debug ports: none found"; fi
+
+# ---------- 10. Accounts and privileges ----------
+h2 "10. Accounts and privileges"
+dscl . -list /Users UniqueID | awk '$2>=500' | block "Local users (UID 500 and above)"
+ADM=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null | cut -d: -f2)
+say "- Admin group: $ADM"
+for u in $ADM; do dscl . -read "/Users/$u" >/dev/null 2>&1 || finding MA-ACCOUNTS-002 LOW Accounts "Admin group lists a user that does not exist: $u"; done
+RAA=$(dscl . -read /Users/root AuthenticationAuthority 2>/dev/null | grep -v 'No such key')
+RPW=$(dscl . -read /Users/root Password 2>/dev/null | awk '{print $2}')
+if { [ -n "$RAA" ] && ! echo "$RAA" | grep -q DisabledUser; } || { [ -n "$RPW" ] && [ "$RPW" != "*" ]; }; then
+  say "- root account: appears enabled"; finding MA-ACCOUNTS-003 MEDIUM Accounts "The root account appears to be enabled."
+else say "- root account: disabled"; fi
+UID0=$(dscl . -list /Users UniqueID 2>/dev/null | awk '$2 == 0 && $1 != "root" {print $1}' | paste -sd, -)
+say "- Accounts other than root with UID 0: $(mdesc "${UID0:-none}")"
+[ -n "$UID0" ] && finding MA-ACCOUNTS-012 HIGH Accounts "Accounts other than root have UID 0: $UID0"
+dscl . -list /Users IsHidden 2>/dev/null | awk '$2 == 1 || $2 == "YES" {print $1}' | while read -r n; do
+  u=$(dscl . -read "/Users/$n" UniqueID 2>/dev/null | awk '{print $2}')
+  a=no; dsmemberutil checkmembership -U "$n" -G admin 2>/dev/null | grep -q 'is a member' && a=yes
+  echo "$n ${u:-0} $a"
+done | hidden_findings > "$TMP/hid"
+if [ -s "$TMP/hid" ]; then
+  while IFS=$'\t' read -r id _ n; do
+    say "- Hidden account: $(mdesc "$n")"
+    case "$id" in
+      MA-ACCOUNTS-013) finding MA-ACCOUNTS-013 MEDIUM Accounts "Hidden administrator account: $n" ;;
+      *) finding MA-ACCOUNTS-014 LOW Accounts "Hidden account: $n" ;;
+    esac
+  done < "$TMP/hid"
+else say "- Hidden accounts (UID 500 and above): none"; fi
+for d in /Users/*; do [ -d "$d" ] || continue; [ "${d##*/}" = Shared ] && continue
+  read -r perm gid own <<< "$(stat -f '%Sp %g %Su' "$d" 2>/dev/null)"
+  r=$(home_write_risk "$perm" "$gid" "$own"); [ -n "$r" ] && finding MA-ACCOUNTS-015 HIGH Accounts "Home folder $d is $r."
+done
+run "Recent logins" sh -c 'last -25 | grep -v "^$"'
+GU=$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)
+say "- Guest account enabled: ${GU:-not set (off)}"; [ "$GU" = 1 ] && finding MA-ACCOUNTS-004 LOW Accounts "The guest account is enabled."
+ls -l /etc/sudoers.d 2>&1 | block "/etc/sudoers.d"
+OTHERSD=$(for f in /etc/sudoers.d/*; do [ -e "$f" ] && [ "${f##*/}" != macassay ] && echo "${f##*/}"; done | paste -sd, -)
+[ -n "$OTHERSD" ] && finding MA-ACCOUNTS-001 INFO Accounts "Files present in /etc/sudoers.d: $OTHERSD"
+h3 "Sudo configuration"
+noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#(include|[0-9])/ {next} {print}'; }
+sudo_file(){ # LABEL PATH
+  if priv "$1" /bin/cat "$2" > "$TMP/sud" 2>/dev/null; then
+    noncomment < "$TMP/sud" | block "$2 (non-comment lines)"
+    sudoers_findings "$2" < "$TMP/sud" | while IFS=$'\t' read -r id sev text; do finding "$id" "$sev" Accounts "$text"; done
+    return 0
+  fi
+  say "- $2: skipped ($(skip_reason "$1"))"; return 1; }
+: > "$TMP/sown"
+for p in /etc/sudoers /etc/sudoers.d /etc/sudoers.d/* /usr/bin/sudo; do [ -e "$p" ] || continue
+  o=$(stat -f '%Su:%Sg %Sp' "$p" 2>/dev/null); echo "$o $p"
+  r=$(sudo_owner_risk "$p" "$o"); [ -n "$r" ] && echo "$p $r" >> "$TMP/sown"
+done | block "Sudo files (owner, mode, path)"
+SOWN=$(paste -sd';' - < "$TMP/sown")
+[ -n "$SOWN" ] && finding MA-ACCOUNTS-016 HIGH Accounts "Sudo files have a wrong owner or mode: $SOWN"
+sudo_file "sudoers" /etc/sudoers
+for f in /etc/sudoers.d/*; do [ -f "$f" ] || continue
+  n=${f##*/}; case "$n" in macassay|*.*|*~) continue ;; esac
+  sudo_file "sudoers.d/$n" "$f" || { [ -e "$RULES" ] && finding MA-ACCOUNTS-007 INFO Accounts "/etc/sudoers.d/$n is not covered by the macassay rules; rerun sudo ./macassay --install-sudoers."; }
+done
+
+# ---------- 11. Credentials and keys ----------
+h2 "11. Credentials and keys"
+cred_scan "$THOME" > "$TMP/cred"
+if [ -s "$TMP/cred" ]; then
+  awk -F'\t' '{print $1 ": " $2 ", inline secret: " $3}' "$TMP/cred" | block "Credential files in the home folder (file, mode and owner, inline secret)"
+  CRH=$(awk -F'\t' '$3 == "yes" && (substr($2, 5, 1) == "r" || substr($2, 8, 1) == "r") {print $1}' "$TMP/cred" | paste -sd, -)
+  CRL=$(awk -F'\t' '$3 == "yes" && substr($2, 5, 1) != "r" && substr($2, 8, 1) != "r"' "$TMP/cred" | grep -c .)
+  [ -n "$CRH" ] && finding MA-CREDENTIALS-001 HIGH Credentials "Credential files with inline secrets are readable by other accounts: $CRH"
+  [ "$CRL" -gt 0 ] && finding MA-CREDENTIALS-003 LOW Credentials "$CRL credential file(s) hold inline secrets, readable by the owner only (see section 11)."
+else say "- Credential files in the home folder: none"; fi
+: > "$TMP/keys"
+for f in "$THOME"/.ssh/*; do [ -f "$f" ] || continue
+  st=$(ssh_key_state "$f"); [ -n "$st" ] || continue
+  printf '%s\t%s\t%s\n' "${f##*/}" "$(stat -L -f '%Sp' "$f" 2>/dev/null)" "$st" >> "$TMP/keys"
+done
+if [ -s "$TMP/keys" ]; then
+  awk -F'\t' '{print $1 ": " $2 ", " $3}' "$TMP/keys" | block "SSH private keys (file, mode, passphrase)"
+  KR=$(awk -F'\t' 'substr($2, 5, 1) == "r" || substr($2, 8, 1) == "r" {print $1}' "$TMP/keys" | paste -sd, -)
+  KN=$(awk -F'\t' '$3 == "no passphrase" && substr($2, 5, 1) != "r" && substr($2, 8, 1) != "r" {print $1}' "$TMP/keys" | paste -sd, -)
+  [ -n "$KR" ] && finding MA-CREDENTIALS-002 HIGH Credentials "SSH private keys are readable by other accounts: $KR"
+  [ -n "$KN" ] && finding MA-CREDENTIALS-004 LOW Credentials "$(printf '%s' "$KN" | tr ',' '\n' | grep -c .) SSH private key(s) have no passphrase: $KN"
+else say "- SSH private keys in ~/.ssh: none"; fi
+: > "$TMP/pub"
+for f in "$THOME"/.ssh/*.pub; do [ -f "$f" ] || continue
+  [ -n "$(ssh_key_state "$f")" ] && continue
+  ssh_pub_summary "$f" >> "$TMP/pub"
+done
+if [ -s "$TMP/pub" ]; then
+  awk -F'\t' '{print $1 ": " $2 " " $3}' "$TMP/pub" | block "SSH public keys (file, bits, type)"
+  KW=$(awk -F'\t' '$3 == "(DSA)" || ($3 == "(RSA)" && $2 < 2048) {print $1}' "$TMP/pub" | paste -sd, -)
+  [ -n "$KW" ] && finding MA-CREDENTIALS-005 MEDIUM Credentials "Weak SSH keys (DSA, or RSA under 2048 bits): $KW"
+fi
+SSH_SEEN=""
+{ ssh_cfg "$THOME/.ssh/config" 1 all; ssh_cfg /etc/ssh/ssh_config 1 all
+  for f in /etc/ssh/ssh_config.d/*; do ssh_cfg "$f" 1 all; done; } > "$TMP/sshc"
+for opt in ForwardAgent StrictHostKeyChecking; do
+  if grep -qx "all $opt" "$TMP/sshc"; then sc="every host"; elif grep -qx "host $opt" "$TMP/sshc"; then sc="specific hosts"; else sc="not set"; fi
+  case "$opt" in ForwardAgent) say "- SSH client ForwardAgent yes: $sc" ;; *) say "- SSH client StrictHostKeyChecking no: $sc" ;; esac
+  case "$opt/$sc" in
+    "ForwardAgent/every host") finding MA-CREDENTIALS-006 MEDIUM Credentials "SSH agent forwarding is on for every host (ForwardAgent yes)." ;;
+    "ForwardAgent/specific hosts") finding MA-CREDENTIALS-008 LOW Credentials "SSH agent forwarding is on for some hosts (ForwardAgent yes)." ;;
+    "StrictHostKeyChecking/every host") finding MA-CREDENTIALS-007 MEDIUM Credentials "SSH host key checking is off for every host (StrictHostKeyChecking no)." ;;
+    "StrictHostKeyChecking/specific hosts") finding MA-CREDENTIALS-009 LOW Credentials "SSH host key checking is off for some hosts (StrictHostKeyChecking no)." ;;
+  esac
+done
+say "- SSH client Host and Match blocks other than Host *: $(grep -cx block "$TMP/sshc")"
+
+# ---------- 12. Shell, developer and AI tools ----------
+h2 "12. Shell, developer and AI tools"
+HP=$(for f in "$THOME/.gitconfig" "$THOME/.config/git/config"; do [ -f "$f" ] && git_hooks_path "$f"; done | paste -sd, -)
+say "- Git global hooksPath: $(mdesc "${HP:-not set}")"
+[ -n "$HP" ] && finding MA-DEVELOPER-001 LOW Developer "Git runs hooks from a global hooksPath for every repository: $HP"
+
+# ---------- 13. Trust and privacy ----------
+h2 "13. Trust and privacy"
+NC=$(security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | grep -c '"labl"')
+security find-certificate -a /Library/Keychains/System.keychain 2>/dev/null | awk -F'"' '/"labl"/{print $4}' | mask_hex | sort -u | block "Certificates in the System keychain ($NC)"
+security dump-trust-settings -d 2>/dev/null | trusted_certs | mask_hex > "$TMP/ts"
+if [ -s "$TMP/ts" ]; then block "Admin trust settings (certificates trusted by an administrator)" < "$TMP/ts"; finding MA-TRUST-001 MEDIUM Trust "Administrator-trusted certificates exist; a trusted root can intercept HTTPS. Confirm each one."; else say "- Admin-trusted certificates: none"; fi
+security dump-trust-settings 2>/dev/null | trusted_certs | mask_hex > "$TMP/uts"
+if [ -s "$TMP/uts" ]; then block "User trust settings (certificates the user trusts)" < "$TMP/uts"
+  finding MA-TRUST-002 MEDIUM Trust "$(grep -c . "$TMP/uts") certificate(s) are trusted in the user's trust settings; a trusted root can intercept HTTPS. Confirm each one."
+else say "- User-trusted certificates: none"; fi
+TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
+if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
+  sqlite3 -init /dev/null -readonly "$TCCU" "select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service" 2>/dev/null | block "Privacy permissions granted (user database)"
+else say "- Privacy permissions (TCC): not readable from this process (needs Full Disk Access for the terminal app)."
+  skip "Privacy permissions (user TCC database)" "not readable; needs Full Disk Access for the terminal app"; fi
+skip "Privacy permissions (system TCC database)" "needs root and Full Disk Access; the sudo rules do not cover it"
+
+# ---------- 14. Security events from the logs ----------
+h2 "14. Security events from the logs"
+if [ "$QUICK" -eq 0 ]; then
+  echo "Searching 7 days of logs (this can take a few minutes)..." >&2
+  XP=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND (eventMessage CONTAINS[c] "detected" OR eventMessage CONTAINS[c] "remediat")' 2>/dev/null | grep -viE 'NoThreatDetected|no (threats|detections)|status: 0|^Timestamp ' | tail -20)
+  XN=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND eventMessage CONTAINS "NoThreatDetected"' 2>/dev/null | grep -c NoThreatDetected)
+  say "- XProtect scanner results reporting NoThreatDetected (7 days): $XN"
+  if [ -n "$XP" ]; then echo "$XP" | block "XProtect detection or remediation messages (7 days)"; finding MA-EVENTS-001 HIGH Events "XProtect logged detection or remediation messages (see section 14)."; else say "- XProtect detections (7 days): none found"; fi
+  SS=$(log show --last 7d --style compact --predicate 'process BEGINSWITH "sshd" AND (eventMessage CONTAINS "Failed" OR eventMessage CONTAINS "Invalid user" OR eventMessage CONTAINS "Accepted")' 2>/dev/null)
+  say "- SSH log lines (7 days): accepted $(echo "$SS" | grep -c Accepted), failed $(echo "$SS" | grep -c Failed), invalid user $(echo "$SS" | grep -c 'Invalid user'). Without admin rights these lines are often hidden."
+  NF=$(echo "$SS" | grep -c -E 'Failed|Invalid user'); [ "$NF" -ge 20 ] && finding MA-EVENTS-002 MEDIUM Events "$NF failed SSH sign-in attempts in 7 days."
+else say "Log searches skipped (--quick)."; skip "7-day log searches (XProtect, SSH)" "--quick"; fi
 
 # ---------- assemble report ----------
 NPR=$(grep -c . "$TMP/privran"); NPS=$(grep -c '^priv' "$SKIPS"); NOS=$(grep -c '^other' "$SKIPS")
@@ -756,18 +1313,19 @@ NPR=$(grep -c . "$TMP/privran"); NPS=$(grep -c '^priv' "$SKIPS"); NOS=$(grep -c 
   echo ""
   echo "## Findings"
   echo ""
-  echo "Automatic flags, highest severity first. Each flag is a lead for review, not a verdict. Sections below hold the evidence."
+  echo "Automatic findings, highest severity first. Each finding is a lead for review, not a verdict. Sections below hold the evidence."
   echo ""
   if [ -s "$FIND" ]; then
-    echo "| Severity | Area | Finding |"; echo "|---|---|---|"
-    for s in HIGH MEDIUM LOW INFO; do awk -F'\t' -v s="$s" '$1==s{gsub(/\|/,"/",$3); print "| " $1 " | " $2 " | " $3 " |"}' "$FIND"; done
+    echo "| Severity | ID | Section | Finding |"; echo "|---|---|---|---|"
+    for s in HIGH MEDIUM LOW INFO; do awk -F'\t' -v s="$s" '$1==s{gsub(/\|/,"/",$4); print "| " $1 " | " $2 " | " $3 " | " $4 " |"}' "$FIND"; done
     echo ""
     for s in HIGH MEDIUM LOW INFO; do printf -- "- %s: %s\n" "$s" "$(awk -F'\t' -v s="$s" '$1==s' "$FIND" | wc -l | tr -d ' ')"; done
-  else echo "No automatic flags."; fi
+  else echo "No automatic findings."; fi
   echo ""
   echo "## Limitations"
   echo ""
   echo "- No changes are made. Privileged checks run only through the macassay sudo rules (\`sudo ./macassay --install-sudoers\`); the audit never runs as root."
+  [ -e "$RULES" ] || echo "- The macassay sudo rules are not installed, so the privileged checks are skipped. Review them with \`./macassay --print-sudoers\` and install them with \`sudo ./macassay --install-sudoers\`."
   awk -F'\t' '{printf "- Skipped: %s (%s)\n", $2, $3}' "$SKIPS"
   echo "- \"No sign of compromise\" means the listed checks found nothing; it is not proof of absence."
   echo "- HTTP checks only show whether a page asks for a login; an API path may still be open when / redirects to a login page."
@@ -776,5 +1334,5 @@ NPR=$(grep -c . "$TMP/privran"); NPS=$(grep -c '^priv' "$SKIPS"); NOS=$(grep -c 
   cat "$BODY"
 } > "$TMP/report.md"
 redact_ids < "$TMP/report.md" > "$TMP/report.out" && mv "$TMP/report.out" "$TMP/report.md"
-if [ "$STDOUT" -eq 1 ]; then cat "$TMP/report.md"; echo "Report sent to stdout ($(grep -c . "$FIND") flags)" >&2
-else cp "$TMP/report.md" "$OUT" && echo "Report written to $OUT ($(grep -c . "$FIND") flags)" >&2; fi
+if [ "$STDOUT" -eq 1 ]; then cat "$TMP/report.md"; echo "Report sent to stdout ($(grep -c . "$FIND") findings)" >&2
+else cp "$TMP/report.md" "$OUT" && echo "Report written to $OUT ($(grep -c . "$FIND") findings)" >&2; fi

@@ -11,6 +11,12 @@
 - **No secrets in the report:** omit serial numbers and UUIDs. Report key type and comment only from `authorized_keys`. Never copy shell startup file contents.
 - **Least privilege:** privileged checks run only through sudo rules for read-only commands with exact arguments.
 
+## Terminology
+
+- Use the terms of security assessment standards (NIST OSCAL, SARIF, the AWS Security Finding Format).
+- A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the report's Findings section.
+- A flag is a command-line option, such as `--quick`. Do not call a finding a flag.
+
 ## Security Context
 
 - Users: the user, auditing their own Macs, locally or over SSH.

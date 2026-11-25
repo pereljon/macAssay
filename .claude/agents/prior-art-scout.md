@@ -56,7 +56,7 @@ For each repo to review, record:
 2. How it works: architecture, privileges, and output.
 3. The tests it performs, grouped by area.
 4. Safety on a personal Mac, with `file:line` evidence or "uncertain": root use, settings changes, deletions, network calls with endpoints, telemetry, and commands built from untrusted input.
-5. Checks or ideas macassay lacks. Before you list one, grep `macassay` and `dev/prior-art-ideas.md` to confirm it is new. For each: the stock command, whether it needs root, what to flag, and a severity (HIGH, MEDIUM, LOW, INFO). A check must fit macassay: stock tools, read-only, and no secrets in the report.
+5. Checks or ideas macassay lacks. Before you list one, grep `macassay` and `dev/prior-art-ideas.md` to confirm it is new. For each: the stock command, whether it needs root, what to report as a finding, and a severity (HIGH, MEDIUM, LOW, INFO). A check must fit macassay: stock tools, read-only, and no secrets in the report.
 6. Search terms: the repo's topics (`gh api repos/OWNER/REPO/topics --jq .names`) and distinctive README phrases. Add new ones to "Search terms" with the repo as the source.
 7. A one-line verdict: borrow from, skip, or not an audit tool.
 
