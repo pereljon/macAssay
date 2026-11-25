@@ -112,9 +112,10 @@ gina ALL = (root) NOPASSWD:/bin/ls,ALL
 #includedir /private/etc/sudoers.d
 EOF
 classify_sudoers < "$T/sudoers" > "$T/f6"
-check "F6 six NOPASSWD: ALL rules are MEDIUM" [ "$(grep -c '^MEDIUM' "$T/f6")" -eq 6 ]
+check "F6 six NOPASSWD: ALL rules are MEDIUM" [ "$(cut -f2 "$T/f6" | grep -c '^MEDIUM')" -eq 6 ]
 check "F6 a #UID rule is not a comment" has "$T/f6" "#501 ALL = (ALL) NOPASSWD: ALL"
-check "F6 two other NOPASSWD rules are LOW" [ "$(grep -c '^LOW' "$T/f6")" -eq 2 ]
+check "F6 two other NOPASSWD rules are LOW" [ "$(cut -f2 "$T/f6" | grep -c '^LOW')" -eq 2 ]
+check "F6 IDs for the two risks" [ "$(cut -f1 "$T/f6" | sort -u | paste -sd, -)" = "MA-ACCOUNTS-005,MA-ACCOUNTS-006" ]
 check "F6 continued line joined" has "$T/f6" "erin ALL = (root) NOPASSWD: ALL"
 check "F6 comments, includes and Defaults ignored" [ "$(wc -l < "$T/f6" | tr -d ' ')" -eq 8 ]
 
@@ -215,6 +216,21 @@ check "F14 no .macassay.new left behind" [ ! -e "$T/sd/.macassay.new" ]
 ( RULES="$T/sd/macassay"; TMP="$T/r3"; mkdir "$TMP"; sudoers_ok() { false; }; echo BAD > "$RULES"
   rollback_rules ) 2>/dev/null
 check "F14 sudo still broken: rollback returns 1" [ $? -eq 1 ]
+
+# F15: every finding call names a literal ID, or "$id" from a function that prints literal IDs, and one of the 14 section labels.
+LABELS="Health Backups Updates Platform Management Sharing Network Persistence Apps Accounts Credentials Developer Trust Events"
+LABRE=$(echo "$LABELS" | tr 'a-z ' 'A-Z|')
+grep -v '^[[:space:]]*#' macassay | grep -oE '(^|[^A-Za-z_])finding [A-Z"$][^ ]* [^ ]+ [^ ]+' | sed -E 's/^[^f]*//' > "$T/f15"
+check "F15 finding calls found" [ "$(grep -c . "$T/f15")" -ge 57 ]
+check "F15 every call has a literal ID or \$id" [ -z "$(awk '$2 !~ /^(MA-[A-Z]+-[0-9][0-9][0-9]|"\$id")$/' "$T/f15")" ]
+check "F15 every call names a section label" [ -z "$(awk -v l=" $LABELS " 'index(l, " " $4 " ") == 0' "$T/f15")" ]
+check "F15 no flag calls left" [ -z "$(grep -v '^[[:space:]]*#' macassay | grep -E '(^|[;&|{()]|then|do|else)[[:space:]]*flag ')" ]
+
+# F16: every ID has a section label and three digits; call sites share an ID only where listed (one risk at two severities or two places).
+grep -oE 'MA-[A-Za-z]+-[0-9]+' macassay | sort > "$T/f16"
+check "F16 every ID has a label and three digits" [ -z "$(grep -vxE "MA-($LABRE)-[0-9]{3}" "$T/f16")" ]
+grep -oE 'finding MA-[A-Z]+-[0-9]+' macassay | sort | uniq -d > "$T/f16d"
+check "F16 shared IDs are only the listed ones" [ -z "$(grep -vxE 'finding (MA-HEALTH-003|MA-SHARING-007)' "$T/f16d")" ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
