@@ -43,6 +43,7 @@ Each requirement traces to a user decision on 2026-11-24 (recorded in `docs/ISSU
 - 2026-11-24: Scale rule for passwordless root: HIGH when someone configured the grant (`NOPASSWD: ALL`, NOPASSWD for a code-loading program); MEDIUM when it comes from default macOS permissions, such as a root daemon in an admin-writable folder under `/Applications` (decision C1). Rejected: HIGH for both, which gives 9 HIGH findings on this Mac for Apple's default layout.
 - 2026-11-24: Each check gets a stable ID, `MA-<LABEL>-NNN`, where LABEL is the section label in capitals (decisions E1, E2). An ID names one risk that a check reports, not one occurrence. A call site that reports several risks gives each risk its own ID; for example `classify_sudoers` has separate IDs for `NOPASSWD: ALL`, code-loading programs, `!authenticate`, weak `Defaults`, and other NOPASSWD rules. An ID never changes and is never reused, and it keeps its label if its check later moves to another section. A check can give several findings with one ID in a run (root daemons, firewall rules); an export builds a per-occurrence ID from the check ID, the host, the date, and a hash of the finding text. A standard export can build a per-run ID from the check ID, the host, and the date. Rejected: standard catalogs as IDs; CCE changes with each macOS version, NIST 800-53 controls are too coarse, and CIS numbers change between benchmark versions. References to mSCP rules, NIST 800-53 controls, and ATT&CK techniques come later (register I076, decision E3).
 - 2026-11-24: The script's `flag` function is renamed `finding`, per the project terminology in `AGENTS.md`.
+- 2026-11-25: A check gives one finding per item when each item needs its own fix (authorization plugins, PAM modules, debug ports, hidden accounts, home folders, root daemons, firewall rules); items that share one fix collapse into one finding with a count or a list. This clarifies the 2026-11-24 rule "Repeated findings collapse into one finding". Rejected: collapsing every repeated finding into one row. (ok)
 
 ## Decision record, 2026-11-24
 
@@ -94,7 +95,7 @@ Checked on this Mac, 2026-11-24, as the user without sudo:
 - `DiscoverableMode` values are `Everyone`, `Contacts Only`, and `Off` (training knowledge).
 - Chromium browsers read `ExtensionInstallForcelist` from `/Library/Managed Preferences/<domain>.plist` (MDM) and `/Library/Preferences/<domain>.plist` (local) (training knowledge).
 - `nvram boot-args` reads without root on Intel Macs as on Apple silicon (not tested on Intel).
-- The Firefox policy plist may hold forced extensions under an `EnterprisePolicies.*` key path rather than the key the check reads (training knowledge; not verified on a Mac with Firefox policies).
+- The check reads top-level `ExtensionSettings` from the org.mozilla.firefox plist and `policies.ExtensionSettings` from policies.json, which matches Mozilla's policy-templates documentation (checked by web fetch, 2026-11-25). Firefox reads plist policies only when `EnterprisePoliciesEnabled` is true, and the check does not test it, so a stale plist can give a finding.
 
 ## Report outline
 

@@ -176,3 +176,16 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 11 review: the Firefox plist key path may be `EnterprisePolicies.*` (to be added to the design assumptions in Task 16); nmh_risk misses the /var/folders and /var/tmp forms; debug_pids matches the flag text in any process's arguments: dropped; no requirement.
 - Task 14 review: Minor 1 (a same-line `[core] hooksPath = x` header is not matched, and an inline `# comment` stays in the printed value): dropped; no requirement, and the brief's code has these limits.
 - Task 15 review: no findings.
+
+## Pre-merge review
+
+- I1 digest and option specs before a sudoers command hide a code-loading program: fixed; requirement 8, decision B8.
+- I2 MA-ACCOUNTS-008 took MEDIUM from chain_writable for admin-group write under /Applications: fixed to HIGH; decision G2.
+- I3 ISSUES.md marked `secure_path`, `launchctl print`, and "readable" as built: fixed; AGENTS.md docs describe the code as built.
+- M1 MA-PERSISTENCE-023 is unreachable: under the two find roots, a hidden folder above the app puts login items beyond `-maxdepth 5`; dropped, no trigger; its HIGH row in the Severities table gives no coverage.
+- M2 auth plugins, PAM modules, debug ports, hidden accounts and home folders give one finding per item while other checks collapse into one: asked the user; kept per item, design decision 2026-11-25 clarifies the rule.
+- M3 "flag" used for a finding (SECURITY.md, `ssh_methods_flag`): fixed; AGENTS.md Terminology.
+- M4 Firefox key path: confirmed by Mozilla's docs; `EnterprisePoliciesEnabled` not tested: dropped, no requirement; recorded in the design assumptions.
+- MA-PLATFORM-008 path with a 13-digit folder number: no finding; not a timestamp, hardware ID, account ID, or secret, and the user needs the path.
+- The reviewer saw one piped `dev/test.sh` invocation take over 120 s, cause not found: dropped as uncertain; the suite passed in every run.
+- Task 12 re-review notes (nested parentheses, a comma inside parentheses in an argument): the final review agrees with the drop.
