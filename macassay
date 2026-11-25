@@ -156,7 +156,9 @@ classify_sudoers() {
       else if (line ~ /!env_reset|!tty_tickets|timestamp_type *= *"?global|timestamp_timeout *= *-/ || (line ~ /env_(keep|check)/ && line ~ /[" =](DYLD_[A-Z_]*|LD_[A-Z_]*|PYTHONPATH|PERL5LIB|RUBYLIB|NODE_OPTIONS|BASH_ENV|ENV|PATH)([ "]|$)/)) print "MA-ACCOUNTS-011\tMEDIUM\t" line "\t"
       next }
     line !~ /NOPASSWD/ { next }
-    { rest = substr(line, index(line, "NOPASSWD") + 8); n = split(rest, items, ","); all = 0; code = 0; progs = ""; pw = 1
+    { rest = substr(line, index(line, "NOPASSWD") + 8)
+      while (match(rest, /\([^)]*,[^)]*\)/)) { g = substr(rest, RSTART, RLENGTH); gsub(/,/, " ", g); rest = substr(rest, 1, RSTART - 1) g substr(rest, RSTART + RLENGTH) }
+      n = split(rest, items, ","); all = 0; code = 0; progs = ""; pw = 1
       for (i = 1; i <= n; i++) {
         c = trim(items[i]); sub(/^:/, "", c); c = trim(c)
         while (c ~ /^\([^)]*\)/ || c ~ /^[A-Z_]+:/) {

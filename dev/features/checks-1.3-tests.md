@@ -157,3 +157,4 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - Task 12 review, Important 2: commands after a PASSWD tag counted as passwordless: fixed with Important 1 (same loop); requirement 8 (severities).
 - Task 12 review, Minor 3: a wildcard command such as /usr/bin/* stays LOW: dropped; same as 1.2, no requirement.
 - Task 12 review, Minor 4: an inline # comment containing NOPASSWD is not stripped: dropped; no wrong severity seen, no requirement.
+- Task 12 re-review, Finding 1: a Runas list with a comma, `(root, operator) NOPASSWD: /bin/sh`, was split at the comma and the shell was missed: fixed in classify_sudoers with a G7 case; design (one rule, one finding at its highest severity).
