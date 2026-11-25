@@ -275,8 +275,8 @@ crontab_summary() {
       if (c ~ /=/) c = "(command with inline variables)"; else sub(/.*\//, "", c)
       print s "  " c " (arguments hidden)" }'; }
 
-# ssh_methods_flag METHODS: succeeds when the offered methods accept a password.
-ssh_methods_flag() { case "$1" in *password*|*keyboard-interactive*) return 0 ;; esac; return 1; }
+# ssh_accepts_password METHODS: succeeds when the offered methods accept a password.
+ssh_accepts_password() { case "$1" in *password*|*keyboard-interactive*) return 0 ;; esac; return 1; }
 
 # ---------- system readers ----------
 collect_accounts() {
@@ -874,7 +874,7 @@ if listening 22; then
   if [ "$SSHDG" -eq 1 ]; then
     PWA=$(grep -Ei '^(passwordauthentication|kbdinteractiveauthentication) yes' "$TMP/sshdg" | paste -sd, -)
     [ -n "$PWA" ] && finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (sshd -G: $PWA)."
-  elif ssh_methods_flag "$AM"; then finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
+  elif ssh_accepts_password "$AM"; then finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
   if dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then say "- SSH access group: $(dscl . -read /Groups/com.apple.access_ssh GroupMembership 2>/dev/null | cut -d: -f2)"
   else say "- SSH access group: absent (every local user may sign in)"; finding MA-SHARING-008 LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
   cat /etc/ssh/sshd_config.d/* 2>/dev/null | grep -vE '^\s*(#|$)' | block "sshd_config.d (non-comment lines)"

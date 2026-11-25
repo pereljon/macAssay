@@ -20,4 +20,4 @@ Only the latest release gets security fixes.
 
 ## Out of scope
 
-Findings in an audit's results are not security issues in macassay. A HIGH flag about your Mac describes your Mac, not a flaw in this project.
+Findings in an audit's results are not security issues in macassay. A HIGH finding about your Mac describes your Mac, not a flaw in this project.

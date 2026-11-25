@@ -115,7 +115,7 @@ The functions come first, and the dispatch comes after this line:
 - `classify_sudoers`: finds NOPASSWD rules in sudoers text.
 - `filter_bputil` and `filter_profiles`: the allow-lists.
 - `rc_hits`: the startup-file pattern search, which reports file, line number, and pattern name.
-- `ssh_methods_flag`: decides the SSH authentication flag from the offered methods.
+- `ssh_accepts_password`: decides the SSH authentication flag from the offered methods.
 - `crontab_summary`: reduces crontab lines to schedule and command name.
 - `clean_field`: strips control characters, tabs, pipes, and backticks from report text.
 - `redact_ids`: replaces dashed UUIDs.

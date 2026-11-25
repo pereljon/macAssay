@@ -174,9 +174,9 @@ done
 check "F8 no match on a harmless line" hasnt "$T/f8" "$T/rc:10:"
 
 # F9: SSH methods that accept a password.
-check "F9 password" ssh_methods_flag "(publickey,password)"
-check "F9 keyboard-interactive" ssh_methods_flag "(publickey,keyboard-interactive)"
-check "F9 publickey alone" not ssh_methods_flag "(publickey)"
+check "F9 password" ssh_accepts_password "(publickey,password)"
+check "F9 keyboard-interactive" ssh_accepts_password "(publickey,keyboard-interactive)"
+check "F9 publickey alone" not ssh_accepts_password "(publickey)"
 
 # F10: report text from the audited Mac stays in one cell.
 # shellcheck disable=SC2016  # the backticks are literal test input

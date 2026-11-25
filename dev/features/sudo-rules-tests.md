@@ -22,7 +22,7 @@ Two kinds of test cover version 1.2:
 - F6. `classify_sudoers` rates NOPASSWD rules whose command list contains `ALL` MEDIUM, including `NOPASSWD:ALL`, `NOPASSWD: SETENV: ALL`, a list ending in `ALL`, and a `#UID` rule. Other NOPASSWD rules are LOW. It ignores comments, `#includedir`, and Defaults, and joins continued lines.
 - F7. `filter_bputil` and `filter_profiles` keep the allowed lines from a fixture, and drop lines with a dashed UUID or a 32-character hex string.
 - F8. `rc_hits` reports file, line number, and pattern name for each pattern, including the new ones. Its output never contains the fixture's line text or a token planted on the matching line.
-- F9. `ssh_methods_flag` flags `password` and `keyboard-interactive`, and does not flag `publickey` alone.
+- F9. `ssh_accepts_password` flags `password` and `keyboard-interactive`, and does not flag `publickey` alone.
 - F10. `clean_field` removes newlines, tabs, carriage returns, pipes, and backticks. A finding text with an embedded newline and a severity word yields one report row.
 - F11. `redact_ids` replaces dashed UUIDs in upper and lower case.
 - F12. `crontab_summary` shows schedule and command name, names variables without values, and hides commands with inline variables. No planted secret appears.
