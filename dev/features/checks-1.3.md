@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: building
-status: built; pre-merge review next
+status: built; pre-merge review done (2026-11-25); merge next
 ---
 
 # Report by theme and new checks (version 1.3)
