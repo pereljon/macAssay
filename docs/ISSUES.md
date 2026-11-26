@@ -112,7 +112,7 @@ Do these in the change that gives the repo a public remote.
 ## Open questions
 
 - [ ] Should the report and the 1.4 run status line use emojis? Recommended: no; plain severity words read the same in a terminal, a Markdown viewer, and an LLM. The user has not answered.
-- [ ] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? Both are kept until the user says to delete them.
+- [x] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? (resolved 2026-11-26): yes, per the user; both deleted.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [x] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script? (resolved 2026-11-24): yes; network-manager had already moved it to the Trash, and its one reference now names `macassay`.
 - [x] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root. (resolved 2026-11-24): yes, `#includedir /private/etc/sudoers.d`.
