@@ -561,5 +561,63 @@ printf '[core]\n\thooksPath = ~/.githooks\n[url "https://SECRET_T@github.com/"]\
 check "G6 hooksPath found" [ "$(git_hooks_path "$T/gitconfig")" = "~/.githooks" ]
 check "G6 url token not printed" [ -z "$(git_hooks_path "$T/gitconfig" | grep SECRET)" ]
 
+# P1 to P8: the 1.3.1 fixes.
+printf '%s\n' '%admin ALL=NOPASSWD: /usr/sbin/httpd' '%admin ALL=NOPASSWD: /bin/kill' '%admin ALL=NOPASSWD: /usr/sbin/apachectl' | classify_sudoers > "$T/p1"
+check "P1 httpd can run other code" has "$T/p1" $'MA-ACCOUNTS-009\tHIGH\t%admin ALL=NOPASSWD: /usr/sbin/httpd'
+check "P1 apachectl can run other code" has "$T/p1" $'MA-ACCOUNTS-009\tHIGH\t%admin ALL=NOPASSWD: /usr/sbin/apachectl'
+check "P1 kill stays LOW" has "$T/p1" $'MA-ACCOUNTS-006\tLOW\t%admin ALL=NOPASSWD: /bin/kill'
+check "P1 dtrace can run other code" [ "$(printf '%s\n' 'x ALL=NOPASSWD: /usr/sbin/dtrace' | classify_sudoers | cut -f2)" = HIGH ]
+
+cat > "$T/p2" <<'EOF'
+  0 => {
+    "date" => 2026-11-24 05:00:00 +0000
+    "displayName" => ""
+    "displayVersion" => "10.16.0"
+    "packageIdentifiers" => [
+      0 => "com.example.vpn"
+      1 => "com.example.vpn.helper"
+    ]
+    "processName" => "installer"
+  }
+EOF
+recent_installs 2026-10-25 < "$T/p2" > "$T/p2.out"
+check "P2 empty display name falls back to the package ID" has "$T/p2.out" "2026-11-24  com.example.vpn 10.16.0"
+
+printf '    XProtectPlistConfigData:\n\n      Version: 5370\n\n    XProtectPlistConfigData:\n\n      Version: 5377\n      Source: Apple\n\n    XProtectPayloads:\n\n      Version: 171\n' | xprotect_versions > "$T/p3"
+check "P3 latest version of each XProtect component" [ "$(paste -sd, - < "$T/p3")" = "XProtectPayloads 171,XProtectPlistConfigData 5377" ]
+
+printf '                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Other\n                 Type: app (0x2)\n' | btm_unique > "$T/p4"
+check "P4 repeated background items printed once" [ "$(grep -c 'Name: Zoom' "$T/p4")" -eq 1 ]
+check "P4 other items kept" has "$T/p4" "Name: Other"
+
+printf '  101 /Applications/Codex.app/Contents/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)\n  202 /usr/libexec/trustd\n' > "$T/psmap"
+cat > "$T/p5" <<'EOF'
+tcp4       0      0  192.168.1.5.50000      172.64.148.235.443     ESTABLISHED  131072  131072  10  0 Codex (Aperitif):101 00102 00000008 0000000000000001 00000000 00000800 1 0 000001 0
+tcp4       0      0  192.168.1.5.50001      17.253.17.201.443      ESTABLISHED  131072  131072  10  0 trustd:202 00102 00000008 0000000000000002 00000000 00000800 1 0 000001 0
+tcp4       0      0  192.168.1.5.50002      15.197.251.99.443      ESTABLISHED  131072  131072  10  0 Helper (R:303 00102 00000008 0000000000000003 00000000 00000800 1 0 000001 0
+tcp4       0      0  127.0.0.1.50003        127.0.0.1.8021         ESTABLISHED  131072  131072  10  0 trustd:202 00102 00000008 0000000000000004 00000000 00000800 1 0 000001 0
+EOF
+outbound_conns "$T/psmap" < "$T/p5" > "$T/p5.out"
+check "P5 name with spaces comes from ps" has "$T/p5.out" "Codex (Aperitif) 172.64.148.235"
+check "P5 plain name" has "$T/p5.out" "trustd 17.253.17.201"
+check "P5 unknown PID keeps the netstat name" has "$T/p5.out" "(R 15.197.251.99"
+check "P5 local connections skipped" [ "$(grep -c . "$T/p5.out")" -eq 3 ]
+
+check "P6 command words with spaces are quoted" [ "$(shown_cmd sh -c 'memory_pressure | tail -2' x)" = "sh -c 'memory_pressure | tail -2' x" ]
+check "P6 single quote inside a word" [ "$(shown_cmd echo "it's")" = "echo 'it'\\''s'" ]
+check "P6 plain words unquoted" [ "$(shown_cmd /usr/bin/tmutil listlocalsnapshots /)" = "/usr/bin/tmutil listlocalsnapshots /" ]
+
+BODY="$T/p7"; : > "$BODY"
+printf '' | block "Empty check"; printf '\n  \n' | block "Blank check"; printf 'a\n' | block "Full check"
+check "P7 empty block says none" has "$T/p7" "- Empty check: none"
+check "P7 blank block says none" has "$T/p7" "- Blank check: none"
+check "P7 full block keeps its text" has "$T/p7" "**Full check**"
+check "P7 one code block" [ "$(grep -c '^```text$' "$T/p7")" -eq 1 ]
+
+THOME=/Users/bob
+check "P8 user folder label" [ "$(nmh_label "/Users/bob/Library/Application Support/Google/Chrome/NativeMessagingHosts")" = "Google/Chrome" ]
+check "P8 system Chrome folder label" [ "$(nmh_label /Library/Google/Chrome/NativeMessagingHosts)" = "Google/Chrome" ]
+check "P8 system Mozilla folder label" [ "$(nmh_label "/Library/Application Support/Mozilla/NativeMessagingHosts")" = "Mozilla" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

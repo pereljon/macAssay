@@ -4,6 +4,21 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 
 ## Unreleased
 
+## [1.3.1] - 2026-11-25
+
+### Fixed
+
+- A NOPASSWD rule for `httpd`, `apachectl`, `dtrace`, `kmutil`, `launchctl`, `installer`, or another program that can start code or write files as root is HIGH (MA-ACCOUNTS-009), not LOW.
+- The audio plug-in finding counts only plug-ins that Apple did not sign; the evidence names each plug-in's signer.
+- The startup table shows "unreadable" or "no program" for a launchd plist without a readable program, instead of `?` and a missing signer.
+- A missing native-messaging host names its browser folder, so a host listed in two folders no longer reads as a repeat.
+- An install record with an empty name shows its package identifier.
+- The XProtect versions block lists the latest version of each component; it was empty.
+- Repeated background items (`sfltool`) print once.
+- Outbound connections show full process names, including names with spaces.
+- Shown commands keep their quoting.
+- A check whose evidence is empty prints "none" instead of an empty code block.
+
 ## [1.3.0] - 2026-11-25
 
 ### Added
