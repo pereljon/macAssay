@@ -122,6 +122,8 @@ Do these in the change that gives the repo a public remote.
 
 ## Open questions
 
+- [ ] D2. Create `dev/SKELETON.md` with the Key Invariants (read-only, side effects, the network promise, untrusted input, no secrets), and keep `dev/HANDOFF.md` as history? Recommended: yes, as its own change.
+- [x] D3. Define the format of `findings.tsv` and `skipped.tsv` in the 1.5 design doc, since every 1.5 format builds from them? (resolved 2026-11-26): yes, per the user; part of the 1.5 design.
 - [x] A3. Keep the run status line and the header counts in 1.4, not 1.5? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
 - [x] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
 - [x] A5. Drop the cask notarization check? (resolved 2026-11-26): dropped, per the user; MA-APPS-002 already covers cask apps. Recorded in `dev/features/checks-1.4.md` (Decisions).
@@ -159,3 +161,5 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-26: No emojis in the report or the run status line. Severity colors come with the 1.5 HTML format, through CSS. Rejected: an emoji before each severity word. Conviction: `ok`.
 - 2026-11-26: New checks from the prior-art register go into their own release, 1.6. The register's report ideas I078 to I081 go into the 1.5 design. Rejected: adding the checks to 1.5, which would mix the formats work with new checks. Conviction: `ok`.
 - 2026-11-26: The scout reviews the top of the review queue after 1.5, starting with the read-only audit tools. Rejected: a new discovery search, two days after the last one. Conviction: `ok`.
+- 2026-11-26: The project name is written macAssay in prose, matching the GitHub repo `pereljon/macAssay`. The command, the script file, and file names stay `macassay`. Recorded as a rule in `AGENTS.md` (Terminology). Past records keep their spelling. Conviction: `firm`.
+- 2026-11-26: `docs/CHECKS.md` is the reference for every check, by section, with its options and finding IDs. Fixture D1 in `dev/test.sh` fails when a finding ID is missing from it or unknown to the script.

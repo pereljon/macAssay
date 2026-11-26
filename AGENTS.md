@@ -2,7 +2,7 @@
 
 ## Project
 
-**macassay**: `macassay`, a read-only macOS health and security audit in Bash. It writes one Markdown report for a person or an LLM to review. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
+**macAssay**: `macassay`, a read-only macOS health and security audit in Bash. It writes one Markdown report for a person or an LLM to review. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
 
 ## Design Principles
 
@@ -16,6 +16,8 @@
 - Use the terms of security assessment standards (NIST OSCAL, SARIF, the AWS Security Finding Format).
 - A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the report's Findings section.
 - A flag is a command-line option, such as `--quick`. Do not call a finding a flag.
+- Write the project name as macAssay in prose. Write `macassay` only for the command, the script file, and file names, in backticks.
+- Write the project name as macAssay in prose. Write `macassay` only for the command, the script file, and file names, in backticks.
 
 ## Security Context
 

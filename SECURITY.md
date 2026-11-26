@@ -1,6 +1,6 @@
 # Security policy
 
-This file says how to report a security problem in macassay and what counts as one. It does not cover the findings that an audit reports about a Mac.
+This file says how to report a security problem in macAssay and what counts as one. It does not cover the findings that an audit reports about a Mac.
 
 ## Reporting a vulnerability
 

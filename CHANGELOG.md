@@ -11,6 +11,7 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 - Homebrew: outdated formulae and casks counted and listed separately, plus casks that only `--greedy` reports; third-party taps with their installed packages (MA-UPDATES-009 for a tap with nothing installed, MA-UPDATES-010); cask apps with no quarantine attribute (MA-UPDATES-011); whether three Homebrew security settings are set, by name only. Taps and cask apps come from local files, so no `brew` command can download.
 - A status line on stderr after each section, with counts only, and a total line.
 - The report header shows the finding count for each severity, with HIGH and MEDIUM in bold.
+- `docs/CHECKS.md` lists every check by report section, with what it reads, the option or sudo rule it depends on, and its finding IDs and severities. A fixture test keeps its finding IDs in step with the script.
 
 ### Changed
 
