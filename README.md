@@ -6,13 +6,16 @@ macAssay checks the health and security of a Mac and writes the results to one M
 
 Checking a Mac by hand takes many commands, settings panes, and log searches, and it is easy to skip one. macAssay runs the same checks every time and judges each result. A judged result is a finding, rated HIGH, MEDIUM, LOW, or INFO. You can read the report yourself or give it to an LLM to review. macAssay is for people who audit their own Macs, on the Mac itself or from another Mac over SSH.
 
+macAssay combines checks culled from more than 35 open-source macOS audit and hardening projects and guides, among them NIST's macOS Security Compliance Project, Lynis, and the macOS Security and Privacy Guide. New checks are added as new sources and risks are found.
+
 ## Quick start
 
-macAssay uses only what ships with macOS: `/bin/bash` 3.2 and built-in tools. There is nothing to install.
+macAssay needs no other software: it uses only `/bin/bash` 3.2 and tools that ship with macOS.
 
-1. Get a copy of this repository.
-2. In Terminal, go to the repository folder and run `./macassay` as your normal user. It refuses to run as root.
-3. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
+1. Get a copy of this repository: `git clone https://github.com/pereljon/macAssay.git`, then `cd macAssay`.
+2. Install the sudo rules (recommended). Without them, macAssay skips every check that needs root, such as all network listeners, the packet filter, background items, and the sudoers files. Review the commands first with `./macassay --print-sudoers`, then run `sudo ./macassay --install-sudoers`. Read the trade-off in [Privileged checks](#privileged-checks-optional) before you install them.
+3. Run `./macassay` as your normal user. It refuses to run as root.
+4. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
 
 A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the checks that contact Apple or Homebrew, and the disk usage scans. While it runs, it prints one status line per section on standard error, with counts only.
 
@@ -23,8 +26,6 @@ A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick
 ```
 
 Remote mode sends the script inside the SSH command. Nothing is copied to the other Mac, and the report is saved on your Mac.
-
-Some checks need root, and macAssay skips them until you install its sudo rules. See [Privileged checks](#privileged-checks-optional).
 
 ## What the report contains
 
