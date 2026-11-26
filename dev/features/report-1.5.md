@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: designing
-status: drafted 2026-11-26; architecture review done and findings applied 2026-11-26; not approved
+lifecycle: ready
+status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5)
 ---
 
 # Report formats, run comparison, and managed Macs (version 1.5)
@@ -36,12 +36,16 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.5), a user decisio
 ## Decisions
 
 - 2026-11-26: Version 1.5 is one release, through review (the user's goal for this session). Rejected: managed Macs and the version marker as 1.5, then the formats as 1.6. Conviction: `firm`.
-- 2026-11-26 (proposed): The audit collects data and renders it in two separate steps. Remote mode moves the data files to the local Mac, and the local Mac renders them. Rejected: rendering on the audited Mac, because the accepted-risk file and the old JSON for `--compare` live on the local Mac. Remote mode would then need to send them to the audited Mac.
-- 2026-11-26 (proposed): The OCSF format uses the Compliance Finding class (class_uid 2003) of OCSF 1.10.0. Rejected: OCSF 1.3.0, the newest version that AWS Security Lake custom sources accept, because 1.3.0 requires the `cloud` and `osint` attributes, which have no meaning for a Mac. Rejected: Detection Finding (2004), which is for alerts from detection engines, and Vulnerability Finding (2002), which requires a `vulnerabilities` array.
-- 2026-11-26 (proposed): JSON and OCSF are written by a fixed JXA script with `JSON.stringify`. Rejected: a hand-written JSON escaper in `awk`. `JSON.stringify` escapes every character correctly by construction, and `--compare` needs JXA's `JSON.parse` anyway.
-- 2026-11-26 (proposed): HTML and CSV are written by `awk`, with one escaping function each (`html_esc`, `csv_field`). Rejected: writing the CSV and the HTML findings table from the JXA script, as the review suggested, to have one escaping engine. `md_html` must escape the evidence in `awk` anyway, so the HTML page would still need two engines.
-- 2026-11-26 (proposed): The remote bundle is five fixed lines with no file names. Rejected: named lines, as first drafted. Fixed positions remove name parsing (review suggestion).
-- 2026-11-26 (proposed): Managed values come from the files in `/Library/Managed Preferences`, as the browser-policy check already reads them. Rejected: `defaults read DOMAIN`, which does not merge managed values (verified below). Rejected: CFPreferences through JXA, because its values need Core Foundation bridging that JXA does not do for `CFPreferencesCopyAppValue` (verified below).
+- 2026-11-26: The audit collects data and renders it in two separate steps. Remote mode moves the data files to the local Mac, and the local Mac renders them. Rejected: rendering on the audited Mac, because the accepted-risk file and the old JSON for `--compare` live on the local Mac. Remote mode would then need to send them to the audited Mac.
+- 2026-11-26: The OCSF format uses the Compliance Finding class (class_uid 2003) of OCSF 1.10.0. Rejected: OCSF 1.3.0, the newest version that AWS Security Lake custom sources accept, because 1.3.0 requires the `cloud` and `osint` attributes, which have no meaning for a Mac. Rejected: Detection Finding (2004), which is for alerts from detection engines, and Vulnerability Finding (2002), which requires a `vulnerabilities` array.
+- 2026-11-26: JSON and OCSF are written by a fixed JXA script with `JSON.stringify`. Rejected: a hand-written JSON escaper in `awk`. `JSON.stringify` escapes every character correctly by construction, and `--compare` needs JXA's `JSON.parse` anyway.
+- 2026-11-26: HTML and CSV are written by `awk`, with one escaping function each (`html_esc`, `csv_field`). Rejected: writing the CSV and the HTML findings table from the JXA script, as the review suggested, to have one escaping engine. `md_html` must escape the evidence in `awk` anyway, so the HTML page would still need two engines.
+- 2026-11-26: The remote bundle is five fixed lines with no file names. Rejected: named lines, as first drafted. Fixed positions remove name parsing (review suggestion).
+- 2026-11-26: Managed values come from the files in `/Library/Managed Preferences`, as the browser-policy check already reads them. Rejected: `defaults read DOMAIN`, which does not merge managed values (verified below). Rejected: CFPreferences through JXA, because its values need Core Foundation bridging that JXA does not do for `CFPreferencesCopyAppValue` (verified below).
+- 2026-11-26 (A5): the user approved the design and the test plan, which makes every decision above part of the plan of record. Conviction: `firm`.
+- 2026-11-26 (A2): no 1.4.1 release for the redaction bug that the review found (AR1). The fix ships in 1.5. Reason, from the user: nobody uses macAssay yet. Conviction: `firm`.
+- 2026-11-26 (A3): unreadable evidence records a skip under Limitations, not an INFO finding. Findings are judged risks with stable IDs; an unreadable file is a limit of the audit. Rejected: an INFO finding, as register I079 words it. Conviction: `ok`.
+- 2026-11-26 (A4): `--fail-on LEVEL` is opt-in and exits 3. Rejected: exit 2 for a HIGH finding, as `docs/ISSUES.md` suggested, because exit 2 already means a usage error. Conviction: `ok`.
 
 ## Verified facts
 
