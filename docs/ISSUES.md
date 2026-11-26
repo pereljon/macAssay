@@ -114,9 +114,10 @@ Do these in the change that gives the repo a public remote.
 
 ## Open questions
 
-- [ ] A3. Keep the run status line and the header counts in 1.4, not 1.5? Recommended: yes; neither depends on the 1.5 data export (`dev/features/checks-1.4.md`, Decisions).
-- [ ] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? Recommended: yes; Homebrew 7.0.16 has no such option, and the cask quarantine check still finds apps installed with it.
-- [ ] A5. Drop the cask notarization check? Recommended: yes; `spctl --assess` can query Apple's servers, a new side effect, and a stapled-ticket check misreports many notarized apps.
+- [x] A3. Keep the run status line and the header counts in 1.4, not 1.5? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
+- [x] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
+- [ ] A5. Drop the cask notarization check, or keep it as an online check that `--offline` skips, listed as a side effect? Recommended: drop; a stapled-ticket check misreports many notarized apps, and the cask quarantine check covers the risky case.
+- [ ] A7. Write the network promise into `README.md` and `dev/HANDOFF.md`: without `--offline`, the audit contacts only Apple's and Homebrew's update services; with `--offline`, no traffic leaves the Mac (remote mode aside)? Recommended: yes; it matches the current code and gives reviewers a rule to check new checks against.
 - [x] Should the report and the 1.4 run status line use emojis? (resolved 2026-11-26): no, per the user; see Decisions.
 - [x] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? (resolved 2026-11-26): yes, per the user; both deleted.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).

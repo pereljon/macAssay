@@ -33,9 +33,9 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.4), a user decisio
 
 - 2026-11-26: The 1.4 list splits in two. Version 1.4 takes the new checks (installed remote access, Find My, Homebrew detail). Version 1.5 takes `--format md|json|ocsf|html`, `--compare`, CSV, and exit status by severity. Rejected: one release, because the formats work is larger, needs its own review, and changes no check. Conviction: `ok`.
 - 2026-11-26: No emojis in the report or the status line. Plain severity words read the same in a terminal, a Markdown viewer, and an LLM. They also keep column widths and `awk` fields simple under bash 3.2. Severity colors come with the 1.5 HTML format, through CSS. Rejected: an emoji before each severity word. Conviction: `ok`.
-- Proposed, waiting for the user (question A3 in `docs/ISSUES.md`): the run status line and the header counts stay in 1.4. Neither depends on the 1.5 data export, and both are small.
-- Proposed (question A4): `HOMEBREW_CASK_OPTS` is not checked for `--no-quarantine`. Homebrew 7.0.16 has no such option: `cask/download.rb` always quarantines a cask download, and `env_config.rb` lists the options that `HOMEBREW_CASK_OPTS` supports, which exclude it. The cask quarantine check (requirement 6) still finds apps installed by an older Homebrew with the option.
-- Proposed (question A5): no notarization check for cask apps. `spctl --assess` can ask Apple's servers for a ticket when the app has none stapled. That is a new network side effect, and the `AGENTS.md` Read-only principle needs the user's approval for it. A stapled-ticket-only check (`stapler validate`) reports many notarized apps as not notarized. `codesign -dv` shows no notarization line for Docker.app, which is notarized.
+- 2026-11-26: The run status line and the header counts stay in 1.4 (A3). Neither depends on the 1.5 data export, and both are small. Rejected: moving them to 1.5. Conviction: `ok`.
+- 2026-11-26 (A4): `HOMEBREW_CASK_OPTS` is not checked for `--no-quarantine`. Homebrew 7.0.16 has no such option: `cask/download.rb` always quarantines a cask download, and `env_config.rb` lists the options that `HOMEBREW_CASK_OPTS` supports, which exclude it. The cask quarantine check (requirement 6) still finds apps installed by an older Homebrew with the option. Rejected: checking the setting anyway. Conviction: `ok`.
+- Proposed (question A5): no notarization check for cask apps. `spctl --assess` can ask Apple's servers for a ticket when the app has none stapled (training knowledge, not measured). It could run only without `--offline`, like the update checks, as a listed side effect. A stapled-ticket-only check (`stapler validate`) reports many notarized apps as not notarized. `codesign -dv` shows no notarization line for Docker.app, which is notarized. The cask quarantine check already covers the risky case: a quarantined app passes Gatekeeper on first launch.
 
 ## Verified facts
 
@@ -195,6 +195,6 @@ No new side effect. `osascript` runs a fixed script that reads a file in the tem
 
 ## How to continue if interrupted
 
-1. Read `docs/ISSUES.md` (Version 1.4 and the open questions A3 to A5).
+1. Read `docs/ISSUES.md` (Version 1.4 and the open questions A5 to A7).
 2. Read this doc and `checks-1.4-tests.md`.
 3. Run `git status` on `feature/checks-1.4`.
