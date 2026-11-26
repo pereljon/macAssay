@@ -4,6 +4,20 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 
 ## Unreleased
 
+### Added
+
+- Remote-access tools that are installed, not only running: 15 tools, found by name in app, support, launchd, helper, and `/opt` folders. A tool installed but not running is MEDIUM when it can start without the user, LOW otherwise (MA-SHARING-026). The running-process match covers the same tools.
+- Find My Mac and Activation Lock status. Find My off is LOW on a laptop and INFO on a desktop (MA-PLATFORM-019).
+- Homebrew: outdated formulae and casks counted and listed separately, plus casks that only `--greedy` reports; third-party taps with their installed packages (MA-UPDATES-009 for a tap with nothing installed, MA-UPDATES-010); cask apps with no quarantine attribute (MA-UPDATES-011); whether three Homebrew security settings are set, by name only. Taps and cask apps come from local files, so no `brew` command can download.
+- A status line on stderr after each section, with counts only, and a total line.
+- The report header shows the finding count for each severity, with HIGH and MEDIUM in bold.
+
+### Changed
+
+- `--offline` also skips the Gatekeeper assessment of apps (MA-APPS-002), which asks Apple's servers about each app. With `--offline`, no traffic leaves the Mac.
+- MA-SHARING-013 names the running tool instead of its process.
+- The severity counts below the findings table moved to the header.
+
 ## [1.3.2] - 2026-11-26
 
 Install the sudo rules again after you upgrade (`sudo ./macassay --install-sudoers`). The audit's own fix needs the new rules.

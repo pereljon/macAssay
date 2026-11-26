@@ -387,7 +387,7 @@ check "G15 Apple plugin gives nothing" [ -z "$(auth_plugin_finding Apple '')" ]
 rs() { printf '%s\n' "$1" | remote_support_names; }
 check "G23 AppleVNCServer gives nothing" [ -z "$(rs /System/Library/CoreServices/RemoteManagement/AppleVNCServer.bundle/Contents/MacOS/AppleVNCServer)" ]
 check "G23 TeamViewer is listed" [ "$(rs /Applications/TeamViewer.app/Contents/MacOS/TeamViewer)" = TeamViewer ]
-check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = vncserver ]
+check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = "RealVNC Server" ]
 check "G23 sshd gives nothing" [ -z "$(rs /usr/sbin/sshd)" ]
 
 # G8: debug ports. Only PIDs, classes and program paths leave the parsers.
@@ -678,6 +678,127 @@ say "- a: b"; printf 'x\n' | block "Block title"; say "- c: d"; run "Run title" 
 blank_before() { [ "$(awk -v t="**$1**" '$0 == t {print "[" prev "]"} {prev = $0}' "$T/q7")" = "[]" ]; }
 check "Q7 blank line before a block title" blank_before "Block title"
 check "Q7 blank line before a run title" blank_before "Run title"
+
+# R1: installed remote-access tools from folder names. Names are matched as text, never run.
+R1R="$T/r1root"; R1H="$T/r1home"
+mkdir -p "$R1R/Applications/TeamViewer.app" "$R1R/Applications/RealVNC Viewer.app" "$R1R/Applications/Screens 5.app" \
+  "$R1R/Applications/Jump Desktop.app" "$R1R/Applications/DaVinci Resolve.app" "$R1R/Applications/Zoho Mail.app" \
+  "$R1R/Applications/.com.bomgar.scc.ab12cd34" "$R1R/Library/LaunchDaemons" "$R1R/Library/PrivilegedHelperTools/ChromeRemoteDesktopHost.bundle" \
+  "$R1H/Library/LaunchAgents" "$R1R/Library/Application Support" "$R1R/opt"
+: > "$R1R/Library/LaunchDaemons/com.teamviewer.teamviewer_service.plist"
+: > "$R1H/Library/LaunchAgents/screenconnect-1a2b3c-onlogin.plist"
+: > "$R1H/Library/LaunchAgents/-x \$(touch PWNED) logmein.plist"
+: > "$R1R/Library/LaunchDaemons/AppleVNCServer.plist"
+remote_places "$R1R" "$R1H" | remote_installed > "$T/ri1" 2> "$T/ri1.err"
+check "R1 Chrome Remote Desktop helper alone" has "$T/ri1" $'Chrome Remote Desktop\thelper'
+check "R1 TeamViewer once with app and daemon" [ "$(grep -c '^TeamViewer' "$T/ri1")" = 1 ]
+check "R1 TeamViewer places" has "$T/ri1" $'TeamViewer\tapp, launch daemon'
+check "R1 hidden BeyondTrust folder" has "$T/ri1" $'BeyondTrust (Bomgar)\tapp'
+check "R1 ScreenConnect launch agent" has "$T/ri1" $'ConnectWise ScreenConnect\tlaunch agent'
+check "R1 odd name matched as text" has "$T/ri1" $'LogMeIn\tlaunch agent'
+check "R1 no PWNED file" not [ -e PWNED ]
+check "R1 no PWNED file in the test folder" not [ -e "$T/PWNED" ]
+for v in "RealVNC" "Screens" "Jump Desktop" "Resolve" "Zoho" "Apple"; do check "R1 $v viewer or other app gives nothing" hasnt "$T/ri1" "$v"; done
+check "R1 five tools only" [ "$(grep -c . "$T/ri1")" = 5 ]
+check "R1 items name each match with its place" has "$T/ri1" "app TeamViewer.app, launch daemon com.teamviewer.teamviewer_service.plist"
+
+# R2: every tool with a process fragment is found running; Apple's services are not.
+check "R2 Chrome Remote Desktop" [ "$(rs '/Library/PrivilegedHelperTools/ChromeRemoteDesktopHost.bundle/Contents/MacOS/remoting_me2me_host_service')" = "Chrome Remote Desktop" ]
+check "R2 Parsec exact name" [ "$(rs /Applications/Parsec.app/Contents/MacOS/Parsec)" = Parsec ]
+check "R2 Apple parsecd gives nothing" [ -z "$(rs /System/Library/PrivateFrameworks/CoreParsec.framework/parsecd)" ]
+check "R2 JumpConnect" [ "$(rs '/Applications/Jump Desktop Connect.app/Contents/MacOS/JumpConnect')" = "Jump Desktop Connect" ]
+check "R2 NoMachine nxserver.bin" [ "$(rs /Applications/NoMachine.app/Contents/Frameworks/bin/nxserver.bin)" = NoMachine ]
+check "R2 TigerVNC still listed" [ "$(rs /usr/local/bin/tigervnc-server)" = TigerVNC ]
+check "R2 two tools, sorted" [ "$(printf '%s\n' /a/AnyDesk /b/TeamViewer_Service /c/AnyDesk | remote_support_names | paste -sd, -)" = "AnyDesk,TeamViewer" ]
+
+# R3: a tool installed but not running gives MA-SHARING-026, by how it can start.
+R3IN=$'TeamViewer\tapp, launch daemon\tapp TeamViewer.app, launch daemon com.teamviewer.x.plist\nAnyDesk\tapp\tapp AnyDesk.app\nRustDesk\thelper\thelper com.carriez.h\nParsec\tapp\tapp Parsec.app\nZoho Assist\tapp\tapp ZohoAssist launch agent helper.app'
+check "R3 launch daemon is MEDIUM" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tMEDIUM\tTeamViewer\t')" = 1 ]
+check "R3 app alone is LOW" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tLOW\tAnyDesk\t')" = 1 ]
+check "R3 helper is MEDIUM" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tMEDIUM\tRustDesk\t')" = 1 ]
+check "R3 running tools give nothing" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "TeamViewer,Parsec" | cut -f3 | paste -sd, -)" = "AnyDesk,RustDesk,Zoho Assist" ]
+check "R3 a name on disk cannot raise the severity" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tLOW\tZoho Assist\t')" = 1 ]
+check "R3 the finding names the items" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'\tTeamViewer\tapp TeamViewer.app, launch daemon com.teamviewer.x.plist$')" = 1 ]
+
+# R4: Find My off gives LOW with a battery, INFO without; on or unknown gives nothing.
+check "R4 off with battery is LOW" [ "$(findmy_finding 0 1)" = $'MA-PLATFORM-019\tLOW' ]
+check "R4 off without battery is INFO" [ "$(findmy_finding 0 0)" = $'MA-PLATFORM-019\tINFO' ]
+check "R4 on gives nothing" [ -z "$(findmy_finding 1 1)" ]
+check "R4 unknown gives nothing" [ -z "$(findmy_finding '' 1)" ]
+
+# R5: casks that only --greedy reports.
+check "R5 greedy only" [ "$(greedy_only $'a\nb' $'a\nb\nc\nd' | paste -sd, -)" = "c,d" ]
+check "R5 empty plain list" [ "$(greedy_only '' $'c' | paste -sd, -)" = "c" ]
+check "R5 no difference" [ -z "$(greedy_only $'a' $'a')" ]
+
+# R6 and R8: Homebrew taps and cask apps from a fake prefix with receipts; no brew command runs.
+BP="$T/brew"; mkdir -p "$BP/Library/Taps/acme/homebrew-tools" "$BP/Library/Taps/idle/homebrew-tap" "$BP/Library/Taps/homebrew/homebrew-core" \
+  "$BP/Cellar/jq/1.7" "$BP/Cellar/widget/2.0" "$BP/Cellar/widget/1.0" "$BP/Cellar/broken/1" \
+  "$BP/Caskroom/goodapp/.metadata" "$BP/Caskroom/rawapp/.metadata" "$BP/Caskroom/evil/.metadata" "$BP/Caskroom/cli/.metadata" "$T/apps"
+printf '{"source":{"tap":"homebrew/core"}}' > "$BP/Cellar/jq/1.7/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"}}' > "$BP/Cellar/widget/2.0/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"}}' > "$BP/Cellar/widget/1.0/INSTALL_RECEIPT.json"
+printf '{"source":' > "$BP/Cellar/broken/1/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["Good.app"]},{"zap":[]}]}' > "$BP/Caskroom/goodapp/.metadata/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"},"uninstall_artifacts":[{"app":["Raw.app",{"target":"Raw Renamed.app"}]}]}' > "$BP/Caskroom/rawapp/.metadata/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["../escape.app"]},{"app":["a/b.app"]},{"app":[".hidden.app"]},{"app":["x\\tq.app"]}]}' > "$BP/Caskroom/evil/.metadata/INSTALL_RECEIPT.json"
+printf '{"uninstall_artifacts":[{"binary":["cli"]}]}' > "$BP/Caskroom/cli/.metadata/INSTALL_RECEIPT.json"
+# The unsafe names exist without quarantine, so only the name filter keeps them out of R8.
+mkdir -p "$T/apps/Good.app" "$T/apps/Raw Renamed.app" "$T/apps/.hidden.app" "$T/apps/a/b.app" "$T/escape.app"; xattr -w com.apple.quarantine '0081;00000000;Test;' "$T/apps/Good.app"
+brew_receipts "$BP" > "$T/r6rec"; brew_taps "$BP" > "$T/r6taps"
+mkdir -p "$T/intel/Homebrew/bin" "$T/intel/bin" "$BP/bin"; : > "$T/intel/Homebrew/bin/brew"; ln -s ../Homebrew/bin/brew "$T/intel/bin/brew"; : > "$BP/bin/brew"
+check "R6 repository behind a bin/brew link (Intel layout)" [ "$(brew_repo "$T/intel/bin/brew")" = "$(cd "$T/intel/Homebrew" && pwd -P)" ]
+check "R6 repository is the prefix when bin/brew is a file" [ "$(brew_repo "$BP/bin/brew")" = "$(cd "$BP" && pwd -P)" ]
+ln -s loop "$T/intel/bin/loop"
+check "R6 a symlink loop ends" [ -n "$(brew_repo "$T/intel/bin/loop")" ]
+check "R6 receipts skip a broken file" hasnt "$T/r6rec" "broken"
+check "R6 cask app target used" has "$T/r6rec" $'cask\trawapp\tacme/tools\tRaw Renamed.app'
+check "R6 cask with no tap and no app" has "$T/r6rec" $'cask\tcli\t-\t-'
+check "R6 tab in a name cannot add a field" [ "$(awk -F'\t' 'NF != 4' "$T/r6rec" | wc -l | tr -d ' ')" = 0 ]
+check "R6 taps exclude homebrew" [ "$(paste -sd, "$T/r6taps")" = "acme/tools,idle/tap" ]
+tap_packages "$(cat "$T/r6taps")" < "$T/r6rec" > "$T/r6tp"
+check "R6 tap packages, each once" has "$T/r6tp" $'acme/tools\trawapp, widget'
+check "R6 idle tap listed empty" grep -qx $'idle/tap\t' "$T/r6tp"
+check "R6 core packages not listed" hasnt "$T/r6tp" "jq"
+tap_findings < "$T/r6tp" > "$T/r6f"
+check "R6 idle tap gives MA-UPDATES-009" grep -q $'^MA-UPDATES-009\tLOW\t.*idle/tap' "$T/r6f"
+check "R6 tap packages give one MA-UPDATES-010" [ "$(grep -c $'^MA-UPDATES-010\tINFO\t2 installed' "$T/r6f")" = 1 ]
+cask_unquarantined "$T/apps" < "$T/r6rec" > "$T/r8"
+check "R8 app without quarantine listed" has "$T/r8" "$T/apps/Raw Renamed.app (rawapp)"
+check "R8 quarantined app not listed" hasnt "$T/r8" "Good.app"
+check "R8 unsafe names skipped" [ "$(grep -c . "$T/r8")" = 1 ]
+
+# R7: Homebrew settings by name and source only; no line text or value reaches the output.
+printf '%s\n' '# HOMEBREW_NO_INSECURE_REDIRECT=1' 'https_proxy=http://user:secret@proxy:8080' '  HOMEBREW_VERIFY_ATTESTATIONS=1' > "$T/r7a"
+printf '%s\n' 'HOMEBREW_NO_VERIFY_ATTESTATIONS=' 'HOMEBREW_GITHUB_API_TOKEN=secret' > "$T/r7b"
+# shellcheck disable=SC2016  # $1 and $2 expand in the inner shell, which gets the paths as arguments
+env -u HOMEBREW_NO_INSECURE_REDIRECT -u HOMEBREW_VERIFY_ATTESTATIONS HOMEBREW_NO_VERIFY_ATTESTATIONS=1 bash -c 'MACASSAY_LIB=1 . ./macassay; brew_settings "$1" "$2" /nonexistent/brew.env' sh "$T/r7a" "$T/r7b" > "$T/r7"
+check "R7 set in a file" has "$T/r7" "- HOMEBREW_VERIFY_ATTESTATIONS: set ($T/r7a)"
+check "R7 set in the environment, empty in a file" has "$T/r7" "- HOMEBREW_NO_VERIFY_ATTESTATIONS: set (environment)"
+check "R7 commented out is not set" has "$T/r7" "- HOMEBREW_NO_INSECURE_REDIRECT: not set"
+check "R7 no secret" hasnt "$T/r7" "secret"
+check "R7 three lines" [ "$(grep -c . "$T/r7")" = 3 ]
+
+# R9: section status line on stderr, counts only.
+FIND="$T/r9f"; SKIPS="$T/r9s"; BODY="$T/r9b"; : > "$FIND"; : > "$SKIPS"; : > "$BODY"
+# shellcheck disable=SC2034  # sect_end, sourced from macassay, reads SECT_T
+SECT_T=""
+{ h2 "3. Updates and installs"
+  finding MA-X-001 MEDIUM X "secret text one"; finding MA-X-002 LOW X "secret text two"; skip "a check" "a reason"
+  h2 "4. Platform security"; sect_end; } 2> "$T/r9"
+check "R9 status line" grep -qE '^\[3/14\] Updates and installs: 2 findings \(1 MEDIUM, 1 LOW\), 1 check skipped, [0-9]+ s$' "$T/r9"
+check "R9 empty section" grep -qE '^\[4/14\] Platform security: 0 findings, 0 checks skipped, [0-9]+ s$' "$T/r9"
+check "R9 no finding text" hasnt "$T/r9" "secret text"
+total_status 2> "$T/r9t"
+check "R9 total line" grep -qE '^Total: 2 findings \(1 MEDIUM, 1 LOW\), 1 check skipped, [0-9]+ s$' "$T/r9t"
+check "R9 minutes" [ "$(dur 184)" = "3 min 4 s" ]
+
+# R10: severity counts in the header, and the section count.
+printf 'HIGH\tA\tX\tt\nHIGH\tB\tX\tt\nMEDIUM\tC\tX\tt\nLOW\tD\tX\tt\nLOW\tE\tX\tt\nLOW\tF\tX\tt\n' > "$T/r10"
+check "R10 header counts" [ "$(sev_header "$T/r10")" = "- Findings: **2 HIGH**, **1 MEDIUM**, 3 LOW, 0 INFO" ]
+: > "$T/r10e"
+check "R10 no findings" [ "$(sev_header "$T/r10e")" = "- Findings: none" ]
+check "R10 section count" [ "$(grep -cE '^h2 "[0-9]+\. ' macassay)" = "$NSECT" ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

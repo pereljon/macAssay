@@ -14,7 +14,7 @@ macassay uses only what ships with macOS: `/bin/bash` 3.2 and built-in tools. Th
 2. In Terminal, go to the repository folder and run `./macassay` as your normal user. It refuses to run as root.
 3. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
 
-A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the update checks, and the disk usage scans.
+A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the checks that contact Apple or Homebrew, and the disk usage scans.
 
 ```sh
 ./macassay -o ~/Desktop/report.md                       # choose the report file
@@ -81,11 +81,13 @@ The installer checks the file with `visudo` before and after it writes it. The f
 
 - The audit changes nothing on the Mac, apart from these side effects:
   - A temporary folder under `/tmp`, removed when the run ends.
-  - A refresh of Apple's update catalog cache, and Homebrew's auto-update, which updates Homebrew and its package lists but no installed package. `--offline` skips both.
+  - A refresh of Apple's update catalog cache, and Homebrew's auto-update, which updates Homebrew and its package lists but no installed package.
+  - Gatekeeper asks Apple's servers about each app in `/Applications` and `~/Applications`.
   - One HTTP GET to each of the Mac's own network listeners, to see which ones ask for a login.
   - `nc -z` connection tests to the sharing ports.
   - One SSH connection as `nobody` to the Mac itself, which the SSH server logs.
   - With the sudoers file installed, sudo logs each privileged command.
+- Network: without `--offline`, the audit contacts only Apple's update and Gatekeeper services and Homebrew's update service. With `--offline`, no traffic leaves the Mac, because the audit skips the update catalog refresh, Homebrew's auto-update, and the Gatekeeper lookups. Remote mode adds the SSH connection to the remote Mac.
 - macassay does not check the privacy permissions database (TCC), which records the apps allowed to use the camera, files, and other protected data. Reading it needs Full Disk Access as well as root.
 - Remote mode has not been tested against a second Mac.
 
