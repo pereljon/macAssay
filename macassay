@@ -43,7 +43,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.3 (2026-11-25)"
+VERSION="1.3.1 (2026-11-25)"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay
@@ -141,7 +141,7 @@ classify_sudoers() {
       return out }
     function loads_code(p) {
       sub(/.*\//, "", p)
-      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|php|lua|tclsh|expect|osascript|vim?|nano|emacs|less|more|man|find|xargs|awk|sed|tar|zip|git|make|ssh|scp|rsync|tee|cp|mv|dd|chmod|chown|curl|wget|httpd|apachectl|tcpdump|nmap|sqlite3|launchctl|installer|nice|nohup|timeout|script|screen|tmux)$/ }
+      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|php|lua|tclsh|expect|osascript|vim?|nano|emacs|less|more|man|find|xargs|awk|sed|tar|zip|git|make|ssh|scp|rsync|tee|cp|mv|dd|ditto|install|ln|unzip|cpio|chmod|chown|curl|wget|dtrace|kmutil|httpd|apachectl|tcpdump|nmap|sqlite3|launchctl|installer|nice|nohup|timeout|script|screen|tmux)$/ }
     { sub(/\r$/, "") }
     cont == "" && /^[[:space:]]*#/ && !/^[[:space:]]*#[0-9]/ { next }
     { line = cont $0 }
@@ -308,7 +308,7 @@ shown_cmd() { local a out="" q="'\\''"
   done; printf '%s' "$out"; }
 # block "title" < text; a line "- title: none" when the text is empty.
 block(){ local o; o=$(clean | trunc)
-  if [ -z "${o//[[:space:]]/}" ]; then say "- $1: none"; return; fi
+  case "$o" in *[![:space:]]*) ;; *) say "- $1: none"; return ;; esac
   say "**$1**"; say ""; say '```text'; printf '%s\n' "$o" >> "$BODY"; say '```'; say ""; }
 # finding ID SEVERITY LABEL TEXT
 finding() { printf '%s\t%s\t%s\t%s\n' "$2" "$1" "$3" "$(printf '%s' "$4" | clean_field)" >> "$FIND"; }

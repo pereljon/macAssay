@@ -566,6 +566,7 @@ printf '%s\n' '%admin ALL=NOPASSWD: /usr/sbin/httpd' '%admin ALL=NOPASSWD: /bin/
 check "P1 httpd can run other code" has "$T/p1" $'MA-ACCOUNTS-009\tHIGH\t%admin ALL=NOPASSWD: /usr/sbin/httpd'
 check "P1 apachectl can run other code" has "$T/p1" $'MA-ACCOUNTS-009\tHIGH\t%admin ALL=NOPASSWD: /usr/sbin/apachectl'
 check "P1 kill stays LOW" has "$T/p1" $'MA-ACCOUNTS-006\tLOW\t%admin ALL=NOPASSWD: /bin/kill'
+check "P1 dtrace can run other code" [ "$(printf '%s\n' 'x ALL=NOPASSWD: /usr/sbin/dtrace' | classify_sudoers | cut -f2)" = HIGH ]
 
 cat > "$T/p2" <<'EOF'
   0 => {
@@ -586,7 +587,8 @@ printf '    XProtectPlistConfigData:\n\n      Version: 5370\n\n    XProtectPlist
 check "P3 latest version of each XProtect component" [ "$(paste -sd, - < "$T/p3")" = "XProtectPayloads 171,XProtectPlistConfigData 5377" ]
 
 printf '                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Other\n                 Type: app (0x2)\n' | btm_unique > "$T/p4"
-check "P4 repeated background items printed once" [ "$(grep -c 'Name: Zoom' "$T/p4")" -eq 1 ] && has "$T/p4" "Name: Other"
+check "P4 repeated background items printed once" [ "$(grep -c 'Name: Zoom' "$T/p4")" -eq 1 ]
+check "P4 other items kept" has "$T/p4" "Name: Other"
 
 printf '  101 /Applications/Codex.app/Contents/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)\n  202 /usr/libexec/trustd\n' > "$T/psmap"
 cat > "$T/p5" <<'EOF'

@@ -34,7 +34,7 @@ Version 1.3 (released 2026-11-25 as v1.3.0; design `dev/features/checks-1.3.md`;
 
 Version 1.3.1: bug fixes found in the review of a full 1.3 run on a second Mac (2026-11-25). Build and verify these before 1.4 work starts.
 
-- [x] A NOPASSWD rule for `/usr/sbin/httpd` gives LOW (MA-ACCOUNTS-006) instead of HIGH (MA-ACCOUNTS-009). `loads_code` (`macassay:144`) lacks `httpd` and `apachectl`. As root, `httpd -C` can set a piped `ErrorLog` command, and `httpd -f` can load a module. Check the list for other programs that run code. (resolved 2026-11-25): Apache's logs documentation confirms that piped log programs inherit the parent's user ID, usually root. `loads_code` now also lists `httpd`, `apachectl`, `tcpdump`, `nmap`, `sqlite3`, `launchctl`, `installer`, and other programs that start code; fixture P1.
+- [x] A NOPASSWD rule for `/usr/sbin/httpd` gives LOW (MA-ACCOUNTS-006) instead of HIGH (MA-ACCOUNTS-009). `loads_code` (`macassay:144`) lacks `httpd` and `apachectl`. As root, `httpd -C` can set a piped `ErrorLog` command, and `httpd -f` can load a module. Check the list for other programs that run code. (resolved 2026-11-25): Apache's logs documentation confirms that piped log programs inherit the parent's user ID, usually root. `loads_code` now also lists `httpd`, `apachectl`, `tcpdump`, `nmap`, `sqlite3`, `launchctl`, `installer`, `dtrace`, `kmutil`, file-writing programs such as `ditto` and `ln`, and other programs that start code; fixture P1.
 - [x] MA-PERSISTENCE-020 counts Apple's own audio plug-ins. `ParrotAudioPlugin.driver` ships with macOS 27.2.1 and is signed "macOS Software Signing" (checked on the development Mac). Count only plug-ins that Apple did not sign. (resolved 2026-11-25): the finding counts only plug-ins not signed by Apple, and the evidence line names each plug-in's signer; checked on a quick run.
 - [x] The persistence table shows Program `?` and Signer `missing` for a launchd plist that the user cannot read (mode 0700, as NordVPN's helper plist is) or that has no program (an empty Google keystone plist). Show "unreadable" or "no program" instead. (resolved 2026-11-25): checked on a quick run.
 - [x] MA-APPS-009 repeats a host that appears in more than one browser folder (`com.dropbox.nmh.json -> …;com.dropbox.nmh.json -> …`) and does not name the folder. Name the folder for each entry. (resolved 2026-11-25): each entry starts with its folder, such as `Google/Chrome:`; fixture P8 and a quick run.
@@ -44,6 +44,13 @@ Version 1.3.1: bug fixes found in the review of a full 1.3 run on a second Mac (
 - [x] Empty code blocks print where a check found nothing: third-party kexts, non-standard periodic scripts, crontabs, and another account's shell startup files. Print "none" instead. (resolved 2026-11-25): `block` prints "- TITLE: none" for empty text; fixture P7 and a quick run.
 - [x] Outbound connections cut process names at the first space (`(R`, `(Aperitif)`). (resolved 2026-11-25): the name comes from `ps` by process ID; fixture P5 only, because `netstat` lists no TCP sockets on the development Mac (see Bugs). Verify on a Mac where `netstat` works.
 - [x] Some evidence headers drop the quoting of the command that ran (`$ sh -c memory_pressure | tail -2; vm_stat | …`), so the shown command differs from the real one. (resolved 2026-11-25): `shown_cmd` quotes words that need it; fixture P6 and a quick run.
+
+Pre-merge review of 1.3.1 (2026-11-25), one line per finding:
+
+- F1 `block` blank test took about a minute on a 200-line block under bash 3.2 with a UTF-8 locale: fixed with a `case` test (0.02 s); it was a run-time regression that every run reaches.
+- F2 P4's second assertion ran outside `check`, so a failure did not count: fixed; testing rules (a failure must fail).
+- F3 audio plug-ins whose names start with a dot are not listed: dropped; writing to the HAL folder needs root, and no requirement covers it.
+- F4 `loads_code` missed `dtrace`, `kmutil`, `ditto`, `install`, `ln`, `unzip`, and `cpio`: fixed; the 1.3.1 item asks for the list to be checked, and a third-party NOPASSWD rule reaches it.
 
 Version 1.4 (needs a design doc and test plan):
 
