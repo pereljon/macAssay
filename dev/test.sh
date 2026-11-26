@@ -700,6 +700,7 @@ check "R1 no PWNED file" not [ -e PWNED ]
 check "R1 no PWNED file in the test folder" not [ -e "$T/PWNED" ]
 for v in "RealVNC" "Screens" "Jump Desktop" "Resolve" "Zoho" "Apple"; do check "R1 $v viewer or other app gives nothing" hasnt "$T/ri1" "$v"; done
 check "R1 five tools only" [ "$(grep -c . "$T/ri1")" = 5 ]
+check "R1 items name each match with its place" has "$T/ri1" "app TeamViewer.app, launch daemon com.teamviewer.teamviewer_service.plist"
 
 # R2: every tool with a process fragment is found running; Apple's services are not.
 check "R2 Chrome Remote Desktop" [ "$(rs '/Library/PrivilegedHelperTools/ChromeRemoteDesktopHost.bundle/Contents/MacOS/remoting_me2me_host_service')" = "Chrome Remote Desktop" ]
@@ -711,11 +712,13 @@ check "R2 TigerVNC still listed" [ "$(rs /usr/local/bin/tigervnc-server)" = Tige
 check "R2 two tools, sorted" [ "$(printf '%s\n' /a/AnyDesk /b/TeamViewer_Service /c/AnyDesk | remote_support_names | paste -sd, -)" = "AnyDesk,TeamViewer" ]
 
 # R3: a tool installed but not running gives MA-SHARING-026, by how it can start.
-R3IN=$'TeamViewer\tapp, launch daemon\nAnyDesk\tapp\nRustDesk\thelper\nParsec\tapp'
+R3IN=$'TeamViewer\tapp, launch daemon\tapp TeamViewer.app, launch daemon com.teamviewer.x.plist\nAnyDesk\tapp\tapp AnyDesk.app\nRustDesk\thelper\thelper com.carriez.h\nParsec\tapp\tapp Parsec.app\nZoho Assist\tapp\tapp ZohoAssist launch agent helper.app'
 check "R3 launch daemon is MEDIUM" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tMEDIUM\tTeamViewer\t')" = 1 ]
 check "R3 app alone is LOW" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tLOW\tAnyDesk\t')" = 1 ]
 check "R3 helper is MEDIUM" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tMEDIUM\tRustDesk\t')" = 1 ]
-check "R3 running tools give nothing" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "TeamViewer,Parsec" | cut -f3 | paste -sd, -)" = "AnyDesk,RustDesk" ]
+check "R3 running tools give nothing" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "TeamViewer,Parsec" | cut -f3 | paste -sd, -)" = "AnyDesk,RustDesk,Zoho Assist" ]
+check "R3 a name on disk cannot raise the severity" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'^MA-SHARING-026\tLOW\tZoho Assist\t')" = 1 ]
+check "R3 the finding names the items" [ "$(printf '%s\n' "$R3IN" | remote_installed_findings "" | grep -c $'\tTeamViewer\tapp TeamViewer.app, launch daemon com.teamviewer.x.plist$')" = 1 ]
 
 # R4: Find My off gives LOW with a battery, INFO without; on or unknown gives nothing.
 check "R4 off with battery is LOW" [ "$(findmy_finding 0 1)" = $'MA-PLATFORM-019\tLOW' ]
@@ -738,10 +741,16 @@ printf '{"source":{"tap":"acme/tools"}}' > "$BP/Cellar/widget/1.0/INSTALL_RECEIP
 printf '{"source":' > "$BP/Cellar/broken/1/INSTALL_RECEIPT.json"
 printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["Good.app"]},{"zap":[]}]}' > "$BP/Caskroom/goodapp/.metadata/INSTALL_RECEIPT.json"
 printf '{"source":{"tap":"acme/tools"},"uninstall_artifacts":[{"app":["Raw.app",{"target":"Raw Renamed.app"}]}]}' > "$BP/Caskroom/rawapp/.metadata/INSTALL_RECEIPT.json"
-printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["../../etc"]},{"app":["a/b.app"]},{"app":[".hidden.app"]},{"app":["x\\tq.app"]}]}' > "$BP/Caskroom/evil/.metadata/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["../escape.app"]},{"app":["a/b.app"]},{"app":[".hidden.app"]},{"app":["x\\tq.app"]}]}' > "$BP/Caskroom/evil/.metadata/INSTALL_RECEIPT.json"
 printf '{"uninstall_artifacts":[{"binary":["cli"]}]}' > "$BP/Caskroom/cli/.metadata/INSTALL_RECEIPT.json"
-mkdir -p "$T/apps/Good.app" "$T/apps/Raw Renamed.app"; xattr -w com.apple.quarantine '0081;00000000;Test;' "$T/apps/Good.app"
+# The unsafe names exist without quarantine, so only the name filter keeps them out of R8.
+mkdir -p "$T/apps/Good.app" "$T/apps/Raw Renamed.app" "$T/apps/.hidden.app" "$T/apps/a/b.app" "$T/escape.app"; xattr -w com.apple.quarantine '0081;00000000;Test;' "$T/apps/Good.app"
 brew_receipts "$BP" > "$T/r6rec"; brew_taps "$BP" > "$T/r6taps"
+mkdir -p "$T/intel/Homebrew/bin" "$T/intel/bin" "$BP/bin"; : > "$T/intel/Homebrew/bin/brew"; ln -s ../Homebrew/bin/brew "$T/intel/bin/brew"; : > "$BP/bin/brew"
+check "R6 repository behind a bin/brew link (Intel layout)" [ "$(brew_repo "$T/intel/bin/brew")" = "$(cd "$T/intel/Homebrew" && pwd -P)" ]
+check "R6 repository is the prefix when bin/brew is a file" [ "$(brew_repo "$BP/bin/brew")" = "$(cd "$BP" && pwd -P)" ]
+ln -s loop "$T/intel/bin/loop"
+check "R6 a symlink loop ends" [ -n "$(brew_repo "$T/intel/bin/loop")" ]
 check "R6 receipts skip a broken file" hasnt "$T/r6rec" "broken"
 check "R6 cask app target used" has "$T/r6rec" $'cask\trawapp\tacme/tools\tRaw Renamed.app'
 check "R6 cask with no tap and no app" has "$T/r6rec" $'cask\tcli\t-\t-'

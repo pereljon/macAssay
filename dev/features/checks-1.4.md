@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: ready
-status: approved by the user 2026-11-26 (A6)
+lifecycle: building
+status: approved by the user 2026-11-26 (A6); built and reviewed on feature/checks-1.4, not merged
 ---
 
 # Installed remote access, Find My, Homebrew detail, and run status (version 1.4)
@@ -86,11 +86,11 @@ It matches each name, case-insensitively, against a fixed table of name fragment
 | AnyDesk | `anydesk`, `philandro` | `anydesk` |
 | RustDesk | `rustdesk`, `com.carriez` | `rustdesk` |
 | Chrome Remote Desktop | `chromoting`, `chromeremotedesktop` | `remoting_me2me` |
-| Splashtop | `splashtop` | `splashtop` |
+| Splashtop Streamer | `splashtop.?streamer` | `splashtop.?streamer` |
 | ConnectWise ScreenConnect | `screenconnect`, `connectwisecontrol` | `screenconnect`, `connectwisecontrol` |
 | BeyondTrust (Bomgar) | `bomgar` | `bomgar` |
 | LogMeIn | `logmein` | `logmein` |
-| GoTo Resolve | `com.goto.resolve`, `resolve-unattended` | `resolve-unattended` |
+| GoTo Resolve | `com.goto.resolve`, `resolve.unattended` | `resolve.unattended` |
 | RealVNC Server | `realvnc` | `vncserver`, `vncagent` |
 | NoMachine | `nomachine` | `nxserver`, `nxnode` |
 | Parsec | `parsec` | the exact name `parsec` |
@@ -106,6 +106,8 @@ Each fragment is chosen to avoid known false matches:
 - `goto` or `resolve` alone matches DaVinci Resolve and other apps.
 - `nx` alone is too short.
 - `parsec` as a process fragment matches Apple's Parsec services (the `CoreParsec` frameworks), so the process match needs the exact name. The disk scan never reads `/System`.
+- `splashtop` alone matches the Splashtop Business and Personal apps, which are viewers. Only the Streamer, the host, counts.
+- `resolve.unattended` matches a hyphen, a space, or a dot, as in `GoTo Resolve Unattended.app`.
 - `zoho` alone matches other Zoho apps.
 - `jump desktop` alone matches the Jump Desktop viewer.
 - `screens` alone matches the Screens viewer.
@@ -116,17 +118,17 @@ Vendors rarely publish their launchd or process names. For most tools, the names
 
 ### Report and findings
 
-- The Sharing section lists each tool found, with the places it was found, such as `TeamViewer: app, launch daemon, helper`.
+- The Sharing section lists each tool found, with each matched name and its place, such as `TeamViewer: app TeamViewer.app, launch daemon com.teamviewer.teamviewer_service.plist`. Names on disk are untrusted, so they reach the report only through `block` and `clean_field`.
 - MA-SHARING-013 stays as it is: MEDIUM when a tool runs.
 - New, MA-SHARING-026, one finding per tool that is installed but not running:
-  - MEDIUM when a launch daemon, launch agent, or privileged helper exists. That tool can start without the user and accept a connection.
+  - MEDIUM when a launch daemon, launch agent, or privileged helper exists. The severity comes from the place labels only, never from a name on disk.
   - LOW when only an app bundle exists. Someone must open it first.
 - A tool that runs gives only MA-SHARING-013, so one tool never gives two findings.
 
 ## Check 2: Find My and Activation Lock
 
 The Platform section gets two lines:
-- `Find My Mac (FMMEnabled)`, read with `defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled`, through `default_line`.
+- `Find My Mac (FMMEnabled)`, read with `defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled`. A missing key prints `not set`.
 - `Activation Lock`, taken from the Hardware output that section 1 already collects. The script keeps that output in a variable, so `system_profiler` runs once.
 
 The check never reads NVRAM, so the `fmm-mobileme-token-FMM` variable stays unread.
@@ -147,7 +149,7 @@ The first `brew outdated` call may run Homebrew's auto-update, as 1.3 does. The 
 ### Taps and settings
 
 These read only local files and run no `brew` command, so they run under `--offline` too and never trigger a download:
-1. The folders `PREFIX/Library/Taps/USER/homebrew-REPO` give the installed taps, named `USER/REPO`. Taps under `homebrew/` are Homebrew's own and do not count.
+1. The folders `REPOSITORY/Library/Taps/USER/homebrew-REPO` give the installed taps, named `USER/REPO`. REPOSITORY is the folder above the target of the `bin/brew` link, `/usr/local/Homebrew` on Intel, or the prefix when `bin/brew` is not a link, as Homebrew's own `bin/brew` sets `HOMEBREW_REPOSITORY`. `brew_repo` finds it. Taps under `homebrew/` are Homebrew's own and do not count.
 2. The same JXA script, `BREW_RECEIPTS_JS`, reads each formula receipt (`PREFIX/Cellar/NAME/VERSION/INSTALL_RECEIPT.json`) and each cask receipt, and prints the kind, name, and `source.tap` of each package. It replaces `brew list --full-name` and `brew tap`.
 3. The report lists each third-party tap with its packages.
 4. New, MA-UPDATES-009, LOW: a third-party tap has no installed package. Its formula code still loads on `brew update`, for no use (register I018).

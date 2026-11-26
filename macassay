@@ -530,11 +530,11 @@ REMOTE_TOOLS='TeamViewer	teamviewer	teamviewer
 AnyDesk	anydesk|philandro	anydesk
 RustDesk	rustdesk|com[.]carriez	rustdesk
 Chrome Remote Desktop	chromoting|chromeremotedesktop	remoting_me2me
-Splashtop	splashtop	splashtop
+Splashtop Streamer	splashtop.?streamer	splashtop.?streamer
 ConnectWise ScreenConnect	screenconnect|connectwisecontrol	screenconnect|connectwisecontrol
 BeyondTrust (Bomgar)	bomgar	bomgar
 LogMeIn	logmein	logmein
-GoTo Resolve	com[.]goto[.]resolve|resolve-unattended	resolve-unattended
+GoTo Resolve	com[.]goto[.]resolve|resolve.unattended	resolve.unattended
 RealVNC Server	realvnc	^vnc(server|agent)
 NoMachine	nomachine	^nx(server|node)
 Parsec	parsec	^parsec$
@@ -554,13 +554,16 @@ remote_places() { local e
     "launch daemon:$1/Library/LaunchDaemons" "launch agent:$1/Library/LaunchAgents" "launch agent:$2/Library/LaunchAgents" "helper:$1/Library/PrivilegedHelperTools"; do
     find "${e#*:}" -mindepth 1 -maxdepth 1 2>/dev/null | sed "s#.*/#${e%%:*}	#"
   done; }
-# remote_installed; stdin: PLACE<TAB>NAME. Prints TOOL<TAB>PLACES for each remote-access tool found. VNC viewers do not count.
+# remote_installed; stdin: PLACE<TAB>NAME. Prints TOOL<TAB>PLACES<TAB>ITEMS for each remote-access tool found, where ITEMS
+# names each match with its place. VNC viewers do not count.
 remote_installed() { local L n d p; L=$(grep -viE 'vnc ?viewer')
   while IFS=$'\t' read -r n d p; do [ "$d" = - ] && continue
-    printf '%s\n' "$L" | awk -F'\t' -v re="$d" -v n="$n" 'tolower($2) ~ re && !s[$1]++ {o = o (o != "" ? ", " : "") $1} END {if (o != "") print n "\t" o}'
+    printf '%s\n' "$L" | awk -F'\t' -v re="$d" -v n="$n" 'tolower($2) ~ re {if (!s[$1]++) l = l (l != "" ? ", " : "") $1; i = i (i != "" ? ", " : "") $1 " " $2}
+      END {if (l != "") print n "\t" l "\t" i}'
   done <<< "$REMOTE_TOOLS"; }
-# remote_installed_findings RUNNING (comma list of tool names); stdin: TOOL<TAB>PLACES. A tool that runs already gives MA-SHARING-013.
-remote_installed_findings() { awk -F'\t' -v run=",$1," 'index(run, "," $1 ",") == 0 {print "MA-SHARING-026\t" ($2 ~ /daemon|agent|helper/ ? "MEDIUM" : "LOW") "\t" $1 "\t" $2}'; }
+# remote_installed_findings RUNNING (comma list of tool names); stdin: remote_installed output. Severity comes from the place
+# labels only, never from a name on disk. A tool that runs already gives MA-SHARING-013.
+remote_installed_findings() { awk -F'\t' -v run=",$1," 'index(run, "," $1 ",") == 0 {print "MA-SHARING-026\t" ($2 ~ /daemon|agent|helper/ ? "MEDIUM" : "LOW") "\t" $1 "\t" $3}'; }
 findmy_finding() { [ "$1" = 0 ] || return 0; if [ "$2" = 1 ]; then printf 'MA-PLATFORM-019\tLOW\n'; else printf 'MA-PLATFORM-019\tINFO\n'; fi; }
 # brew_settings FILE...; says whether each Homebrew security setting is set, and where: the environment or a brew.env file.
 # It never prints a value or a line: brew.env files can hold proxy passwords and tokens.
@@ -591,7 +594,11 @@ BREW_RECEIPTS_JS='function run(argv) {
 }'
 # brew_receipts PREFIX; reads every formula and cask receipt under the Homebrew prefix. Runs no brew command, so it never downloads.
 brew_receipts() { osascript -l JavaScript -e "$BREW_RECEIPTS_JS" "$1"/Cellar/*/*/INSTALL_RECEIPT.json "$1"/Caskroom/*/.metadata/INSTALL_RECEIPT.json 2>/dev/null | grep .; }
-# brew_taps PREFIX; prints USER/REPO for each installed tap outside homebrew/.
+# brew_repo BREW; prints Homebrew's repository folder, which holds Library/Taps: the folder above the target of the bin/brew link
+# (/usr/local/Homebrew on Intel), or the prefix when bin/brew is not a link (Homebrew's bin/brew sets HOMEBREW_REPOSITORY so).
+brew_repo() { local f="$1" t n=0; while [ -L "$f" ] && [ "$n" -lt 20 ]; do n=$((n + 1)); t=$(readlink "$f"); case "$t" in /*) f="$t" ;; *) f="${f%/*}/$t" ;; esac; done
+  (cd "${f%/*}/.." 2>/dev/null && pwd -P); }
+# brew_taps REPOSITORY; prints USER/REPO for each installed tap outside homebrew/.
 brew_taps() { find "$1/Library/Taps" -mindepth 2 -maxdepth 2 -type d -name 'homebrew-*' 2>/dev/null | awk -F/ '{u = $(NF-1); r = $NF; sub(/^homebrew-/, "", r); if (u != "homebrew") print u "/" r}' | sort -u; }
 # tap_packages TAPS; stdin: brew_receipts output. Prints TAP<TAB>PACKAGES for each third-party tap; a tap with no installed package has an empty list.
 tap_packages() { sort -t "$(printf '\t')" -k2,2 | awk -F'\t' -v taps="$(printf '%s' "$1" | tr '\n' ' ')" '
@@ -925,12 +932,12 @@ if [ -n "$BREW" ]; then
   say ""; say "Homebrew security settings (names only; values are never read):"; say ""
   brew_settings /etc/homebrew/brew.env "${BREW%/bin/brew}/etc/homebrew/brew.env" "$BUC/brew.env" | clean >> "$BODY"
   brew_receipts "${BREW%/bin/brew}" > "$TMP/brec"
-  tap_packages "$(brew_taps "${BREW%/bin/brew}")" < "$TMP/brec" > "$TMP/btp"
+  tap_packages "$(brew_taps "$(brew_repo "$BREW")")" < "$TMP/brec" > "$TMP/btp"
   sed 's/	/: /' "$TMP/btp" | block "Third-party Homebrew taps and their installed packages"
   tap_findings < "$TMP/btp" | while IFS=$'\t' read -r id sv tx; do finding "$id" "$sv" Updates "$tx"; done
   cask_unquarantined /Applications "$THOME/Applications" < "$TMP/brec" > "$TMP/bnq"
   block "Homebrew cask apps with no quarantine attribute" < "$TMP/bnq"
-  [ -s "$TMP/bnq" ] && finding MA-UPDATES-011 LOW Updates "$(grep -c . "$TMP/bnq") Homebrew cask app(s) have no quarantine attribute, so Gatekeeper did not check them on first launch: $(sed 's#.*/##' "$TMP/bnq" | paste -sd, -)"
+  [ -s "$TMP/bnq" ] && finding MA-UPDATES-011 LOW Updates "$(grep -c . "$TMP/bnq") Homebrew cask app(s) have no quarantine attribute, so Gatekeeper may not have checked them; an app that updates itself can also remove it: $(sed 's#.*/##' "$TMP/bnq" | paste -sd, -)"
 fi
 system_profiler SPInstallHistoryDataType 2>/dev/null | xprotect_versions | block "XProtect versions (latest install of each component)"
 XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
@@ -1094,7 +1101,7 @@ RST=$(ps -axo comm= | remote_support_names | paste -sd, -)
 say "- Remote-access tools running: $(mdesc "${RST:-none}")"
 [ -n "$RST" ] && finding MA-SHARING-013 MEDIUM Sharing "A remote-support tool is running: $RST"
 remote_places "" "$THOME" | remote_installed > "$TMP/rai"
-sed 's/	/: /' "$TMP/rai" | block "Remote-access tools installed (where found)"
+cut -f1,3 "$TMP/rai" | sed 's/	/: /' | block "Remote-access tools installed (where found)"
 remote_installed_findings "$RST" < "$TMP/rai" | while IFS=$'\t' read -r id sv tool pl; do
   finding "$id" "$sv" Sharing "A remote-access tool is installed but not running: $tool ($pl)."; done
 [ -f "$THOME/.ssh/authorized_keys" ] && ssh-keygen -l -f "$THOME/.ssh/authorized_keys" 2>&1 | block "SSH authorized_keys (bits, fingerprint, comment, type)"

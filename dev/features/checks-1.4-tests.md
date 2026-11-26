@@ -21,7 +21,7 @@ Two kinds of test cover version 1.4:
   - A name with spaces, a leading `-`, or `$(touch PWNED)` is matched or ignored as text, and no `PWNED` file appears.
 - R2. `remote_support_names` matches each tool's process fragment from `REMOTE_TOOLS`, and still excludes `AppleVNCServer`. `parsecd` gives no match; `Parsec` does. The existing `rs` cases pass.
 - R3. The MA-SHARING-026 rule: a launchd plist or helper gives MEDIUM; an app alone gives LOW; a tool that also runs gives no MA-SHARING-026.
-- R4. Find My: `FMMEnabled` 0 with a battery gives MA-PLATFORM-019 LOW; 0 without a battery gives INFO; 1 gives nothing; a missing key prints the `default_line` text and gives nothing.
+- R4. Find My: `FMMEnabled` 0 with a battery gives MA-PLATFORM-019 LOW; 0 without a battery gives INFO; 1 gives nothing; a missing key gives nothing. The `not set` line in the report is checked in M1.
 - R5. Greedy casks: the greedy list minus the plain list keeps only the casks absent from the plain list, and an empty difference prints "none".
 - R6. Taps: a fake `Library/Taps` folder and fake receipts give each third-party tap with its packages. A tap with no package gives MA-UPDATES-009. Core packages (no slash) do not count.
 - R7. Homebrew settings: fake `brew.env` files with the three names, a proxy line holding `user:secret@`, and a comment. The report says which names are set and where. No line text, and no `secret`, appears in the output.
@@ -39,7 +39,7 @@ Two kinds of test cover version 1.4:
   - The Updates section shows formula, cask, and greedy counts, the four third-party taps with their packages, the three settings, and the cask quarantine result.
   - stderr shows 14 status lines and one total line, with no finding text.
   - The header shows the severity counts, and the findings table has no counts below it.
-- M2. Run `./macassay --quick --offline --skip-du`. Pass: outdated counts are skipped; taps, settings, and cask quarantine still run.
+- M2. Run `./macassay --quick --offline --skip-du`. Pass: outdated counts and the Gatekeeper assessment (MA-APPS-002) are skipped, each with a skip record; taps, settings, and cask quarantine still run.
 - M3. On the MacBook, with Find My on, run a full audit. Pass: `FMMEnabled` reads 1 and Activation Lock reads `Enabled` (the two assumptions in the design).
 - M4. Check the report from M1 for secrets: no `brew.env` line text, no proxy value, no NVRAM read.
 
@@ -69,8 +69,26 @@ Unverified: process names for most tools; bundle IDs for Parsec, Zoho Assist, Sc
 
 ## Review findings
 
-None yet.
+Pre-merge review, 2026-11-26 (a reviewer subagent, opus, high effort), on commit `6fa2588`. One line per finding:
+
+- F1 taps read from `PREFIX/Library/Taps`, which is wrong for Homebrew in `/usr/local` (Intel): fixed with `brew_repo`; breaks requirement 5 on every Intel Mac with Homebrew. Fixtures R6 (Intel layout, plain file, symlink loop).
+- F2 the matched names did not reach the report, though the design and requirement 1 say where each tool was found: fixed; items now name each match with its place, and severity still comes from place labels only. Fixtures R1, R3.
+- F3 a file name holding a newline and a tab can add a false tool row and a MEDIUM finding: dropped; no requirement breaks, nothing runs, only names from the fixed table reach the report, and whoever can write those folders has easier ways to change the Mac.
+- F4 R8 passed with the name filter removed, and R4 claimed a check it did not make: fixed; R8 fixtures now exist on disk, a mutation run confirms R8 fails without the filter, and R4 is reworded; the testing rules require a test that can fail.
+- F5 `splashtop` matches viewer apps, and `GoTo Resolve Unattended.app` matched nothing: fixed; fragments narrowed to the Streamer and widened to `resolve.unattended`; requirement 1 and the design rule that viewers do not count. Names are training knowledge, not checked on an install.
+- F6 Sparkle updates can remove quarantine, so the MA-UPDATES-011 text could state a false cause: fixed in the text only ("may not have checked them; an app that updates itself can also remove it"); a finding must not state an unverified cause.
+- F7 `brew_settings` reports `=0` or `=false` as set, though Homebrew treats them as off: dropped; the design reports only whether a name is set, and no requirement covers the value.
+- F8 skips recorded before section 1 count in the Total line but in no section line: dropped; requirement 7 does not require the lines to add up.
+- F9 Change Checklist items open (ISSUES entry, CHANGELOG, VERSION, this record): fixed in the docs pass after review; VERSION waits for the release decision.
 
 ## Results
 
+2026-11-26, development Mac (Mac mini, macOS 27.2.1, Homebrew 7.0.16), commit `6fa2588`:
+
+- B1 on `master`: `bash -n` clean; ShellCheck 2 SC2010 and 3 SC2012 in `macassay`, and 3 SC2016, 5 SC2034, 2 SC2088, 7 SC2329 in `dev/test.sh`; 267 fixture cases pass.
+- Fixtures: 326 cases pass, R1 to R10 included; 332 after the review fixes. ShellCheck counts match `master` for both files; two new `dev/test.sh` warnings are verified false positives, suppressed inline with the reason.
+- M1 (`--quick --skip-du`, online): 14 status lines and a total line, counts only; header `- Findings: **3 HIGH**, **20 MEDIUM**, …`; no counts below the findings table. Find My `FMMEnabled 0`, Activation Lock Disabled, MA-PLATFORM-019 INFO (no battery). Remote-access tools: none installed or running. Homebrew: 9 outdated formulae, 1 cask, 1 greedy-only cask; three settings not set. MA-APPS-002 ran (7 findings).
+- M2 (`--quick --offline --skip-du`): outdated checks and MA-APPS-002 skipped with skip records; taps list `oven-sh/bun`, `pereljon/tap`, `steipete/tap` with one package each, matching `brew list --full-name`; `cirruslabs/cli` gives MA-UPDATES-009; no cask app lacks quarantine. Run time fell from 1 min 37 s to 23 s, because the Gatekeeper loop no longer runs offline.
+- M3: not run; needs the MacBook with Find My on.
+- M4: the M1 and M2 reports hold no `brew.env` line, setting value, or NVRAM read; secret-related words match only existing labels.
 None yet.
