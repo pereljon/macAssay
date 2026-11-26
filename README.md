@@ -95,3 +95,7 @@ The installer checks the file with `visudo` before and after it writes it. The f
 - Run the fixture tests with `dev/test.sh`. They need no root and no network.
 - The design of the sudo rules is in `dev/features/sudo-rules.md`, and the design of the report sections and checks is in `dev/features/checks-1.3.md`. The project history and verified facts are in `dev/HANDOFF.md`.
 - Release history is in `CHANGELOG.md`, and open work is in `docs/ISSUES.md`.
+
+## License
+
+macassay is released under the MIT License; see `LICENSE`.

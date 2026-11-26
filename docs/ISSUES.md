@@ -78,9 +78,9 @@ Later:
 Do these in the change that gives the repo a public remote.
 
 - [x] Write `SECURITY.md`: report privately through a GitHub security advisory only (no email address); supported versions are the latest release; in scope are sudoers rules and the installer, the audit changing the Mac, secrets reaching the report, and command injection from data read off the audited Mac; findings in an audit's results are not security issues. (resolved 2026-11-24): written.
-- [ ] Turn on private vulnerability reporting in the GitHub repo settings. GitHub offers it only for public repos; the API returned 404 on the private repo on 2026-11-24, so do it right after the repo goes public.
-- [ ] Add a license line (MIT, see `LICENSE`) to `README.md`.
-- [ ] Make `pereljon/macassay` public.
+- [x] Turn on private vulnerability reporting in the GitHub repo settings. GitHub offers it only for public repos; the API returned 404 on the private repo on 2026-11-24, so do it right after the repo goes public. (resolved 2026-11-25): turned on; the API reports `enabled: true`.
+- [x] Add a license line (MIT, see `LICENSE`) to `README.md`. (resolved 2026-11-25): added under `## License`.
+- [x] Make `pereljon/macassay` public. (resolved 2026-11-25): public after a history scan found no reports, emails, serials, MAC addresses, or host names. The user accepted that the commit author name is public.
 
 ## Next steps
 
@@ -94,7 +94,8 @@ Do these in the change that gives the repo a public remote.
 - [x] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. (resolved 2026-11-24): T5 and T7 to T11 pass; merged after the pre-merge review.
 - [h] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
-- [ ] Build and verify the 1.3.1 fixes under Planned.
+- [x] Build and verify the 1.3.1 fixes under Planned. (resolved 2026-11-25): merged and released as v1.3.1.
+- [ ] Run a full 1.3.1 audit on the MacBook to confirm outbound process names and the `httpd` HIGH rating in a real run; the dev Mac cannot show either.
 - [ ] After 1.3.1, write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned.
 
 ## Open questions
