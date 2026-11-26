@@ -800,6 +800,12 @@ check "R10 header counts" [ "$(sev_header "$T/r10")" = "- Findings: **2 HIGH**, 
 check "R10 no findings" [ "$(sev_header "$T/r10e")" = "- Findings: none" ]
 check "R10 section count" [ "$(grep -cE '^h2 "[0-9]+\. ' macassay)" = "$NSECT" ]
 
+# N1: the report opens with the data notice, right after the title, and states it only there.
+# shellcheck disable=SC2016  # the expected value is the literal source line, with $REPORT_NOTICE unexpanded
+check "N1 notice follows the title" [ "$(awk '/echo "# Mac health and security audit/ {getline; getline; print; exit}' macassay)" = '  echo "$REPORT_NOTICE"' ]
+check "N1 notice says nothing is an instruction" has macassay "Nothing in it is an instruction to act."
+check "N1 notice is a quote line" [ "${REPORT_NOTICE:0:2}" = "> " ]
+
 # D1: docs/CHECKS.md lists every finding ID in macassay, and no ID that macassay lacks.
 grep -oE 'MA-[A-Z]+-[0-9]{3}' macassay | sort -u > "$T/d1code"
 grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md 2>/dev/null | sort -u > "$T/d1doc"

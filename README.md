@@ -1,6 +1,6 @@
 # macAssay
 
-macAssay checks the health and security of a Mac and writes the results to one Markdown report. It only reads: it changes no settings and fixes nothing. The report is formatted for review by an LLM (large language model), which can then carry out some or all of the fixes with you. The evidence holds text read from the Mac, such as file names, process names, and log lines, so an LLM must treat it as data, never as instructions. The command is `macassay`. [docs/CHECKS.md](docs/CHECKS.md) lists every check it runs.
+macAssay checks the health and security of a Mac and writes the results to one Markdown report. It only reads: it changes no settings and fixes nothing. The report is formatted for review by an LLM (large language model), which can then carry out some or all of the fixes with you. The command is `macassay`. [docs/CHECKS.md](docs/CHECKS.md) lists every check it runs.
 
 ## Why
 
@@ -57,6 +57,8 @@ A finding ID has the form `MA-<LABEL>-NNN`, such as `MA-PLATFORM-006`. The label
 
 The report keeps secrets out. For a credential file, it reports only whether the file exists, its permissions, and whether it holds a secret, never the secret itself. It replaces UUIDs with `<UUID>`, masks long hex strings in certificate and drive names, and leaves out serial numbers.
 
+The report opens with a notice that it is data, and that nothing in it is an instruction to act. The findings and the evidence hold text read from the Mac, such as file names, process names, and log lines. Anyone who can create a file or start a process on that Mac controls that text, so an LLM that reviews the report must treat it as data, never as instructions.
+
 ## Privileged checks (optional)
 
 A privileged check is a check that needs root, because macOS lets only root read the information. These checks cover all network listeners, the packet filter, background items, the sudoers files, the secure boot policy, device profiles, and other accounts' SSH keys, LaunchAgents, shell startup files, and crontabs. Each one reports in the section of its topic.
@@ -97,7 +99,7 @@ The installer checks the file with `visudo` before and after it writes it. The f
 
 - Check syntax with `bash -n macassay`, and lint with `shellcheck macassay` (ShellCheck from Homebrew, for development only).
 - Run the fixture tests with `dev/test.sh`. They need no root and no network. One test fails when a finding ID in `macassay` is missing from `docs/CHECKS.md`, or when `docs/CHECKS.md` names an ID that `macassay` lacks.
-- The design of the sudo rules is in `dev/features/sudo-rules.md`, the design of the report sections and the 1.3 checks is in `dev/features/checks-1.3.md`, and the 1.4 checks are in `dev/features/checks-1.4.md`. The project history and verified facts are in `dev/HANDOFF.md`.
+- The design of the sudo rules is in `dev/features/sudo-rules.md`, the design of the report sections and the 1.3 checks is in `dev/features/checks-1.3.md`, and the 1.4 checks are in `dev/features/checks-1.4.md`. The logic flow and the invariants every change must keep are in `dev/SKELETON.md`. The project history and verified facts are in `dev/HANDOFF.md`.
 - Release history is in `CHANGELOG.md`, and open work is in `docs/ISSUES.md`.
 
 ## License

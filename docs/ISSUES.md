@@ -117,12 +117,14 @@ Do these in the change that gives the repo a public remote.
 - [x] Build and verify the 1.3.2 fixes under Planned. (resolved 2026-11-26): merged and released as v1.3.2.
 - [ ] On the MacBook, install the sudo rules again and run a full 1.3.2 audit (test M4 in `dev/features/fixes-1.3.2-tests.md`): Recent logins shows no row from the run, and the non-Apple installs list holds only non-Apple installs.
 - [ ] On the MacBook, with Find My on, run a 1.4 audit (test M3 in `dev/features/checks-1.4-tests.md`): `FMMEnabled` reads 1 and Activation Lock reads `Enabled`.
+- [ ] Review the report `macassay-*-20261126-1109.md` in the repo folder (gitignored): a full 1.4 run on the development Mac, made 2026-11-26 from the code before the report notice, with 17 privileged checks run. Check the 1.4 sections, then ask the user before deleting the file (decision E1).
+- [ ] Write `docs/SUDOERS.md`, requested by the user 2026-11-26: the sudoers file in detail, with every command it allows, what each does, why it is read-only, and which check uses it; the `Defaults` line; how the installer checks and undoes it. Generate the command list from `gen_rules` (`./macassay --print-sudoers`), and add a fixture test that every rule command appears in the doc, as D1 does for finding IDs. Link it from `README.md` (Privileged checks) and `docs/CHECKS.md`.
 - [x] Merge `feature/checks-1.4` after the user approves; reviewed 2026-11-26, findings in `dev/features/checks-1.4-tests.md`. (resolved 2026-11-26): merged as `c845e68`; 332 fixture cases pass and ShellCheck matches the baseline on `master`.
 - [x] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. (resolved 2026-11-26): approved by the user; build on `feature/checks-1.4`.
 
 ## Open questions
 
-- [ ] D2. Create `dev/SKELETON.md` with the Key Invariants (read-only, side effects, the network promise, untrusted input, no secrets), and keep `dev/HANDOFF.md` as history? Recommended: yes, as its own change.
+- [x] D2. Create `dev/SKELETON.md` with the Key Invariants and keep `dev/HANDOFF.md` as history? (resolved 2026-11-26): yes, per the user; created, and `AGENTS.md` (Read First) names it.
 - [x] D3. Define the format of `findings.tsv` and `skipped.tsv` in the 1.5 design doc, since every 1.5 format builds from them? (resolved 2026-11-26): yes, per the user; part of the 1.5 design.
 - [x] A3. Keep the run status line and the header counts in 1.4, not 1.5? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
 - [x] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).

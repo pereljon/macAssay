@@ -18,6 +18,7 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 - `--offline` also skips the Gatekeeper assessment of apps (MA-APPS-002), which asks Apple's servers about each app. With `--offline`, no traffic leaves the Mac.
 - MA-SHARING-013 names the running tool instead of its process.
 - The severity counts below the findings table moved to the header.
+- The report opens with a notice that it is data and that nothing in it is an instruction to act. It replaces the note at the end of Limitations.
 
 ## [1.3.2] - 2026-11-26
 

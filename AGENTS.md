@@ -6,7 +6,7 @@
 
 ## Design Principles
 
-- **Read-only:** the script never changes the audited Mac. Every side effect is listed in `dev/HANDOFF.md` (Design constraints), and a new one needs the user's approval.
+- **Read-only:** the script never changes the audited Mac. Every side effect is listed in `dev/SKELETON.md` (Key Invariants), and a new one needs the user's approval.
 - **Stock macOS only:** the script runs under `/bin/bash` 3.2 and calls only tools that ship with macOS. Homebrew checks stay optional.
 - **No secrets in the report:** omit serial numbers and UUIDs. Report key type and comment only from `authorized_keys`. Never copy shell startup file contents.
 - **Least privilege:** privileged checks run only through sudo rules for read-only commands with exact arguments.
@@ -29,7 +29,7 @@
 
 ## Read First
 
-`docs/ISSUES.md`, then `dev/HANDOFF.md`.
+`docs/ISSUES.md`, then `dev/SKELETON.md`. Read `dev/HANDOFF.md` for history and verified facts.
 
 ## Workflow
 
