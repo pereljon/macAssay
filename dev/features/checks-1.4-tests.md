@@ -23,9 +23,9 @@ Two kinds of test cover version 1.4:
 - R3. The MA-SHARING-026 rule: a launchd plist or helper gives MEDIUM; an app alone gives LOW; a tool that also runs gives no MA-SHARING-026.
 - R4. Find My: `FMMEnabled` 0 with a battery gives MA-PLATFORM-019 LOW; 0 without a battery gives INFO; 1 gives nothing; a missing key prints the `default_line` text and gives nothing.
 - R5. Greedy casks: the greedy list minus the plain list keeps only the casks absent from the plain list, and an empty difference prints "none".
-- R6. Taps: fake `brew tap` and `brew list --full-name` output gives each third-party tap with its packages. A tap with no package gives MA-UPDATES-009. Core packages (no slash) do not count.
+- R6. Taps: a fake `Library/Taps` folder and fake receipts give each third-party tap with its packages. A tap with no package gives MA-UPDATES-009. Core packages (no slash) do not count.
 - R7. Homebrew settings: fake `brew.env` files with the three names, a proxy line holding `user:secret@`, and a comment. The report says which names are set and where. No line text, and no `secret`, appears in the output.
-- R8. Cask quarantine: the JXA script on a fixture JSON prints token and app names. An app name holding `/` or `..`, or not ending in `.app`, is skipped. A test app with no quarantine attribute gives one MA-UPDATES-011 finding that lists it.
+- R8. Cask quarantine: the JXA script on fixture formula and cask receipts prints kind, name, tap, and app names; an unreadable or malformed receipt is skipped. An app name holding `/` or `..`, or not ending in `.app`, is skipped. A test app with no quarantine attribute gives one MA-UPDATES-011 finding that lists it.
 - R9. Status line: a fake section that adds two findings (MEDIUM, LOW) and one skip prints `[3/14] TITLE: 2 findings (1 MEDIUM, 1 LOW), 1 check skipped, N s`. A section with none prints `0 findings` and `0 checks skipped`. The line holds no finding text.
 - R10. Header and section count:
   - The header line reads `- Findings: **2 HIGH**, **1 MEDIUM**, 3 LOW, 0 INFO` for a fixture `findings.tsv`, and `- Findings: none` for an empty one.

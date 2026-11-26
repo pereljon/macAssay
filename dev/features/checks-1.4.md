@@ -45,8 +45,10 @@ Checked on the development Mac (a Mac mini, M4 Pro), 2026-11-26, as the user wit
 - `/Library/Preferences/com.apple.FindMyMac.plist` is readable and holds one key, `FMMEnabled = 0`. The two sources agree on this Mac.
 - `brew outdated --json=v2` takes 0.8 s, `brew outdated --quiet --cask --greedy` 0.3 s, `brew info --json=v2 --installed` 0.6 s, and `brew list --formula --full-name` 0.3 s, all with auto-update off.
 - `brew tap` lists only third-party taps, because `homebrew/core` and `homebrew/cask` come from the API: `cirruslabs/cli`, `oven-sh/bun`, `pereljon/tap`, `steipete/tap` here.
-- `brew list --formula --full-name` prints a tap-qualified name, such as `oven-sh/bun/bun`, for each package outside `homebrew/core`. `brew info --json=v2 --installed` left out `bun` here: it lists 200 formulae, while `brew list` lists 201. So the tap of each package comes from `brew list --full-name`.
+- `brew list --formula --full-name` prints a tap-qualified name, such as `oven-sh/bun/bun`, for each package outside `homebrew/core`. `brew info --json=v2 --installed` left out `bun` here: it lists 200 formulae, while `brew list` lists 201. So the check does not use `brew info`.
 - `osascript -l JavaScript` parses the 1 MB `brew info` JSON with `JSON.parse` in 0.06 s. It returns each cask's token, tap, app names, and `auto_updates` value. `JSON.parse` does not run code from its input.
+- Each cask's `Caskroom/TOKEN/.metadata/INSTALL_RECEIPT.json` lists its app names under `uninstall_artifacts` (`Docker.app`, `OpenCode.app`). A cask with no app, such as `codex`, has none. The fixed JXA script reads all five receipts here in 0.08 s, and prints nothing for a missing file or no argument.
+- Formula receipts, `Cellar/NAME/VERSION/INSTALL_RECEIPT.json`, hold `source.tap`. One JXA pass over all 201 formula and 5 cask receipts takes 0.13 s and gives the same third-party packages as `brew list --full-name`: `bun` (oven-sh/bun), `claude-now-context` (pereljon/tap), `remindctl` (steipete/tap). `Library/Taps` holds four taps; `cirruslabs/cli` has no installed package.
 - `plutil -extract formulae raw` reads JSON input and prints the array length (200).
 - Cask apps installed by Homebrew carry `com.apple.quarantine` (Docker.app, OpenCode.app).
 - Homebrew 7.0.16 (`bin/brew`, `export_homebrew_env_file`) reads `brew.env` from `/etc/homebrew/brew.env`, then `$HOMEBREW_PREFIX/etc/homebrew/brew.env`, then `$XDG_CONFIG_HOME/homebrew/brew.env` or `~/.homebrew/brew.env`. A line loads only when it starts with `HOMEBREW_`, `SUDO_ASKPASS=`, or a proxy variable. Proxy lines can hold a password, so the report never copies a line from these files.
@@ -141,9 +143,9 @@ The first `brew outdated` call may run Homebrew's auto-update, as 1.3 does. The 
 
 ### Taps and settings
 
-These read only local files, so they run under `--offline` too:
-1. `brew tap` lists third-party taps.
-2. `brew list --formula --full-name` and `brew list --cask --full-name` give the packages from each third-party tap: a name with two slashes holds its tap.
+These read only local files and run no `brew` command, so they run under `--offline` too and never trigger a download:
+1. The folders `PREFIX/Library/Taps/USER/homebrew-REPO` give the installed taps, named `USER/REPO`. Taps under `homebrew/` are Homebrew's own and do not count.
+2. The same JXA script, `BREW_RECEIPTS_JS`, reads each formula receipt (`PREFIX/Cellar/NAME/VERSION/INSTALL_RECEIPT.json`) and each cask receipt, and prints the kind, name, and `source.tap` of each package. It replaces `brew list --full-name` and `brew tap`.
 3. The report lists each third-party tap with its packages.
 4. New, MA-UPDATES-009, LOW: a third-party tap has no installed package. Its formula code still loads on `brew update`, for no use (register I018).
 5. New, MA-UPDATES-010, INFO: installed packages come from third-party taps, with the count per tap.
@@ -153,8 +155,8 @@ The audit's environment is the shell that started it. In remote mode, it is the 
 
 ### Cask quarantine
 
-1. `brew info --json=v2 --installed` writes JSON to the temporary folder.
-2. A fixed JXA script (`osascript -l JavaScript`) prints each cask's token and app names. The script text is a constant in `macassay`.
+1. A fixed JXA script (`osascript -l JavaScript`) reads each cask's install receipt, `PREFIX/Caskroom/TOKEN/.metadata/INSTALL_RECEIPT.json`, where PREFIX is the Homebrew prefix. It prints the token and the name of each `app` artifact under `uninstall_artifacts`, or the artifact's `target` when it has one. The script text is a constant in `macassay`, `BREW_RECEIPTS_JS`. It parses with `JSON.parse`, which runs no code from its input, and skips a file it cannot read or parse.
+2. The check runs no `brew` command, so it never triggers a download. `brew info` can download Homebrew's API data when its local copy is missing or stale (`Library/Homebrew/api.rb`, `skip_download?`), so it is not used.
 3. Each app name must end in `.app` and contain no `/`. The check then reads `xattr -p com.apple.quarantine` on `/Applications/NAME` and `~/Applications/NAME`.
 4. New, MA-UPDATES-011, LOW: one finding that lists each cask app with no quarantine attribute. One fix covers them all (1.3 rule on collapsing findings).
 
@@ -185,7 +187,7 @@ The line shows all four severities, including a count of 0. With no findings, th
 
 ## Side effects
 
-No new side effect. `osascript` runs a fixed script that reads a file in the temporary folder. The `brew` calls are the read-only commands listed above. `brew outdated` keeps its existing, listed auto-update.
+No new side effect. `osascript` runs a fixed script that reads the cask install receipts. The `brew` calls are the read-only commands listed above. `brew outdated` keeps its existing, listed auto-update.
 
 ## Out of scope
 
