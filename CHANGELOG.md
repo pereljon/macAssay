@@ -2,6 +2,12 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
+## Unreleased
+
+### Added
+
+- `docs/SUDOERS.md` explains each command the sudo rules allow, why it cannot change the Mac, and which check uses it, plus the `Defaults` line, the grant line, and the installer. Fixture tests keep its example and its command table in step with `gen_rules`.
+
 ## [1.4.0] - 2026-11-26
 
 The sudo rules are the same as in 1.3.2; an upgrade needs no new install of them.

@@ -812,5 +812,13 @@ grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md 2>/dev/null | sort -u > "$T/d1doc"
 check "D1 every finding ID is in docs/CHECKS.md" [ -z "$(comm -23 "$T/d1code" "$T/d1doc")" ]
 check "D1 docs/CHECKS.md names no unknown ID" [ -z "$(comm -13 "$T/d1code" "$T/d1doc")" ]
 
+# S1: the example in docs/SUDOERS.md matches gen_rules, apart from the version line.
+printf '%s\n' "$ACCTS" | gen_rules alice arm64 2>/dev/null > "$T/s1gen"
+awk '/^<!-- sudoers-example/ {f = 1; next} f && /^```text$/ {p = 1; next} p && /^```$/ {exit} p' docs/SUDOERS.md > "$T/s1doc"
+check "S1 docs/SUDOERS.md example matches gen_rules" [ "$(tail -n +2 "$T/s1doc")" = "$(tail -n +2 "$T/s1gen")" ]
+# S2: the command table in docs/SUDOERS.md has a row for every rule, with HOME and FILE for the per-Mac parts.
+grep '^    /' "$T/s1gen" | sed -e 's/, \\$//' -e 's#/Users/bob#HOME#g' -e 's#/var/root#HOME#g' -e 's#/etc/sudoers\.d/[A-Za-z0-9_-]*#/etc/sudoers.d/FILE#' -e 's/^ *//' | sort -u > "$T/s2cmds"
+check "S2 every rule command is in docs/SUDOERS.md" [ -z "$(while IFS= read -r c; do grep -qF "| \`$c\` |" docs/SUDOERS.md || echo "$c"; done < "$T/s2cmds")" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

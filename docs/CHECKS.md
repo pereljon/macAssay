@@ -11,7 +11,7 @@ A check is a test that the script runs. A finding is a judged result of a check,
 | `--quick` | Skips the 7-day unified-log searches in section 14: XProtect messages (`MA-EVENTS-001`) and SSH failures (`MA-EVENTS-002`). |
 | `--offline` | Skips three checks that contact Apple or Homebrew: `softwareupdate -l` (`MA-UPDATES-001`), Homebrew outdated packages (`MA-UPDATES-002`), and the Gatekeeper assessment of apps (`MA-APPS-002`). |
 | `--skip-du` | Skips the disk usage scans in section 1: the home folder scan and the top-level usage scan. |
-| sudo rules (privileged checks) | Enable the checks marked "sudo rules". Without `/etc/sudoers.d/macassay`, each of them records a skip. The rules cover these read-only commands with exact arguments: `lsof -nP -iTCP -sTCP:LISTEN`, `lsof -nP -d txt -Fpn`, `pfctl -s info`, `pfctl -s rules`, `sfltool dumpbtm`, `du -h -d 1 -x /Users`, `du -sh -x /Library /Applications /opt /private/var`, `profiles list -type configuration`, `bputil -d` (Apple silicon only), `cat /etc/sudoers`, `cat` of each file in `/etc/sudoers.d`, `ls -ln /var/at/tabs`, and, for each other account, `ssh-keygen -l -f` on its `authorized_keys`, `ls -ln` on its LaunchAgents folder, and `ls -lnd` on its shell startup files. |
+| sudo rules (privileged checks) | Enable the checks marked "sudo rules". Without `/etc/sudoers.d/macassay`, each of them records a skip. [SUDOERS.md](SUDOERS.md) lists each command the rules allow and the check that uses it. |
 
 Each skipped check is listed under Limitations in the report, with the reason. A sudo rule that sudo refuses counts as a skip too.
 
