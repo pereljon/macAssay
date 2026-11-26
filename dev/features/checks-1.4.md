@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: building
-status: approved by the user 2026-11-26 (A6); built and reviewed on feature/checks-1.4, not merged
+status: approved by the user 2026-11-26 (A6); merged into master 2026-11-26 (c845e68), not released
 ---
 
 # Installed remote access, Find My, Homebrew detail, and run status (version 1.4)

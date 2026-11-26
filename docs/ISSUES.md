@@ -62,7 +62,7 @@ Version 1.3.2 (design `dev/features/fixes-1.3.2.md`, tests `dev/features/fixes-1
 - [x] Another account's authorized_keys and LaunchAgents blocks print `No such file or directory` error text instead of "none": `priv` passes stderr into the block (`macassay:1102`). (resolved 2026-11-26): `drop_enoent` prints "none" when the whole output is one missing-file error; fixture Q6 and a quick run.
 - [x] A bold block title that follows a list line with no blank line renders as part of that list item (8 places in the MacBook report, such as `- Swap:` then `**Memory pressure**`). (resolved 2026-11-26): `block`, `run`, and the Account heading write a blank line first; fixture Q7 and a quick run.
 
-Version 1.4 (design `dev/features/checks-1.4.md`, tests `dev/features/checks-1.4-tests.md`; built and reviewed 2026-11-26 on `feature/checks-1.4`, not merged):
+Version 1.4 (design `dev/features/checks-1.4.md`, tests `dev/features/checks-1.4-tests.md`; merged into `master` 2026-11-26, not released):
 
 - [x] Remote-access tools that are installed, not only running. MA-SHARING-013 (`remote_support_names`, `macassay:459`) matches running processes only; a run missed an installed Chrome Remote Desktop host. Look in `/Applications`, `~/Applications`, launchd plists, and privileged helpers. Cover TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop, Splashtop, ConnectWise ScreenConnect, BeyondTrust, LogMeIn, GoTo Resolve, RealVNC, NoMachine, Parsec, Zoho Assist, Jump Desktop, and Screens Connect. Verify each tool's bundle, process, and launchd names in its docs; the list comes from training knowledge. Add the missing names to the running-process match too. (resolved 2026-11-26): built on `feature/checks-1.4` (MA-SHARING-026); names from training knowledge and web research, none checked on an install (`dev/features/checks-1.4-tests.md`, Sources).
 - [x] Find My Mac and Activation Lock status. `system_profiler SPHardwareDataType` prints "Activation Lock Status". Find a source for the Find My state that prints no token: the `fmm-mobileme-token-FMM` NVRAM variable holds a secret and must not be read. (resolved 2026-11-26): built on `feature/checks-1.4` from `/Library/Preferences/com.apple.FindMyMac` `FMMEnabled` (MA-PLATFORM-019); the "on" values wait for test M3 on the MacBook.
@@ -79,6 +79,11 @@ Version 1.5 (needs a design doc and test plan; split from 1.4 on 2026-11-26):
   - Escape text from the audited Mac correctly in JSON with stock tools only. Verify `plutil -convert json` and the presence of `jq` on the oldest supported macOS. JXA (`osascript -l JavaScript`) parses JSON with `JSON.parse` (verified 2026-11-26 in the 1.4 Homebrew work) and may also write it with `JSON.stringify`.
 - [ ] Compare two runs: `--compare OLD.json` reports new and resolved findings by their stable IDs.
 - [ ] CSV of the findings table, and an exit status by severity (for example 2 when a HIGH finding exists) for scheduled runs.
+- [ ] Report ideas from the register for the 1.5 design (decision A10): missing evidence is INFO, never a pass (I079); a "managed" result for settings an MDM or DDM sets (I081); an accepted-risk list (I078); guidance text for each finding (I080).
+
+Version 1.6 (needs a design doc and test plan; decided 2026-11-26, decision A10): new checks from `dev/prior-art-ideas.md`. Candidates, ranked by exposure; the 1.6 design picks the final list:
+
+- [ ] I030 Tailscale Funnel or Serve; I031 local AI servers and containers on all interfaces; I017 SSH `authorized_keys` options; I019 XProtect scans off; I024 password and lockout policy; I025 and I068 signing of privileged helpers and launch targets; I020 AI-agent hooks and MCP servers; I022 mounted network shares; I039 macOS release without security updates.
 
 Later:
 
@@ -106,13 +111,13 @@ Do these in the change that gives the repo a public remote.
 - [x] Answer the code review questions CR-4, CR-5, and CR-11 (`dev/features/sudo-rules-tests.md`), and whether to read SSH settings with `sshd -G` instead of the `sshd -T` rule. (resolved 2026-11-24): all four approved and built; see `dev/features/sudo-rules.md` (Decisions).
 - [x] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. (resolved 2026-11-24): T5 and T7 to T11 pass; merged after the pre-merge review.
 - [h] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
-- [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
+- [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan. Run it after 1.5, on the 10 to 15 read-only audit tools at the top of the queue first (decision A11, 2026-11-26).
 - [x] Build and verify the 1.3.1 fixes under Planned. (resolved 2026-11-25): merged and released as v1.3.1.
 - [x] Run a full 1.3.1 audit on the MacBook to confirm outbound process names and the `httpd` HIGH rating in a real run; the dev Mac cannot show either. (resolved 2026-11-25): the MacBook report confirms both and the other eight 1.3.1 fixes; the `sfltool` block still truncates (399 lines), as expected. New bugs are listed under Version 1.3.2.
 - [x] Build and verify the 1.3.2 fixes under Planned. (resolved 2026-11-26): merged and released as v1.3.2.
 - [ ] On the MacBook, install the sudo rules again and run a full 1.3.2 audit (test M4 in `dev/features/fixes-1.3.2-tests.md`): Recent logins shows no row from the run, and the non-Apple installs list holds only non-Apple installs.
 - [ ] On the MacBook, with Find My on, run a 1.4 audit (test M3 in `dev/features/checks-1.4-tests.md`): `FMMEnabled` reads 1 and Activation Lock reads `Enabled`.
-- [ ] Merge `feature/checks-1.4` after the user approves; reviewed 2026-11-26, findings in `dev/features/checks-1.4-tests.md`.
+- [x] Merge `feature/checks-1.4` after the user approves; reviewed 2026-11-26, findings in `dev/features/checks-1.4-tests.md`. (resolved 2026-11-26): merged as `c845e68`; 332 fixture cases pass and ShellCheck matches the baseline on `master`.
 - [x] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. (resolved 2026-11-26): approved by the user; build on `feature/checks-1.4`.
 
 ## Open questions
@@ -124,6 +129,10 @@ Do these in the change that gives the repo a public remote.
 - [x] A7. Write the network promise into `README.md` and `dev/HANDOFF.md`: without `--offline`, the audit contacts only Apple's and Homebrew's update services; with `--offline`, no traffic leaves the Mac (remote mode aside)? Recommended: yes; it matches the current code and gives reviewers a rule to check new checks against. (resolved 2026-11-26): yes, per the user, after the Gatekeeper fix (A9); written into `README.md` and `dev/HANDOFF.md`.
 - [x] A8. Read Homebrew taps and cask apps from local receipts instead of `brew list`, `brew tap`, and `brew info`? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
 - [x] A9. Skip MA-APPS-002 under `--offline` and list the Gatekeeper lookup as a side effect, in 1.4? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
+- [x] A10. New register checks in their own release, or in 1.5? (resolved 2026-11-26): their own release, 1.6, per the user; the four report ideas go into the 1.5 design.
+- [x] A11. Run the scout on the top of the review queue? (resolved 2026-11-26): yes, after 1.5, per the user.
+- [x] A12. Update the stale `planned 1.3` rows in the register to `adopted 1.3`? (resolved 2026-11-26): yes, per the user; done, and the two `planned 1.2` rows now read `adopted 1.2` (C3).
+- [x] A13. Merge `feature/checks-1.4` before test M3? (resolved 2026-11-26): yes, per the user; merged as `c845e68`.
 - [x] Should the report and the 1.4 run status line use emojis? (resolved 2026-11-26): no, per the user; see Decisions.
 - [x] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? (resolved 2026-11-26): yes, per the user; both deleted.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
@@ -148,3 +157,5 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-25: Bug fixes from the review of the 1.3.1 MacBook run go into a 1.3.2 patch, built and verified before 1.4 work starts.
 - 2026-11-26: The 1.4 list splits in two: 1.4 takes the new checks, and 1.5 takes report formats, `--compare`, CSV, and exit status by severity. Rejected: one release, because the formats work is larger and needs its own review. Conviction: `ok`.
 - 2026-11-26: No emojis in the report or the run status line. Severity colors come with the 1.5 HTML format, through CSS. Rejected: an emoji before each severity word. Conviction: `ok`.
+- 2026-11-26: New checks from the prior-art register go into their own release, 1.6. The register's report ideas I078 to I081 go into the 1.5 design. Rejected: adding the checks to 1.5, which would mix the formats work with new checks. Conviction: `ok`.
+- 2026-11-26: The scout reviews the top of the review queue after 1.5, starting with the read-only audit tools. Rejected: a new discovery search, two days after the last one. Conviction: `ok`.
