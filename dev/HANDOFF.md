@@ -25,6 +25,8 @@ The script started as a scripted version of a manual review of the user's Mac mi
 - macOS Local Network privacy blocks agent-launched Python, Node and Homebrew tools from reaching LAN hosts. Use `/usr/bin/curl`, `/usr/bin/ssh` and `/usr/bin/nc` for any LAN access.
 - Remote mode base64-encodes the script and runs it inside the SSH command: `ssh host "bash -c \"\$(printf %s 'B64' | base64 -D)\" mac-audit --stdout ..."`. Nothing is copied to the remote disk in version 1.1. The report is saved on the local Mac.
 - Side effects of a run: a temporary folder `/tmp/macassay.XXXXXX` (`/tmp/mac-audit.XXXXXX` in 1.1) that is removed on exit; `softwareupdate -l` refreshes Apple's update catalog cache (skipped with `--offline`); `brew outdated` may first run Homebrew's auto-update, at most once a day by default, which updates Homebrew and its package lists but no installed package (skipped with `--offline`); one HTTP GET to each LAN listener; `nc -z` connect tests to the sharing ports; one SSH connection as `nobody` to 127.0.0.1, which sshd logs. From version 1.2: with the macassay sudo rules installed, sudo logs each privileged command; without them the script makes no sudo call. The installer, run only by the user, writes `/etc/sudoers.d/macassay`; a remote install logs the script as the sudo command line on the remote Mac. From version 1.3.2: the rules turn off `set_utmp`, so a run writes no login record; the installer, run in a terminal, writes two for root (its folder check and its closing check that the rules work), besides the one for the user's own `sudo` command. Because sudo applies `Defaults!MACASSAY` to a command whichever rule allows it, an admin who types one of the exact rule commands writes no login record either. With rules from an older version, each privileged check in a terminal writes a login record, which `last` lists.
+- From version 1.4: Gatekeeper assessment (`spctl -a -t exec` on each app, MA-APPS-002) asks Apple's servers about each app; this side effect existed since 1.1 unlisted (`dev/features/checks-1.4.md`, Side effects). `--offline` skips it.
+- Network promise (decisions A7 and A9, 2026-11-26, `dev/features/checks-1.4.md`): without `--offline`, the audit contacts only Apple's update and Gatekeeper services and Homebrew's update service. With `--offline`, no traffic leaves the Mac; the HTTP GET, `nc -z`, and SSH probes go to the Mac's own addresses. Remote mode adds the SSH connection to the remote Mac. A check that breaks this promise needs the user's approval.
 - Keep secrets out of the report. Serial numbers and UUIDs are omitted. `authorized_keys` shows key type and comment only. Shell startup files are only searched for suspicious patterns; their contents are never copied into the report.
 
 ## Current state (version 1.1)
@@ -35,7 +37,7 @@ The script started as a scripted version of a manual review of the user's Mac mi
 |---|---|
 | `-o FILE` | Report path (default `./mac-audit-<host>-<date>.md`) |
 | `--quick` | Skip the 7-day unified-log searches |
-| `--offline` | Skip `softwareupdate -l` and `brew outdated` |
+| `--offline` | Skip `softwareupdate -l`, `brew outdated`, and (from 1.4) the Gatekeeper assessment of apps |
 | `--skip-du` | Skip the disk-usage scan |
 | `--stdout` | Write the report to standard output |
 | `--host`, `--user`, `--key`, `--port`, `--known-hosts` | Remote mode over SSH (`BatchMode=yes`, `ConnectTimeout=10`; `--key` adds `IdentitiesOnly=yes`) |

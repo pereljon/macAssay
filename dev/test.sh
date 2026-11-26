@@ -728,6 +728,37 @@ check "R5 greedy only" [ "$(greedy_only $'a\nb' $'a\nb\nc\nd' | paste -sd, -)" =
 check "R5 empty plain list" [ "$(greedy_only '' $'c' | paste -sd, -)" = "c" ]
 check "R5 no difference" [ -z "$(greedy_only $'a' $'a')" ]
 
+# R6 and R8: Homebrew taps and cask apps from a fake prefix with receipts; no brew command runs.
+BP="$T/brew"; mkdir -p "$BP/Library/Taps/acme/homebrew-tools" "$BP/Library/Taps/idle/homebrew-tap" "$BP/Library/Taps/homebrew/homebrew-core" \
+  "$BP/Cellar/jq/1.7" "$BP/Cellar/widget/2.0" "$BP/Cellar/widget/1.0" "$BP/Cellar/broken/1" \
+  "$BP/Caskroom/goodapp/.metadata" "$BP/Caskroom/rawapp/.metadata" "$BP/Caskroom/evil/.metadata" "$BP/Caskroom/cli/.metadata" "$T/apps"
+printf '{"source":{"tap":"homebrew/core"}}' > "$BP/Cellar/jq/1.7/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"}}' > "$BP/Cellar/widget/2.0/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"}}' > "$BP/Cellar/widget/1.0/INSTALL_RECEIPT.json"
+printf '{"source":' > "$BP/Cellar/broken/1/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["Good.app"]},{"zap":[]}]}' > "$BP/Caskroom/goodapp/.metadata/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"acme/tools"},"uninstall_artifacts":[{"app":["Raw.app",{"target":"Raw Renamed.app"}]}]}' > "$BP/Caskroom/rawapp/.metadata/INSTALL_RECEIPT.json"
+printf '{"source":{"tap":"homebrew/cask"},"uninstall_artifacts":[{"app":["../../etc"]},{"app":["a/b.app"]},{"app":[".hidden.app"]},{"app":["x\\tq.app"]}]}' > "$BP/Caskroom/evil/.metadata/INSTALL_RECEIPT.json"
+printf '{"uninstall_artifacts":[{"binary":["cli"]}]}' > "$BP/Caskroom/cli/.metadata/INSTALL_RECEIPT.json"
+mkdir -p "$T/apps/Good.app" "$T/apps/Raw Renamed.app"; xattr -w com.apple.quarantine '0081;00000000;Test;' "$T/apps/Good.app"
+brew_receipts "$BP" > "$T/r6rec"; brew_taps "$BP" > "$T/r6taps"
+check "R6 receipts skip a broken file" hasnt "$T/r6rec" "broken"
+check "R6 cask app target used" has "$T/r6rec" $'cask\trawapp\tacme/tools\tRaw Renamed.app'
+check "R6 cask with no tap and no app" has "$T/r6rec" $'cask\tcli\t-\t-'
+check "R6 tab in a name cannot add a field" [ "$(awk -F'\t' 'NF != 4' "$T/r6rec" | wc -l | tr -d ' ')" = 0 ]
+check "R6 taps exclude homebrew" [ "$(paste -sd, "$T/r6taps")" = "acme/tools,idle/tap" ]
+tap_packages "$(cat "$T/r6taps")" < "$T/r6rec" > "$T/r6tp"
+check "R6 tap packages, each once" has "$T/r6tp" $'acme/tools\trawapp, widget'
+check "R6 idle tap listed empty" grep -qx $'idle/tap\t' "$T/r6tp"
+check "R6 core packages not listed" hasnt "$T/r6tp" "jq"
+tap_findings < "$T/r6tp" > "$T/r6f"
+check "R6 idle tap gives MA-UPDATES-009" grep -q $'^MA-UPDATES-009\tLOW\t.*idle/tap' "$T/r6f"
+check "R6 tap packages give one MA-UPDATES-010" [ "$(grep -c $'^MA-UPDATES-010\tINFO\t2 installed' "$T/r6f")" = 1 ]
+cask_unquarantined "$T/apps" < "$T/r6rec" > "$T/r8"
+check "R8 app without quarantine listed" has "$T/r8" "$T/apps/Raw Renamed.app (rawapp)"
+check "R8 quarantined app not listed" hasnt "$T/r8" "Good.app"
+check "R8 unsafe names skipped" [ "$(grep -c . "$T/r8")" = 1 ]
+
 # R7: Homebrew settings by name and source only; no line text or value reaches the output.
 printf '%s\n' '# HOMEBREW_NO_INSECURE_REDIRECT=1' 'https_proxy=http://user:secret@proxy:8080' '  HOMEBREW_VERIFY_ATTESTATIONS=1' > "$T/r7a"
 printf '%s\n' 'HOMEBREW_NO_VERIFY_ATTESTATIONS=' 'HOMEBREW_GITHUB_API_TOKEN=secret' > "$T/r7b"

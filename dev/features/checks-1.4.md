@@ -28,6 +28,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.4), a user decisio
 8. The report header shows the per-severity counts, with HIGH and MEDIUM in bold. The counts below the findings table go away. Source: `docs/ISSUES.md`.
 9. No emojis in the report or on stderr. Source: user decision B1, 2026-11-26.
 10. No new sudo rule, no new side effect, stock tools under `/bin/bash` 3.2 only. Source: `AGENTS.md` (Design Principles).
+11. Without `--offline`, the audit contacts only Apple's update and Gatekeeper services and Homebrew's update service. With `--offline`, no traffic leaves the Mac. Source: user decisions A7 and A9, 2026-11-26.
 
 ## Decisions
 
@@ -36,6 +37,8 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.4), a user decisio
 - 2026-11-26: The run status line and the header counts stay in 1.4 (A3). Neither depends on the 1.5 data export, and both are small. Rejected: moving them to 1.5. Conviction: `ok`.
 - 2026-11-26 (A4): `HOMEBREW_CASK_OPTS` is not checked for `--no-quarantine`. Homebrew 7.0.16 has no such option: `cask/download.rb` always quarantines a cask download, and `env_config.rb` lists the options that `HOMEBREW_CASK_OPTS` supports, which exclude it. The cask quarantine check (requirement 6) still finds apps installed by an older Homebrew with the option. Rejected: checking the setting anyway. Conviction: `ok`.
 - 2026-11-26 (A5): no notarization check for cask apps. MA-APPS-002 already runs `spctl -a -t exec` on every app in `/Applications` and `~/Applications`, where casks install apps, and reports each rejected app as unsigned, ad hoc, or not notarized. `spctl --assess` can contact Apple's servers (see the Gatekeeper bug in `docs/ISSUES.md`). A stapled-ticket-only check (`stapler validate`) reports many notarized apps as not notarized. `codesign -dv` shows no notarization line for Docker.app, which is notarized. The cask quarantine check already covers the risky case: a quarantined app passes Gatekeeper on first launch. Rejected: an online check that `--offline` skips. Conviction: `ok`.
+- 2026-11-26 (A8): Homebrew taps, the tap of each package, and cask app names come from local files: `Library/Taps` and the install receipts. Rejected: `brew tap`, `brew list --full-name`, and `brew info`, because `brew info` can download API data when its local copy is stale, which breaks `--offline`. Conviction: `ok`.
+- 2026-11-26 (A7, A9): the network promise in requirement 11 is written into `README.md` and `dev/HANDOFF.md`. MA-APPS-002 (`spctl` on each app) sends traffic to Apple, so `--offline` skips it with a skip record, and the Gatekeeper lookup is listed as a side effect. Rejected: keeping MA-APPS-002 under `--offline` and writing the promise with an exception. Conviction: `ok`.
 
 ## Verified facts
 
@@ -187,7 +190,9 @@ The line shows all four severities, including a count of 0. With no findings, th
 
 ## Side effects
 
-No new side effect. `osascript` runs a fixed script that reads the cask install receipts. The `brew` calls are the read-only commands listed above. `brew outdated` keeps its existing, listed auto-update.
+Gatekeeper assessment (MA-APPS-002, `spctl -a -t exec` on each app) contacts Apple: during one pass on the development Mac, `syspolicyd` received about 300 KB and sent about 34 KB (`nettop` byte counters, 2026-11-26). This side effect exists since 1.1 and was not listed. Version 1.4 lists it and skips the check under `--offline`.
+
+Otherwise no new side effect. `osascript` runs a fixed script that reads the cask install receipts. The `brew` calls are the read-only commands listed above. `brew outdated` keeps its existing, listed auto-update.
 
 ## Out of scope
 

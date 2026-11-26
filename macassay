@@ -4,14 +4,16 @@
 # The audit makes no changes. It reads settings, logs and process state, and sends one
 # HTTP GET to each of this Mac's own network listeners to see which ones ask for a login.
 # Side effects: a temporary folder under /tmp, removed on exit; `softwareupdate -l` refreshes
-# Apple's update catalog and `brew outdated` may run Homebrew's auto-update (--offline skips
-# both); one SSH connection as `nobody` to 127.0.0.1; with the sudo rules installed, sudo
+# Apple's update catalog, `brew outdated` may run Homebrew's auto-update, and Gatekeeper asks
+# Apple about each app (--offline skips all three, so no traffic leaves the Mac); one SSH
+# connection as `nobody` to 127.0.0.1; with the sudo rules installed, sudo
 # logs each privileged command.
 #
 # Usage: macassay [options]
 #   -o FILE          write the report to FILE (default: ./macassay-<host>-<date>.md)
 #   --quick          skip the slow unified-log searches (XProtect, SSH failures)
-#   --offline        skip softwareupdate and Homebrew update checks
+#   --offline        skip the checks that contact Apple or Homebrew: softwareupdate,
+#                    Homebrew outdated packages, and Gatekeeper assessment of apps
 #   --skip-du        skip the disk usage scans
 #   --stdout         write the report to standard output instead of a file
 #   -h, --help       print this help
@@ -568,6 +570,43 @@ brew_settings() { local v w f
     for f in "$@"; do grep -qE "^[[:space:]]*$v=." "$f" 2>/dev/null && w="${w:+$w, }$f"; done
     if [ -n "$w" ]; then echo "- $v: set ($w)"; else echo "- $v: not set"; fi
   done; }
+# A fixed JXA script. Arguments: Homebrew install receipts. Prints KIND<TAB>NAME<TAB>TAP<TAB>APP, one line per cask app, "-" for none.
+# JSON.parse runs no code from its input. A receipt that cannot be read or parsed is skipped.
+BREW_RECEIPTS_JS='function run(argv) {
+  var out = [], c = function (s) { return String(s).replace(/[\t\r\n]/g, " ") || "-"; };
+  argv.forEach(function (f) {
+    try {
+      var d = JSON.parse($.NSString.stringWithContentsOfFileEncodingError(f, $.NSUTF8StringEncoding, null).js);
+      var p = f.split("/"), kind = p[p.length - 2] === ".metadata" ? "cask" : "formula", name = p[p.length - 3];
+      var tap = (d.source && typeof d.source.tap === "string") ? d.source.tap : "", apps = [];
+      (d.uninstall_artifacts || []).forEach(function (a) {
+        var x = a && a.app;
+        if (Array.isArray(x) && typeof x[0] === "string") apps.push((x[1] && typeof x[1].target === "string") ? x[1].target : x[0]);
+      });
+      if (apps.length === 0) apps.push("");
+      apps.forEach(function (a) { out.push([kind, c(name), c(tap), c(a)].join("\t")); });
+    } catch (e) {}
+  });
+  return out.join("\n");
+}'
+# brew_receipts PREFIX; reads every formula and cask receipt under the Homebrew prefix. Runs no brew command, so it never downloads.
+brew_receipts() { osascript -l JavaScript -e "$BREW_RECEIPTS_JS" "$1"/Cellar/*/*/INSTALL_RECEIPT.json "$1"/Caskroom/*/.metadata/INSTALL_RECEIPT.json 2>/dev/null | grep .; }
+# brew_taps PREFIX; prints USER/REPO for each installed tap outside homebrew/.
+brew_taps() { find "$1/Library/Taps" -mindepth 2 -maxdepth 2 -type d -name 'homebrew-*' 2>/dev/null | awk -F/ '{u = $(NF-1); r = $NF; sub(/^homebrew-/, "", r); if (u != "homebrew") print u "/" r}' | sort -u; }
+# tap_packages TAPS; stdin: brew_receipts output. Prints TAP<TAB>PACKAGES for each third-party tap; a tap with no installed package has an empty list.
+tap_packages() { sort -t "$(printf '\t')" -k2,2 | awk -F'\t' -v taps="$(printf '%s' "$1" | tr '\n' ' ')" '
+  $3 != "-" && $3 !~ /^homebrew\// && !seen[$3 SUBSEP $2]++ {p[$3] = p[$3] (p[$3] != "" ? ", " : "") $2; t[$3] = 1}
+  END {n = split(taps, a, " "); for (i = 1; i <= n; i++) t[a[i]] = 1; for (k in t) print k "\t" p[k]}' | sort; }
+# tap_findings; stdin: tap_packages output. Prints ID<TAB>SEVERITY<TAB>TEXT.
+tap_findings() { awk -F'\t' '$2 == "" {print "MA-UPDATES-009\tLOW\tThe third-party Homebrew tap " $1 " has no installed package. It updates on every brew update but serves nothing."}
+  $2 != "" {n = split($2, x, ", "); c += n; l = l (l != "" ? ", " : "") $1 " (" n ")"}
+  END {if (c) print "MA-UPDATES-010\tINFO\t" c " installed Homebrew package(s) come from third-party taps: " l}'; }
+# cask_unquarantined DIR...; stdin: brew_receipts output. Prints DIR/APP (TOKEN) for each cask app with no quarantine attribute.
+cask_unquarantined() { local k t a d
+  while IFS=$'\t' read -r k t _ a; do [ "$k" = cask ] || continue
+    case "$a" in */*|.*) continue ;; *.app) ;; *) continue ;; esac
+    for d in "$@"; do if [ -d "$d/$a" ] && ! xattr -p com.apple.quarantine "$d/$a" >/dev/null 2>&1; then echo "$d/$a ($t)"; fi; done
+  done; }
 # greedy_only PLAIN GREEDY; prints the names in GREEDY that PLAIN lacks.
 greedy_only() { printf '%s\n' "$2" | grep -vxF -f <(printf '%s\n' "$1") | grep .; }
 # screen_lock_sev TEXT: prints "SEVERITY<TAB>description" for a screen lock that is off or slow, from sysadminctl -screenLock status.
@@ -885,6 +924,13 @@ if [ -n "$BREW" ]; then
   if [ -n "${XDG_CONFIG_HOME:-}" ]; then BUC="$XDG_CONFIG_HOME/homebrew"; elif [ -n "${HOMEBREW_XDG_CONFIG_HOME:-}" ]; then BUC="$HOMEBREW_XDG_CONFIG_HOME/homebrew"; else BUC="$THOME/.homebrew"; fi
   say ""; say "Homebrew security settings (names only; values are never read):"; say ""
   brew_settings /etc/homebrew/brew.env "${BREW%/bin/brew}/etc/homebrew/brew.env" "$BUC/brew.env" | clean >> "$BODY"
+  brew_receipts "${BREW%/bin/brew}" > "$TMP/brec"
+  tap_packages "$(brew_taps "${BREW%/bin/brew}")" < "$TMP/brec" > "$TMP/btp"
+  sed 's/	/: /' "$TMP/btp" | block "Third-party Homebrew taps and their installed packages"
+  tap_findings < "$TMP/btp" | while IFS=$'\t' read -r id sv tx; do finding "$id" "$sv" Updates "$tx"; done
+  cask_unquarantined /Applications "$THOME/Applications" < "$TMP/brec" > "$TMP/bnq"
+  block "Homebrew cask apps with no quarantine attribute" < "$TMP/bnq"
+  [ -s "$TMP/bnq" ] && finding MA-UPDATES-011 LOW Updates "$(grep -c . "$TMP/bnq") Homebrew cask app(s) have no quarantine attribute, so Gatekeeper did not check them on first launch: $(sed 's#.*/##' "$TMP/bnq" | paste -sd, -)"
 fi
 system_profiler SPInstallHistoryDataType 2>/dev/null | xprotect_versions | block "XProtect versions (latest install of each component)"
 XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
@@ -1230,9 +1276,11 @@ ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|b
   temp_program "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
 done
 say ""; say "**Applications that Gatekeeper rejects**"; say ""
-for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
-  r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdesc "$a")\`: rejected"; finding MA-APPS-002 LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
-done
+if [ "$OFFLINE" -eq 0 ]; then
+  for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
+    r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdesc "$a")\`: rejected"; finding MA-APPS-002 LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
+  done
+else say "Skipped (--offline): Gatekeeper asks Apple's servers about each app."; skip "Gatekeeper assessment of apps" "--offline; it contacts Apple"; fi
 say ""
 for prof in "$THOME/Library/Application Support/Google/Chrome"/*/Extensions; do [ -d "$prof" ] || continue
   for m in "$prof"/*/*/manifest.json; do [ -f "$m" ] || continue
