@@ -61,20 +61,23 @@ Version 1.3.2 (design `dev/features/fixes-1.3.2.md`, tests `dev/features/fixes-1
 - [x] Another account's authorized_keys and LaunchAgents blocks print `No such file or directory` error text instead of "none": `priv` passes stderr into the block (`macassay:1102`). (resolved 2026-11-26): `drop_enoent` prints "none" when the whole output is one missing-file error; fixture Q6 and a quick run.
 - [x] A bold block title that follows a list line with no blank line renders as part of that list item (8 places in the MacBook report, such as `- Swap:` then `**Memory pressure**`). (resolved 2026-11-26): `block`, `run`, and the Account heading write a blank line first; fixture Q7 and a quick run.
 
-Version 1.4 (needs a design doc and test plan):
+Version 1.4 (design `dev/features/checks-1.4.md`, tests `dev/features/checks-1.4-tests.md`; drafted 2026-11-26, waiting for the user's review):
 
 - [ ] Remote-access tools that are installed, not only running. MA-SHARING-013 (`remote_support_names`, `macassay:459`) matches running processes only; a run missed an installed Chrome Remote Desktop host. Look in `/Applications`, `~/Applications`, launchd plists, and privileged helpers. Cover TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop, Splashtop, ConnectWise ScreenConnect, BeyondTrust, LogMeIn, GoTo Resolve, RealVNC, NoMachine, Parsec, Zoho Assist, Jump Desktop, and Screens Connect. Verify each tool's bundle, process, and launchd names in its docs; the list comes from training knowledge. Add the missing names to the running-process match too.
 - [ ] Find My Mac and Activation Lock status. `system_profiler SPHardwareDataType` prints "Activation Lock Status". Find a source for the Find My state that prints no token: the `fmm-mobileme-token-FMM` NVRAM variable holds a secret and must not be read.
 - [ ] Homebrew packages and casks: count outdated formulae and casks separately and list their names; add an optional `--greedy` count for casks that update themselves or track `latest`; report third-party taps and the tap of each installed package, and Homebrew settings such as `HOMEBREW_CASK_OPTS` (`--no-quarantine`) and `HOMEBREW_VERIFY_ATTESTATIONS` (register I018); check cask apps for removed quarantine and missing notarization. 1.3 reports only one `brew outdated --quiet` count (MA-UPDATES-002). The design must weigh the run time and network use of `brew info --json=v2 --installed` and `--greedy`.
+- [ ] Run status on stderr: at the end of each section, print a line such as `[3/14] Updates and installs: 2 findings (1 MEDIUM, 1 LOW), 1 check skipped, 12 s`, with counts only, never finding text. End with a total line. Open: a count of checks run needs an explicit marker in each check; leave it out unless the user asks for it.
+- [ ] Report display: move the per-severity counts from below the findings table into the header, and show HIGH and MEDIUM in bold.
+
+Version 1.5 (needs a design doc and test plan; split from 1.4 on 2026-11-26):
+
 - [ ] Report formats: `--format md|json|ocsf|html`. Markdown stays the default, and one run can write more than one format. Build every format at the end of the run from `findings.tsv` and `skipped.tsv`.
   - `json`: macassay's own documented schema: host, date, version, findings (ID, severity, section, text), limitations, and skipped checks.
   - `ocsf`: the Open Cybersecurity Schema Framework, likely its Compliance Finding class (training knowledge; verify the schema in the design).
   - `html`: one self-contained page with no JavaScript. Build the header, counts, and findings from the data, and convert the evidence from macassay's own Markdown subset. Use inline CSS for severity colors, `<details>` sections, links from each finding to its evidence, a severity filter, and print styles. Add a Content-Security-Policy that blocks scripts, and escape every value from the audited Mac with one tested function.
-  - Escape text from the audited Mac correctly in JSON with stock tools only. Verify `plutil -convert json` and the presence of `jq` on the oldest supported macOS.
+  - Escape text from the audited Mac correctly in JSON with stock tools only. Verify `plutil -convert json` and the presence of `jq` on the oldest supported macOS. JXA (`osascript -l JavaScript`) parses JSON with `JSON.parse` (verified 2026-11-26 in the 1.4 Homebrew work) and may also write it with `JSON.stringify`.
 - [ ] Compare two runs: `--compare OLD.json` reports new and resolved findings by their stable IDs.
 - [ ] CSV of the findings table, and an exit status by severity (for example 2 when a HIGH finding exists) for scheduled runs.
-- [ ] Run status on stderr: at the end of each section, print a line such as `[3/14] Updates and installs: 2 findings (1 MEDIUM, 1 LOW), 1 check skipped, 12 s`, with counts only, never finding text. End with a total line. Open: a count of checks run needs an explicit marker in each check; leave it out unless the user asks for it.
-- [ ] Report display: move the per-severity counts from below the findings table into the header, and show HIGH and MEDIUM in bold.
 
 Later:
 
@@ -107,11 +110,14 @@ Do these in the change that gives the repo a public remote.
 - [x] Run a full 1.3.1 audit on the MacBook to confirm outbound process names and the `httpd` HIGH rating in a real run; the dev Mac cannot show either. (resolved 2026-11-25): the MacBook report confirms both and the other eight 1.3.1 fixes; the `sfltool` block still truncates (399 lines), as expected. New bugs are listed under Version 1.3.2.
 - [x] Build and verify the 1.3.2 fixes under Planned. (resolved 2026-11-26): merged and released as v1.3.2.
 - [ ] On the MacBook, install the sudo rules again and run a full 1.3.2 audit (test M4 in `dev/features/fixes-1.3.2-tests.md`): Recent logins shows no row from the run, and the non-Apple installs list holds only non-Apple installs.
-- [ ] After 1.3.1, write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned.
+- [/] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. Drafted 2026-11-26 on `feature/checks-1.4`; the remote-access tool names wait for the research to land in `checks-1.4-tests.md` (Sources), then the user reviews.
 
 ## Open questions
 
-- [ ] Should the report and the 1.4 run status line use emojis? Recommended: no; plain severity words read the same in a terminal, a Markdown viewer, and an LLM. The user has not answered.
+- [ ] A3. Keep the run status line and the header counts in 1.4, not 1.5? Recommended: yes; neither depends on the 1.5 data export (`dev/features/checks-1.4.md`, Decisions).
+- [ ] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? Recommended: yes; Homebrew 7.0.16 has no such option, and the cask quarantine check still finds apps installed with it.
+- [ ] A5. Drop the cask notarization check? Recommended: yes; `spctl --assess` can query Apple's servers, a new side effect, and a stapled-ticket check misreports many notarized apps.
+- [x] Should the report and the 1.4 run status line use emojis? (resolved 2026-11-26): no, per the user; see Decisions.
 - [x] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? (resolved 2026-11-26): yes, per the user; both deleted.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [x] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script? (resolved 2026-11-24): yes; network-manager had already moved it to the Trash, and its one reference now names `macassay`.
@@ -133,3 +139,5 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-25: The HTML report is a custom page built from the findings data, interactive through CSS only, with no JavaScript and a Content-Security-Policy that blocks scripts. Rejected: converting the Markdown report as is (adds little over a Markdown viewer), and JavaScript interactivity (text from the audited Mac is untrusted, and a script turns an escaping bug into code execution). A fixed script allowed by its hash can come later if search or sorting is needed. Conviction: `ok`.
 - 2026-11-25: Bug fixes from the review of a 1.3 run on a second Mac go into a 1.3.1 patch, built and verified before 1.4 work starts. The new checks from that review (installed remote-access tools, Find My) go into 1.4. Rejected: folding the fixes into 1.4. Conviction: `firm`.
 - 2026-11-25: Bug fixes from the review of the 1.3.1 MacBook run go into a 1.3.2 patch, built and verified before 1.4 work starts.
+- 2026-11-26: The 1.4 list splits in two: 1.4 takes the new checks, and 1.5 takes report formats, `--compare`, CSV, and exit status by severity. Rejected: one release, because the formats work is larger and needs its own review. Conviction: `ok`.
+- 2026-11-26: No emojis in the report or the run status line. Severity colors come with the 1.5 HTML format, through CSS. Rejected: an emoji before each severity word. Conviction: `ok`.
