@@ -43,10 +43,13 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.3.1 (2026-11-25)"
+VERSION="1.3.2 (2026-11-26)"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay
+# Prints each argument that is a folder the running account can write. Paths arrive as arguments, never as script text.
+# shellcheck disable=SC2016  # sh -c expands $d, not this shell
+WRITABLE_SH='for d; do [ -d "$d" ] && [ -w "$d" ] && printf "%s\n" "$d"; done; exit 0'
 RC_FILES=".zshrc .zprofile .zshenv .zlogin .bashrc .bash_profile .profile"
 # Pattern name, a tab, then an extended regex. Matches report the pattern name, never the line.
 RC_PATTERNS=$(printf '%s\n' \
@@ -121,7 +124,9 @@ gen_rules() {
   printf '# Undo: sudo rm /etc/sudoers.d/macassay\n'
   printf 'Cmnd_Alias MACASSAY = \\\n'
   printf '%s\n' "$cmds" | awk '{ if (NR > 1) printf ", \\\n"; printf "    %s", $0 } END { printf "\n" }'
-  printf 'Defaults!MACASSAY always_set_home\n'
+  # sudo 1.9.14+ runs each command in a pty (use_pty), and set_utmp then writes a login record for it.
+  # Keep use_pty: it stops a command from injecting input into the user's terminal.
+  printf 'Defaults!MACASSAY always_set_home, !set_utmp\n'
   printf '%s ALL = (root) NOPASSWD: MACASSAY\n' "$user"
 }
 
@@ -298,7 +303,7 @@ h3()   { say ""; say "### $*"; say ""; }
 clean(){ sed -e 's/```/'"'''"'/g'; }                       # keep code fences intact
 trunc(){ awk -v n="${MAXL:-80}" 'NR <= n {print} END {if (NR > n) print "(truncated after " n " of " NR " lines)"}'; }
 # run "title" command...  -> command and its output in a code block
-run()  { local t="$1"; shift; say "**$t**"; say ""; say '```text'; say "\$ $(shown_cmd "$@")"
+run()  { local t="$1"; shift; say ""; say "**$t**"; say ""; say '```text'; say "\$ $(shown_cmd "$@")"
          ( "$@" ) 2>&1 | clean | trunc >> "$BODY"; say '```'; say ""; }
 # shown_cmd ARGS...: the command as a shell would need it typed, with single quotes around words that need them.
 shown_cmd() { local a out="" q="'\\''"
@@ -309,7 +314,7 @@ shown_cmd() { local a out="" q="'\\''"
 # block "title" < text; a line "- title: none" when the text is empty.
 block(){ local o; o=$(clean | trunc)
   case "$o" in *[![:space:]]*) ;; *) say "- $1: none"; return ;; esac
-  say "**$1**"; say ""; say '```text'; printf '%s\n' "$o" >> "$BODY"; say '```'; say ""; }
+  say ""; say "**$1**"; say ""; say '```text'; printf '%s\n' "$o" >> "$BODY"; say '```'; say ""; }
 # finding ID SEVERITY LABEL TEXT
 finding() { printf '%s\t%s\t%s\t%s\n' "$2" "$1" "$3" "$(printf '%s' "$4" | clean_field)" >> "$FIND"; }
 mdesc(){ printf '%s' "$1" | clean_field; }                  # safe for table cells
@@ -326,8 +331,15 @@ priv() {
   if classify_refusal "$rc" "$TMP/priv.err"; then printf 'priv\t%s\t%s\n' "$label" "refused or unavailable" >> "$SKIPS"; return 1; fi
   echo "$label" >> "$TMP/privran"; cat "$TMP/priv.err"; return 0; }
 # privblk "title" LABEL COMMAND ARGS...: priv output as a block, or a skipped line.
+# A missing file or folder prints "none".
 privblk() { local t="$1" l="$2"; shift 2
-  if priv "$l" "$@" > "$TMP/pb"; then block "$t" < "$TMP/pb"; else say "- $t: skipped ($(skip_reason "$l"))"; fi; }
+  if priv "$l" "$@" > "$TMP/pb"; then drop_enoent < "$TMP/pb" | block "$t"; else say "- $t: skipped ($(skip_reason "$l"))"; fi; }
+# drop_enoent; prints nothing when the whole input is one missing-file error, else the input unchanged.
+# Only a whole-output match counts: a file name in an existing folder must never hide its own line.
+# ssh-keygen ends its errors with \r\n.
+drop_enoent() { awk '{ l[NR] = $0 } END { x = l[1]; sub(/\r$/, "", x)
+  if (NR == 1 && x ~ /^(ls|ssh-keygen): .*: No such file or directory$/) exit
+  for (i = 1; i <= NR; i++) print l[i] }'; }
 sig()  { # signer summary for a path
   [ -e "$1" ] || { echo "missing"; return; }
   local o; o=$(codesign -dv "$1" 2>&1)
@@ -391,7 +403,7 @@ rollback_rules() {
   return 0; }
 
 install_mode() {
-  local user="${SUSER:-$SUDO_USER}" d
+  local user="${SUSER:-$SUDO_USER}" d folders
   [ "$(id -u)" -eq 0 ] || die "--install-sudoers needs root. Run: sudo $0 --install-sudoers"
   [ -n "$user" ] || die "Name the user to grant: --install-sudoers=USER" 2
   sudoers_ok || die "visudo -c fails on the current sudo configuration. Fix it before installing."
@@ -400,7 +412,11 @@ install_mode() {
   # A folder the user can write on a rule path would let a symlink point the rule at another file.
   awk '/^    \// { sub(/, \\$/, ""); for (i = 2; i <= NF; i++) if ($i ~ /^\//) print $i }' "$TMP/rules" |
     while read -r d; do d=$(dirname "$d"); while :; do echo "$d"; [ "$d" = / ] && break; d=$(dirname "$d"); done; done |
-    sort -u | while read -r d; do [ -d "$d" ] && sudo -u "$user" /bin/test -w "$d" && echo "$d"; done > "$TMP/writable"
+    sort -u > "$TMP/dirs"
+  # One sudo call for every folder, because each sudo call in a terminal writes a login record.
+  folders=(); while IFS= read -r d; do folders+=("$d"); done < "$TMP/dirs"
+  # shellcheck disable=SC2024  # the installer, as root, writes the result file, not the user
+  sudo -u "$user" /bin/sh -c "$WRITABLE_SH" sh "${folders[@]}" > "$TMP/writable"
   [ -s "$TMP/writable" ] && die "$user can write these folders on rule paths; nothing was installed:
 $(cat "$TMP/writable")"
   if [ -f "$RULES" ] && cmp -s "$TMP/rules" "$RULES"; then echo "The macassay rules are already installed for $user."; exit 0; fi
@@ -450,7 +466,10 @@ remote_mode() {
   mv "$OUT.part" "$OUT"; echo "Report written to $OUT" >&2; exit 0; }
 
 # recent_installs CUTOFF; stdin: plutil -p of /Library/Receipts/InstallHistory.plist.
-# Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that softwareupdated did not make.
+# Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that Apple did not make.
+# An install counts as Apple's only when an Apple update process made it, or when the App Store or the Rosetta
+# prompt (CoreServicesUIAgent) made it with a com.apple. package ID. Any package can claim a com.apple. ID, so a
+# hand-installed one stays listed.
 recent_installs() {
   awk -v c="$1" '
     /^  [0-9]+ => \{/ { d = n = v = p = k = ""; next }
@@ -459,7 +478,12 @@ recent_installs() {
     /^    "displayVersion" => / { v = $0; sub(/^[^>]*> "/, "", v); sub(/"$/, "", v) }
     /^    "processName" => / { p = $0; sub(/^[^>]*> "/, "", p); sub(/"$/, "", p) }
     /^      0 => "/ && k == "" { k = $0; sub(/^[^>]*> "/, "", k); sub(/"$/, "", k) }
-    /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " (n != "" ? n : k) (v != "" ? " " v : "") }'; }
+    /^  \}/ { if (d < c || p ~ /^(softwareupdated|softwareupdate|XProtectUpdateService|bootinstalld)$/ || (p ~ /^(appstoreagent|appstored|CoreServicesUIAgent)$/ && k ~ /^com\.apple\./)) next
+      print d "  " (n != "" ? n : k) (v != "" ? " " v : "") }'; }
+# top_mem; stdin: ps -axo rss=,pcpu=,pid=,user=,comm=. The program path may hold spaces, so it is the rest of the line.
+top_mem() { awk '{ c = $0; sub(/^ *[^ ]+ +[^ ]+ +[^ ]+ +[^ ]+ +/, "", c); printf "%7.0f MB %5s%% %6s %-10s %s\n", $1/1024, $2, $3, $4, c }'; }
+# crash_kinds; stdin: report paths. Counts reports by program; .ips names put "-" before the date, .diag names "_".
+crash_kinds() { sed 's#.*/##' | sed -E 's/[-_][0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+.*//' | sort | uniq -c | sort -rn | head -25; }
 # xprotect_versions; stdin: system_profiler SPInstallHistoryDataType. Prints the latest version of each XProtect component.
 xprotect_versions() {
   awk '/^    XProtect[^:]*:$/ { n = $1; sub(/:$/, "", n); next }
@@ -692,7 +716,7 @@ say "- Installed memory: ${MEMGB} GB"; say "- Swap: \`$SW\`"
 SWT=$(echo "$SW" | awk '{gsub("M","",$3); print int($3)}'); SWU=$(echo "$SW" | awk '{gsub("M","",$6); print int($6)}')
 if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then finding MA-HEALTH-001 LOW Health "Swap ${SWU} of ${SWT} MB used ($(( SWU * 100 / SWT ))%)."; fi
 run "Memory pressure" sh -c 'memory_pressure | tail -2; vm_stat | grep -E "Pageouts|Swapouts"'
-ps -axo rss=,pcpu=,pid=,user=,comm= | sort -rn | head -15 | awk '{printf "%7.0f MB %5s%% %6s %-10s %s\n",$1/1024,$2,$3,$4,$5}' | block "Top 15 processes by memory"
+ps -axo rss=,pcpu=,pid=,user=,comm= | sort -rn | head -15 | top_mem | block "Top 15 processes by memory"
 ps -axo pcpu=,rss=,pid=,comm= | sort -rn | head -10 | block "Top 10 processes by CPU"
 JET=$(find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -name 'JetsamEvent-*' -mtime -7 2>/dev/null | wc -l | tr -d ' ')
 say "- Out-of-memory (Jetsam) reports in the last 7 days: $JET"
@@ -706,7 +730,7 @@ elif [ "${DPCT:-0}" -ge 85 ]; then finding MA-HEALTH-003 MEDIUM Health "Data vol
 system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name|S.M.A.R.T|Capacity|Free' | mask_hex | block "Drives and SMART status"
 system_profiler SPStorageDataType 2>/dev/null | grep 'S.M.A.R.T' | grep -qv Verified && finding MA-HEALTH-004 HIGH Health "A drive reports a SMART status other than Verified."
 h3 "Crash reports"
-find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | sed 's#.*/##' | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]+.*//' | sort | uniq -c | sort -rn | head -25 | block "Crash and diagnostic reports, last 14 days (count by kind)"
+find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | crash_kinds | block "Crash and diagnostic reports, last 14 days (count by kind)"
 NP=$(find /Library/Logs/DiagnosticReports -name '*.panic' -mtime -30 2>/dev/null | wc -l | tr -d ' ')
 say "- Kernel panics in 30 days: $NP"; [ "$NP" -gt 0 ] && finding MA-HEALTH-005 HIGH Health "$NP kernel panic(s) in the last 30 days."
 h3 "Disk usage"
@@ -1098,7 +1122,7 @@ say "- Login and launch items inside apps: $NLI"
 h3 "Other accounts and root"
 collect_accounts | other_accounts "$TUSER" 2>/dev/null > "$TMP/others"
 while read -r n u h; do
-  say "**Account $n** (\`$h\`)"; say ""
+  say ""; say "**Account $n** (\`$h\`)"; say ""
   privblk "SSH authorized_keys fingerprints ($n)" "authorized_keys ($n)" /usr/bin/ssh-keygen -l -f "$h/.ssh/authorized_keys"
   privblk "LaunchAgents ($n)" "LaunchAgents ($n)" /bin/ls -ln "$h/Library/LaunchAgents"
   RCF=(); for f in $RC_FILES; do RCF+=("$h/$f"); done

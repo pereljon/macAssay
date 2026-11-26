@@ -4,6 +4,19 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 
 ## Unreleased
 
+## [1.3.2] - 2026-11-26
+
+Install the sudo rules again after you upgrade (`sudo ./macassay --install-sudoers`). The audit's own fix needs the new rules.
+
+### Fixed
+
+- The audit no longer writes a login record for each privileged check. sudo 1.9.14 and later run each command in a pseudo-terminal and record it in `last`; the rules now turn off `set_utmp` for macassay's commands. The installer makes one sudo call for its folder check instead of one per folder.
+- The non-Apple installs list and its finding (MA-UPDATES-008) leave out Apple's own installs: App Store installs of Apple apps, XProtect and Rosetta updates, and system updates.
+- The memory list shows program paths that contain spaces in full.
+- Crash counts by kind group `.diag` reports by program.
+- A missing `authorized_keys` file or LaunchAgents folder in another account prints "none" instead of error text.
+- Each bold block title starts its own paragraph, so a Markdown viewer no longer joins it to the list item above.
+
 ## [1.3.1] - 2026-11-25
 
 ### Fixed

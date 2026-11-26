@@ -75,7 +75,7 @@ To install the file:
 3. Run the audit as usual.
 4. To remove it: `sudo rm /etc/sudoers.d/macassay`
 
-The installer checks the file with `visudo` before and after it writes it. The file names each account's files and each `sudoers.d` file by path, so install it again after you add a user or a `sudoers.d` file. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
+The installer checks the file with `visudo` before and after it writes it. The file names each account's files and each `sudoers.d` file by path, so install it again after you add a user or a `sudoers.d` file. The file stops sudo from writing a login record for each privileged check. A file from a version before 1.3.2 does not, so install it again after you upgrade. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
 
 ## Limits
 

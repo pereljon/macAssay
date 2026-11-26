@@ -619,5 +619,65 @@ check "P8 user folder label" [ "$(nmh_label "/Users/bob/Library/Application Supp
 check "P8 system Chrome folder label" [ "$(nmh_label /Library/Google/Chrome/NativeMessagingHosts)" = "Google/Chrome" ]
 check "P8 system Mozilla folder label" [ "$(nmh_label "/Library/Application Support/Mozilla/NativeMessagingHosts")" = "Mozilla" ]
 
+# Q1 and Q2: the 1.3.2 login-record fixes.
+check "Q1 rules turn off set_utmp and keep use_pty" has "$T/f1" 'Defaults!MACASSAY always_set_home, !set_utmp'
+check "Q1 no use_pty change" hasnt "$T/f1" "use_pty"
+check "Q1 visudo accepts the rules" visudo_ok "$T/f1"
+
+mkdir -p "$T/q2/open" "$T/q2/-x \$(touch PWNED) y"
+chmod 755 "$T/q2/open"
+( cd "$T/q2" && /bin/sh -c "$WRITABLE_SH" sh "$T/q2/open" /System "$T/q2/missing" "$T/q2/-x \$(touch PWNED) y" ) > "$T/q2.out"
+check "Q2 writable folder printed" has "$T/q2.out" "$T/q2/open"
+check "Q2 folder name with shell syntax printed unchanged" has "$T/q2.out" "$T/q2/-x \$(touch PWNED) y"
+check "Q2 no command ran from a folder name" [ ! -e "$T/q2/PWNED" ]
+check "Q2 read-only and missing folders skipped" [ "$(grep -c . "$T/q2.out")" -eq 2 ]
+check "Q2 no arguments prints nothing" [ -z "$(/bin/sh -c "$WRITABLE_SH" sh)" ]
+
+# Q3 to Q7: the 1.3.2 report fixes.
+q3rec() { printf '  0 => {\n    "date" => 2026-11-20 05:00:00 +0000\n    "displayName" => "%s"\n' "$1"
+  [ -n "$3" ] && printf '    "packageIdentifiers" => [\n      0 => "%s"\n    ]\n' "$3"
+  printf '    "processName" => "%s"\n  }\n' "$2"; }
+{ q3rec "Numbers" appstoreagent com.apple.pkg.Numbers16; q3rec "Xcode" appstored com.apple.pkg.Xcode
+  q3rec "XProtectCloudKitUpdate" XProtectUpdateService ""; q3rec "macOS Update" softwareupdated com.apple.pkg.update
+  q3rec "Command Line Tools" softwareupdate com.apple.pkg.CLTools_Executables; q3rec "macOS" bootinstalld com.apple.pkg.InstallAssistant
+  q3rec "Store App" appstoreagent com.example.storeapp; q3rec "Fake Apple" installer com.apple.pkg.Fake
+  q3rec "" Installer com.example.noname; q3rec "RosettaUpdateAuto" CoreServicesUIAgent com.apple.pkg.RosettaUpdateAuto; } | recent_installs 2026-10-25 > "$T/q3"
+check "Q3 Apple installs dropped" [ -z "$(grep -E 'Numbers|Xcode|XProtect|macOS|Command Line|Rosetta' "$T/q3")" ]
+check "Q3 third-party App Store app kept" has "$T/q3" "2026-11-20  Store App"
+check "Q3 hand-installed com.apple. package kept" has "$T/q3" "2026-11-20  Fake Apple"
+check "Q3 empty display name shows the package ID" has "$T/q3" "2026-11-20  com.example.noname"
+check "Q3 three installs listed" [ "$(grep -c . "$T/q3")" -eq 3 ]
+
+printf '%s\n' ' 369664   0.0  90145 averylongname1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome' '  12704   4.3    378 root     /usr/libexec/opendirectoryd' | top_mem > "$T/q4"
+check "Q4 path with spaces in full" has "$T/q4" "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+check "Q4 plain path and columns" has "$T/q4" "     12 MB   4.3%    378 root       /usr/libexec/opendirectoryd"
+check "Q4 MB column" has "$T/q4" "    361 MB   0.0%  90145 averylongname1 /Applications/Google"
+
+printf '%s\n' /Library/Logs/DiagnosticReports/WindowServer_2026-11-24-094451_host.cpu_resource.diag \
+  /Library/Logs/DiagnosticReports/WindowServer_2026-11-21-193818_host.cpu_resource.diag \
+  /Library/Logs/DiagnosticReports/avconferenced-2026-11-20-101010.ips /Library/Logs/DiagnosticReports/JetsamEvent-2026-11-20-101010.ips \
+  /Library/Logs/DiagnosticReports/ServiceExtension | crash_kinds > "$T/q5"
+check "Q5 .diag reports grouped" has "$T/q5" "   2 WindowServer"
+check "Q5 .ips reports grouped" has "$T/q5" "   1 avconferenced"
+check "Q5 name without a date kept" has "$T/q5" "   1 ServiceExtension"
+check "Q5 four kinds" [ "$(grep -c . "$T/q5")" -eq 4 ]
+
+BODY="$T/q6"; : > "$BODY"; RULES="$T/q6.rules"; : > "$RULES"; SKIPS="$T/q6.skips"; : > "$SKIPS"
+q6priv() { ( TMP="$T"; priv() { printf '%b' "$Q6OUT"; }; privblk "$1" label x ); }
+Q6OUT='ssh-keygen: /Users/bob/.ssh/authorized_keys: No such file or directory\r\n' q6priv "Keys (bob)"
+Q6OUT='ls: /Users/bob/Library/LaunchAgents: No such file or directory\n' q6priv "Agents (bob)"
+Q6OUT='total 8\n-rw-r--r--  1 501  20  10 Nov 20 10:00 ok.plist\n-rw-r--r--  1 501  20  10 Nov 20 10:00 evil.plist: No such file or directory\n' q6priv "Agents (carol)"
+Q6OUT='/Users/dave/.ssh/authorized_keys is not a public key file.\n' q6priv "Keys (dave)"
+check "Q6 missing file ending in CR LF says none" has "$T/q6" "- Keys (bob): none"
+check "Q6 missing folder says none" has "$T/q6" "- Agents (bob): none"
+check "Q6 a file name cannot hide its own line" has "$T/q6" "evil.plist: No such file or directory"
+check "Q6 other errors kept" has "$T/q6" "is not a public key file."
+
+BODY="$T/q7"; : > "$BODY"
+say "- a: b"; printf 'x\n' | block "Block title"; say "- c: d"; run "Run title" echo y
+blank_before() { [ "$(awk -v t="**$1**" '$0 == t {print "[" prev "]"} {prev = $0}' "$T/q7")" = "[]" ]; }
+check "Q7 blank line before a block title" blank_before "Block title"
+check "Q7 blank line before a run title" blank_before "Run title"
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
