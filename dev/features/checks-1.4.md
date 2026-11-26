@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: designing
-status: drafted 2026-11-26; waiting for the user's review
+lifecycle: ready
+status: approved by the user 2026-11-26 (A6)
 ---
 
 # Installed remote access, Find My, Homebrew detail, and run status (version 1.4)
@@ -35,7 +35,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.4), a user decisio
 - 2026-11-26: No emojis in the report or the status line. Plain severity words read the same in a terminal, a Markdown viewer, and an LLM. They also keep column widths and `awk` fields simple under bash 3.2. Severity colors come with the 1.5 HTML format, through CSS. Rejected: an emoji before each severity word. Conviction: `ok`.
 - 2026-11-26: The run status line and the header counts stay in 1.4 (A3). Neither depends on the 1.5 data export, and both are small. Rejected: moving them to 1.5. Conviction: `ok`.
 - 2026-11-26 (A4): `HOMEBREW_CASK_OPTS` is not checked for `--no-quarantine`. Homebrew 7.0.16 has no such option: `cask/download.rb` always quarantines a cask download, and `env_config.rb` lists the options that `HOMEBREW_CASK_OPTS` supports, which exclude it. The cask quarantine check (requirement 6) still finds apps installed by an older Homebrew with the option. Rejected: checking the setting anyway. Conviction: `ok`.
-- Proposed (question A5): no notarization check for cask apps. `spctl --assess` can ask Apple's servers for a ticket when the app has none stapled (training knowledge, not measured). It could run only without `--offline`, like the update checks, as a listed side effect. A stapled-ticket-only check (`stapler validate`) reports many notarized apps as not notarized. `codesign -dv` shows no notarization line for Docker.app, which is notarized. The cask quarantine check already covers the risky case: a quarantined app passes Gatekeeper on first launch.
+- 2026-11-26 (A5): no notarization check for cask apps. MA-APPS-002 already runs `spctl -a -t exec` on every app in `/Applications` and `~/Applications`, where casks install apps, and reports each rejected app as unsigned, ad hoc, or not notarized. `spctl --assess` can contact Apple's servers (see the Gatekeeper bug in `docs/ISSUES.md`). A stapled-ticket-only check (`stapler validate`) reports many notarized apps as not notarized. `codesign -dv` shows no notarization line for Docker.app, which is notarized. The cask quarantine check already covers the risky case: a quarantined app passes Gatekeeper on first launch. Rejected: an online check that `--offline` skips. Conviction: `ok`.
 
 ## Verified facts
 
@@ -190,7 +190,7 @@ No new side effect. `osascript` runs a fixed script that reads a file in the tem
 ## Out of scope
 
 - Version 1.5: report formats, `--compare`, CSV, exit status by severity.
-- Notarization of cask apps (decision A5, proposed).
+- Notarization of cask apps (decision A5).
 - Reading Find My state from iCloud account files.
 
 ## How to continue if interrupted

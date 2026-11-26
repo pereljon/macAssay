@@ -4,6 +4,7 @@ Project state: bugs, planned work, next steps, open questions, and decisions. De
 
 ## Bugs
 
+- [ ] MA-APPS-002 sends traffic to Apple, also under `--offline`, and the side effect is not listed in `dev/HANDOFF.md` or `README.md`. The check runs `spctl -a -t exec` on each app in `/Applications` and `~/Applications` (`macassay:1152`). On the development Mac on 2026-11-26, during one pass over the apps, `syspolicyd` received about 300 KB and sent about 34 KB (`nettop` byte counters), and `trustd` also grew. Cause inferred: Gatekeeper looks up notarization tickets and certificate status online. Other background traffic in the same minute is not ruled out. Blocks question A7.
 - [x] The usage line in the header says `scripts/mac-audit.sh`; the script now lives at the repo root. (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
 - [x] Root mode shows root's crontab as the user's when the user has none: `crontab -u USER -l || crontab -l` falls through (`mac-audit.sh:273`, ShellCheck SC2015). (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
 - [x] The home-folder `du` glob passes file names that start with `-` to `du` as options (`mac-audit.sh:327`, ShellCheck SC2035). File names on the audited Mac are untrusted input. (resolved 2026-11-24): fixed on `feature/sudo-rules` (`dev/features/sudo-rules.md`, 1.1 fixes; root mode was removed).
@@ -61,7 +62,7 @@ Version 1.3.2 (design `dev/features/fixes-1.3.2.md`, tests `dev/features/fixes-1
 - [x] Another account's authorized_keys and LaunchAgents blocks print `No such file or directory` error text instead of "none": `priv` passes stderr into the block (`macassay:1102`). (resolved 2026-11-26): `drop_enoent` prints "none" when the whole output is one missing-file error; fixture Q6 and a quick run.
 - [x] A bold block title that follows a list line with no blank line renders as part of that list item (8 places in the MacBook report, such as `- Swap:` then `**Memory pressure**`). (resolved 2026-11-26): `block`, `run`, and the Account heading write a blank line first; fixture Q7 and a quick run.
 
-Version 1.4 (design `dev/features/checks-1.4.md`, tests `dev/features/checks-1.4-tests.md`; drafted 2026-11-26, waiting for the user's review):
+Version 1.4 (design `dev/features/checks-1.4.md`, tests `dev/features/checks-1.4-tests.md`; approved 2026-11-26, building on `feature/checks-1.4`):
 
 - [ ] Remote-access tools that are installed, not only running. MA-SHARING-013 (`remote_support_names`, `macassay:459`) matches running processes only; a run missed an installed Chrome Remote Desktop host. Look in `/Applications`, `~/Applications`, launchd plists, and privileged helpers. Cover TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop, Splashtop, ConnectWise ScreenConnect, BeyondTrust, LogMeIn, GoTo Resolve, RealVNC, NoMachine, Parsec, Zoho Assist, Jump Desktop, and Screens Connect. Verify each tool's bundle, process, and launchd names in its docs; the list comes from training knowledge. Add the missing names to the running-process match too.
 - [ ] Find My Mac and Activation Lock status. `system_profiler SPHardwareDataType` prints "Activation Lock Status". Find a source for the Find My state that prints no token: the `fmm-mobileme-token-FMM` NVRAM variable holds a secret and must not be read.
@@ -110,13 +111,14 @@ Do these in the change that gives the repo a public remote.
 - [x] Run a full 1.3.1 audit on the MacBook to confirm outbound process names and the `httpd` HIGH rating in a real run; the dev Mac cannot show either. (resolved 2026-11-25): the MacBook report confirms both and the other eight 1.3.1 fixes; the `sfltool` block still truncates (399 lines), as expected. New bugs are listed under Version 1.3.2.
 - [x] Build and verify the 1.3.2 fixes under Planned. (resolved 2026-11-26): merged and released as v1.3.2.
 - [ ] On the MacBook, install the sudo rules again and run a full 1.3.2 audit (test M4 in `dev/features/fixes-1.3.2-tests.md`): Recent logins shows no row from the run, and the non-Apple installs list holds only non-Apple installs.
-- [/] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. Drafted 2026-11-26 on `feature/checks-1.4`, with the remote-access research in `checks-1.4-tests.md` (Sources). Waiting for the user's review and answers to A3 to A5.
+- [x] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. (resolved 2026-11-26): approved by the user; build on `feature/checks-1.4`.
 
 ## Open questions
 
 - [x] A3. Keep the run status line and the header counts in 1.4, not 1.5? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
 - [x] A4. Drop the `HOMEBREW_CASK_OPTS` `--no-quarantine` check? (resolved 2026-11-26): yes, per the user; recorded in `dev/features/checks-1.4.md` (Decisions).
-- [ ] A5. Drop the cask notarization check, or keep it as an online check that `--offline` skips, listed as a side effect? Recommended: drop; a stapled-ticket check misreports many notarized apps, and the cask quarantine check covers the risky case.
+- [x] A5. Drop the cask notarization check? (resolved 2026-11-26): dropped, per the user; MA-APPS-002 already covers cask apps. Recorded in `dev/features/checks-1.4.md` (Decisions).
+- [x] A6. Approve the 1.4 design and test plan? (resolved 2026-11-26): approved, per the user.
 - [ ] A7. Write the network promise into `README.md` and `dev/HANDOFF.md`: without `--offline`, the audit contacts only Apple's and Homebrew's update services; with `--offline`, no traffic leaves the Mac (remote mode aside)? Recommended: yes; it matches the current code and gives reviewers a rule to check new checks against.
 - [x] Should the report and the 1.4 run status line use emojis? (resolved 2026-11-26): no, per the user; see Decisions.
 - [x] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? (resolved 2026-11-26): yes, per the user; both deleted.
