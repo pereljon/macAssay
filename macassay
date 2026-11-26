@@ -141,7 +141,7 @@ classify_sudoers() {
       return out }
     function loads_code(p) {
       sub(/.*\//, "", p)
-      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|osascript|vim?|less|more|find|awk|sed|tar|zip|git|ssh|scp|rsync|tee|cp|mv|dd|chmod|chown|curl|wget)$/ }
+      return p ~ /^((ba|z|k|c|tc|da|fi)?sh|env|python[0-9.]*|perl[0-9.]*|ruby|node|php|lua|tclsh|expect|osascript|vim?|nano|emacs|less|more|man|find|xargs|awk|sed|tar|zip|git|make|ssh|scp|rsync|tee|cp|mv|dd|chmod|chown|curl|wget|httpd|apachectl|tcpdump|nmap|sqlite3|launchctl|installer|nice|nohup|timeout|script|screen|tmux)$/ }
     { sub(/\r$/, "") }
     cont == "" && /^[[:space:]]*#/ && !/^[[:space:]]*#[0-9]/ { next }
     { line = cont $0 }
@@ -298,10 +298,18 @@ h3()   { say ""; say "### $*"; say ""; }
 clean(){ sed -e 's/```/'"'''"'/g'; }                       # keep code fences intact
 trunc(){ awk -v n="${MAXL:-80}" 'NR <= n {print} END {if (NR > n) print "(truncated after " n " of " NR " lines)"}'; }
 # run "title" command...  -> command and its output in a code block
-run()  { local t="$1"; shift; say "**$t**"; say ""; say '```text'; say "\$ $*"
+run()  { local t="$1"; shift; say "**$t**"; say ""; say '```text'; say "\$ $(shown_cmd "$@")"
          ( "$@" ) 2>&1 | clean | trunc >> "$BODY"; say '```'; say ""; }
-# block "title" < text
-block(){ say "**$1**"; say ""; say '```text'; clean | trunc >> "$BODY"; say '```'; say ""; }
+# shown_cmd ARGS...: the command as a shell would need it typed, with single quotes around words that need them.
+shown_cmd() { local a out="" q="'\\''"
+  for a in "$@"; do
+    case "$a" in *[!A-Za-z0-9_./:=,+@%-]*|'') a="'${a//\'/$q}'" ;; esac
+    out="${out:+$out }$a"
+  done; printf '%s' "$out"; }
+# block "title" < text; a line "- title: none" when the text is empty.
+block(){ local o; o=$(clean | trunc)
+  if [ -z "${o//[[:space:]]/}" ]; then say "- $1: none"; return; fi
+  say "**$1**"; say ""; say '```text'; printf '%s\n' "$o" >> "$BODY"; say '```'; say ""; }
 # finding ID SEVERITY LABEL TEXT
 finding() { printf '%s\t%s\t%s\t%s\n' "$2" "$1" "$3" "$(printf '%s' "$4" | clean_field)" >> "$FIND"; }
 mdesc(){ printf '%s' "$1" | clean_field; }                  # safe for table cells
@@ -445,12 +453,33 @@ remote_mode() {
 # Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that softwareupdated did not make.
 recent_installs() {
   awk -v c="$1" '
-    /^  [0-9]+ => \{/ { d = n = v = p = ""; next }
+    /^  [0-9]+ => \{/ { d = n = v = p = k = ""; next }
     /^    "date" => / { d = $3 }
     /^    "displayName" => / { n = $0; sub(/^[^>]*> "/, "", n); sub(/"$/, "", n) }
     /^    "displayVersion" => / { v = $0; sub(/^[^>]*> "/, "", v); sub(/"$/, "", v) }
     /^    "processName" => / { p = $0; sub(/^[^>]*> "/, "", p); sub(/"$/, "", p) }
-    /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " n (v != "" ? " " v : "") }'; }
+    /^      0 => "/ && k == "" { k = $0; sub(/^[^>]*> "/, "", k); sub(/"$/, "", k) }
+    /^  \}/ { if (d >= c && p != "softwareupdated") print d "  " (n != "" ? n : k) (v != "" ? " " v : "") }'; }
+# xprotect_versions; stdin: system_profiler SPInstallHistoryDataType. Prints the latest version of each XProtect component.
+xprotect_versions() {
+  awk '/^    XProtect[^:]*:$/ { n = $1; sub(/:$/, "", n); next }
+    n != "" && /^      Version:/ { v[n] = $2; n = "" }
+    END { for (k in v) print k, v[k] }' | sort; }
+# btm_unique; stdin: Name, Type and similar lines from sfltool dumpbtm. Prints each item once; dumpbtm repeats items per account.
+btm_unique() {
+  awk 'function flush() { if (r != "" && !(r in s)) { s[r] = 1; printf "%s", r }; r = "" }
+    /^[[:space:]]+Name:/ { flush() } { r = r $0 "\n" } END { flush() }'; }
+# outbound_conns PSMAP; stdin: ESTABLISHED lines of netstat -anv. PSMAP holds "pid program" lines from ps.
+# Prints "process remote-address" for each non-local connection. The name comes from ps, because netstat
+# cuts long names and the field splits at spaces.
+outbound_conns() {
+  awk -v map="$1" '
+    BEGIN { while ((getline l < map) > 0) { sub(/^ +/, "", l); p = l; sub(/ .*/, "", p); c = l; sub(/^[0-9]+ +/, "", c); sub(/.*\//, "", c); name[p] = c } }
+    { f = ""; for (i = 6; i <= NF; i++) if ($i ~ /^[^ ]+:[0-9]+$/) f = $i
+      pid = f; sub(/.*:/, "", pid); n = f; sub(/:[0-9]+$/, "", n); if (pid in name) n = name[pid]
+      r = $5; sub(/\.[0-9]+$/, "", r); if (r !~ /^(127\.|::1|fe80)/) print n, r }'; }
+# nmh_label FOLDER: the browser part of a native-messaging folder, such as "Google/Chrome".
+nmh_label() { local d="${1%/NativeMessagingHosts}"; d="${d#"$THOME"/Library/Application Support/}"; d="${d#/Library/Application Support/}"; printf '%s' "${d#/Library/}"; }
 # boot_args_sev ARGS: prints HIGH for boot arguments that turn off code-signing enforcement, LOW for others.
 boot_args_sev() { case "$1" in '') ;; *amfi_*|*cs_enforcement_disable*) echo HIGH ;; *) echo LOW ;; esac; }
 # cups_shared FILE: succeeds when cupsd.conf listens beyond localhost, which printer sharing turns on.
@@ -761,7 +790,7 @@ if [ "$OFFLINE" -eq 0 ]; then
     say "- Homebrew packages outdated: $NB"; [ "$NB" -ge 20 ] && finding MA-UPDATES-002 LOW Updates "$NB Homebrew packages are outdated."
   fi
 else say "Skipped (--offline)."; skip "macOS and Homebrew update checks" "--offline"; fi
-system_profiler SPInstallHistoryDataType 2>/dev/null | grep -A1 -E '^\s+XProtect' | grep Version | tail -2 | block "XProtect versions (latest installs)"
+system_profiler SPInstallHistoryDataType 2>/dev/null | xprotect_versions | block "XProtect versions (latest install of each component)"
 XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
 if [ -n "$XPI" ]; then
   XPD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d' "$XPI" +%s 2>/dev/null || date +%s) ) / 86400 ))
@@ -965,7 +994,8 @@ echo "$PX" | grep -qE '(HTTPEnable|HTTPSEnable|SOCKSEnable|ProxyAutoConfigEnable
 HO=$(grep -vE '^\s*(#|$)' /etc/hosts | grep -vE '^(127\.0\.0\.1\s+localhost|255\.255\.255\.255\s+broadcasthost|::1\s+localhost)\s*$')
 if [ -n "$HO" ]; then echo "$HO" | block "Non-default /etc/hosts entries"; finding MA-NETWORK-005 LOW Network "/etc/hosts has $(echo "$HO" | wc -l | tr -d ' ') non-default entries."; else say "- /etc/hosts: default"; fi
 h3 "Outbound connections"
-NETE=$(netstat -anv -p tcp 2>/dev/null | grep ESTABLISHED | awk '{p=""; for(i=6;i<=NF;i++) if($i ~ /^[^ ]+:[0-9]+$/) p=$i; split(p,a,":"); r=$5; sub(/\.[0-9]+$/,"",r); if (r !~ /^(127\.|::1|fe80)/) print a[1], r}' | sort | uniq -c | sort -rn | head -30)
+ps -axo pid=,comm= > "$TMP/psmap" 2>/dev/null
+NETE=$(netstat -anv -p tcp 2>/dev/null | grep ESTABLISHED | outbound_conns "$TMP/psmap" | sort | uniq -c | sort -rn | head -30)
 [ -n "$NETE" ] && echo "$NETE" | block "Established outbound TCP connections (count, process, remote address; top 30)"
 
 # ---------- 8. Startup and persistence ----------
@@ -973,8 +1003,11 @@ h2 "8. Startup and persistence"
 say "| Location | Label file | Program | Signer | Modified |"; say "|---|---|---|---|---|"
 for d in /Library/LaunchDaemons /Library/LaunchAgents "$THOME/Library/LaunchAgents"; do
   for f in "$d"/*.plist; do [ -e "$f" ] || continue
-    prog=$(plistprog "$f"); s=$(sig "$prog"); m=$(stat -f %Sm -t %Y-%m-%d "$f")
-    say "| \`$d\` | $(mdesc "$(basename "$f")") | \`$(mdesc "${prog:-?}")\` | $(mdesc "$s") | $m |"
+    prog=$(plistprog "$f"); m=$(stat -f %Sm -t %Y-%m-%d "$f")
+    if [ -n "$prog" ]; then s=$(sig "$prog"); pl="\`$(mdesc "$prog")\`"
+    elif [ -r "$f" ]; then s="-"; pl="no program"
+    else s="-"; pl="unreadable"; fi
+    say "| \`$d\` | $(mdesc "$(basename "$f")") | $pl | $(mdesc "$s") | $m |"
     case "$prog" in /tmp/*|/private/tmp/*|/Users/Shared/*|*/.[!.]*/*) finding MA-PERSISTENCE-001 HIGH Persistence "Startup item runs from an unusual path: $f -> $prog";; esac
     [ "$s" = missing ] && [ -n "$prog" ] && case "$prog" in /*) finding MA-PERSISTENCE-002 LOW Persistence "Startup item points to a missing program: $f -> $prog";; esac
     if [ -n "$(find "$f" -mtime -14 2>/dev/null)" ]; then case "$s" in unsigned|"ad hoc") case "$prog" in /opt/homebrew/*|/usr/local/*) sv=LOW;; *) sv=MEDIUM;; esac
@@ -1011,7 +1044,7 @@ else say "- Shell startup files: no download-and-run or decode patterns"; fi
 find /Users/Shared /private/tmp /private/var/tmp -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -v '/macassay\.' | head -20 > "$TMP/x"
 if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; finding MA-PERSISTENCE-007 MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 8)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
 if priv "sfltool dumpbtm" /usr/bin/sfltool dumpbtm > "$TMP/btm" 2>/dev/null; then
-  grep -E "^\s+(Name|Developer Name|Type|Disposition|URL|Executable Path):" "$TMP/btm" | grep -v "com.apple" | MAXL=200 block "Background items (sfltool, non-Apple)"
+  grep -E "^\s+(Name|Developer Name|Type|Disposition|URL|Executable Path):" "$TMP/btm" | grep -v "com.apple" | btm_unique | MAXL=200 block "Background items (sfltool, non-Apple)"
 else say "- Background items (sfltool): skipped ($(skip_reason "sfltool dumpbtm"))"; fi
 DY=$(launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null)
 [ -n "$DY" ] && finding MA-PERSISTENCE-008 HIGH Persistence "launchd sets DYLD_INSERT_LIBRARIES=$DY (library injection)."
@@ -1042,9 +1075,13 @@ SI=$(ents /Library/StartupItems); SA=$(ents /Library/ScriptingAdditions "$THOME/
 say "- StartupItems: $(mdesc "${SI:-none}")"; [ -n "$SI" ] && finding MA-PERSISTENCE-017 LOW Persistence "StartupItems are present (a deprecated startup method): $SI"
 say "- Scripting additions: $(mdesc "${SA:-none}")"; [ -n "$SA" ] && finding MA-PERSISTENCE-018 MEDIUM Persistence "Scripting additions are installed: $SA"
 say "- Directory service plug-ins: $(mdesc "${DSP:-none}")"; [ -n "$DSP" ] && finding MA-PERSISTENCE-019 MEDIUM Persistence "Directory service plug-ins are installed: $DSP"
-AUD=$(ents /Library/Audio/Plug-Ins/HAL); NAUD=$(find /Library/Audio/Plug-Ins/HAL -mindepth 1 -maxdepth 1 ! -name .DS_Store 2>/dev/null | grep -c .)
-say "- Audio plug-ins (HAL): $NAUD ($(mdesc "${AUD:-none}"))"
-[ "$NAUD" -gt 0 ] && finding MA-PERSISTENCE-020 INFO Persistence "$NAUD audio plug-ins (HAL drivers) are installed: $AUD"
+AUD=""; AUDS=""; NAUD=0
+for p in /Library/Audio/Plug-Ins/HAL/*; do [ -e "$p" ] || continue
+  s=$(sig "$p"); AUDS="${AUDS:+$AUDS, }${p##*/} ($s)"
+  [ "$s" = Apple ] || { AUD="${AUD:+$AUD,}${p##*/}"; NAUD=$((NAUD+1)); }
+done
+say "- Audio plug-ins (HAL): $(mdesc "${AUDS:-none}")"
+[ "$NAUD" -gt 0 ] && finding MA-PERSISTENCE-020 INFO Persistence "$NAUD audio plug-ins (HAL drivers) not signed by Apple are installed: $AUD"
 h3 "Login items inside apps"
 find /Applications "$THOME/Applications" -maxdepth 5 \( -path '*.app/Contents/Library/LoginItems/*.app' -prune -print \) -o \( -path '*.app/Contents/Library/LaunchAgents/*.plist' -print \) -o \( -path '*.app/Contents/Library/LaunchDaemons/*.plist' -print \) 2>/dev/null > "$TMP/li"
 NLI=0; : > "$TMP/liu"; : > "$TMP/lix"
@@ -1126,7 +1163,7 @@ while IFS= read -r d; do
   n=0
   for m in "$d"/*.json; do [ -f "$m" ] || continue
     n=$((n+1)); hp=$(plutil -extract path raw -o - "$m" 2>/dev/null)
-    r=$(nmh_risk "$hp"); [ -n "$r" ] && printf '%s\t%s\t%s\n' "$r" "${m##*/}" "$hp" >> "$TMP/nmr"
+    r=$(nmh_risk "$hp"); [ -n "$r" ] && printf '%s\t%s: %s\t%s\n' "$r" "$(nmh_label "$d")" "${m##*/}" "$hp" >> "$TMP/nmr"
   done
   NNMH=$((NNMH+n)); say "- Native-messaging hosts in $(mdesc "${d#"$THOME"/}"): $n"
 done < "$TMP/nmd"
