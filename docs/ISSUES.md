@@ -32,8 +32,23 @@ Version 1.3 (released 2026-11-25 as v1.3.0; design `dev/features/checks-1.3.md`;
 - [x] Recent non-Apple installs (`pkgutil`, install history). (resolved 2026-11-25): built on `feature/checks-1.3`.
 - [x] Stronger sudoers checks: `NOPASSWD: ALL` as HIGH, NOPASSWD for programs that can load code, weak Defaults. The `secure_path` check was dropped (decision B9). (resolved 2026-11-25): built on `feature/checks-1.3`.
 
+Version 1.3.1: bug fixes found in the review of a full 1.3 run on a second Mac (2026-11-25). Build and verify these before 1.4 work starts.
+
+- [ ] A NOPASSWD rule for `/usr/sbin/httpd` gives LOW (MA-ACCOUNTS-006) instead of HIGH (MA-ACCOUNTS-009). `loads_code` (`macassay:144`) lacks `httpd` and `apachectl`. As root, `httpd -C` can set a piped `ErrorLog` command, and `httpd -f` can load a module (training knowledge; verify before the fix). Check the list for other programs that run code.
+- [ ] MA-PERSISTENCE-020 counts Apple's own audio plug-ins. `ParrotAudioPlugin.driver` ships with macOS 27.2.1 and is signed "macOS Software Signing" (checked on the development Mac). Count only plug-ins that Apple did not sign.
+- [ ] The persistence table shows Program `?` and Signer `missing` for a launchd plist that the user cannot read (mode 0700, as NordVPN's helper plist is) or that has no program (an empty Google keystone plist). Show "unreadable" or "no program" instead.
+- [ ] MA-APPS-009 repeats a host that appears in more than one browser folder (`com.dropbox.nmh.json -> …;com.dropbox.nmh.json -> …`) and does not name the folder. Name the folder for each entry.
+- [ ] The non-Apple installs list prints rows with an empty name and only a version (`10.15.1`, `10.16.0`). Cause not verified.
+- [ ] The background items block (`sfltool`) repeats each entry several times and hits the 200-line cap (524 lines). Remove duplicates before truncating.
+- [ ] The XProtect versions block is empty although the XProtect install date is found. Cause not verified.
+- [ ] Empty code blocks print where a check found nothing: third-party kexts, non-standard periodic scripts, crontabs, and another account's shell startup files. Print "none" instead.
+- [ ] Outbound connections cut process names at the first space (`(R`, `(Aperitif)`).
+- [ ] Some evidence headers drop the quoting of the command that ran (`$ sh -c memory_pressure | tail -2; vm_stat | …`), so the shown command differs from the real one.
+
 Version 1.4 (needs a design doc and test plan):
 
+- [ ] Remote-access tools that are installed, not only running. MA-SHARING-013 (`remote_support_names`, `macassay:459`) matches running processes only; a run missed an installed Chrome Remote Desktop host. Look in `/Applications`, `~/Applications`, launchd plists, and privileged helpers. Cover TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop, Splashtop, ConnectWise ScreenConnect, BeyondTrust, LogMeIn, GoTo Resolve, RealVNC, NoMachine, Parsec, Zoho Assist, Jump Desktop, and Screens Connect. Verify each tool's bundle, process, and launchd names in its docs; the list comes from training knowledge. Add the missing names to the running-process match too.
+- [ ] Find My Mac and Activation Lock status. `system_profiler SPHardwareDataType` prints "Activation Lock Status". Find a source for the Find My state that prints no token: the `fmm-mobileme-token-FMM` NVRAM variable holds a secret and must not be read.
 - [ ] Homebrew packages and casks: count outdated formulae and casks separately and list their names; add an optional `--greedy` count for casks that update themselves or track `latest`; report third-party taps and the tap of each installed package, and Homebrew settings such as `HOMEBREW_CASK_OPTS` (`--no-quarantine`) and `HOMEBREW_VERIFY_ATTESTATIONS` (register I018); check cask apps for removed quarantine and missing notarization. 1.3 reports only one `brew outdated --quiet` count (MA-UPDATES-002). The design must weigh the run time and network use of `brew info --json=v2 --installed` and `--greedy`.
 - [ ] Report formats: `--format md|json|ocsf|html`. Markdown stays the default, and one run can write more than one format. Build every format at the end of the run from `findings.tsv` and `skipped.tsv`.
   - `json`: macassay's own documented schema: host, date, version, findings (ID, severity, section, text), limitations, and skipped checks.
@@ -72,9 +87,13 @@ Do these in the change that gives the repo a public remote.
 - [x] The user runs T5 and installs the rules for T7 to T11; then merge `feature/sudo-rules` into `master`. (resolved 2026-11-24): T5 and T7 to T11 pass; merged after the pre-merge review.
 - [h] After the 1.2 merge, rename the project folder and claude-mux session to `macassay` with `claude-mux --rename`.
 - [ ] Work through the 115-repo "Review queue" in `dev/prior-art.md` with the `prior-art-scout` agent, and move adopted checks into the 1.3 plan.
+- [ ] Build and verify the 1.3.1 fixes under Planned.
+- [ ] After 1.3.1, write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned.
 
 ## Open questions
 
+- [ ] Should the report and the 1.4 run status line use emojis? Recommended: no; plain severity words read the same in a terminal, a Markdown viewer, and an LLM. The user has not answered.
+- [ ] Delete the 1.3 subagent workspace `.superpowers/sdd/2026-11-24-checks-1.3/` (gitignored) and the merged branch `feature/checks-1.3`? Both are kept until the user says to delete them.
 - [x] Sudo approach: A (script in sudoers, pinned by SHA-256) or B (per-command rules)? (resolved 2026-11-24): B. The decision is recorded in `dev/features/sudo-rules.md` (Decisions).
 - [x] Should network-manager delete its uncommitted copy at `~/Claude/projects/tech/network-manager/scripts/mac-audit.sh` now that this project owns the script? (resolved 2026-11-24): yes; network-manager had already moved it to the Trash, and its one reference now names `macassay`.
 - [x] Does `/etc/sudoers` contain an `includedir` line for `sudoers.d`? Reading it needs root. (resolved 2026-11-24): yes, `#includedir /private/etc/sudoers.d`.
@@ -93,3 +112,4 @@ Do these in the change that gives the repo a public remote.
 - 2026-11-24: Version 1.3 takes every proposed check group (the 1.3 list here and the priority-A register ideas) plus the certificate-label bug, in one release. Rejected: splitting the inventory checks into 1.4, which repeats the design and review cycle for the lowest-risk checks. Section selection waits for a later release.
 - 2026-11-25: Version 1.4 adds `--format md|json|ocsf|html`, with Markdown as the default report. OCSF is the industry-schema export, for loading findings into other security tools, because a finding about a Mac's settings fits its finding classes. Rejected for now: SARIF (built for code locations), OSCAL (needs a control catalog first), and ASFF (needs AWS account fields). Conviction: `ok`.
 - 2026-11-25: The HTML report is a custom page built from the findings data, interactive through CSS only, with no JavaScript and a Content-Security-Policy that blocks scripts. Rejected: converting the Markdown report as is (adds little over a Markdown viewer), and JavaScript interactivity (text from the audited Mac is untrusted, and a script turns an escaping bug into code execution). A fixed script allowed by its hash can come later if search or sorting is needed. Conviction: `ok`.
+- 2026-11-25: Bug fixes from the review of a 1.3 run on a second Mac go into a 1.3.1 patch, built and verified before 1.4 work starts. The new checks from that review (installed remote-access tools, Find My) go into 1.4. Rejected: folding the fixes into 1.4. Conviction: `firm`.
