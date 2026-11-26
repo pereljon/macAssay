@@ -30,7 +30,7 @@ Cases:
   - The Guidance list holds one line per ID present.
   - With an empty `findings.tsv`, the report reads `No automatic findings.`
 - P3. JSON:
-  - `osascript` `JSON.parse` and `plutil -lint` accept the output.
+  - `osascript` `JSON.parse` and `plutil -convert xml1 -o /dev/null` accept the output. (`plutil -lint` rejects every JSON file; changed 2026-11-26 after the plan review, PR2.)
   - Each hostile text round-trips unchanged after normalization.
   - `schema` is `macassay-report/1`, and the counts match the fixture.
 - P4. OCSF:
@@ -38,7 +38,7 @@ Cases:
   - Each event holds the required 1.10.0 attributes with the mapped values.
   - A skipped check maps to `compliance.status_id` 2, and an accepted finding to `status_id` 3.
 - P5. HTML:
-  - No `<script`, `onerror=`, `<img`, or `href="http` appears outside the fixed page text.
+  - No `<script`, `<img`, or `href="http` appears outside the fixed page text, and no tag carries an event handler attribute (`on...=`). (The escaped text `onerror=` may appear; changed 2026-11-26 after the plan review, PR4.)
   - The escaped forms (`&lt;script&gt;`) appear.
   - The CSP meta tag is the first element in `<head>`.
   - Each finding row links to an existing section anchor.
@@ -65,6 +65,7 @@ Cases:
   - An ID only in the new file is New, and an ID only in the old file is Resolved.
   - An ID only in the old file that a skipped check in the new run lists is Not checked, not Resolved.
   - A file without the schema key exits 2.
+  - A dashed UUID in the old file is redacted in `changes.tsv`.
   - An old file with invalid UTF-8, or a text with a tab or newline, gives one clean line per finding in `changes.tsv`.
   - A hostile text in the old file is escaped in the Markdown and HTML output.
 - P11. Exit status: the fixture has one MEDIUM and one LOW finding.
@@ -73,7 +74,7 @@ Cases:
   - A bad level exits 2.
 - P12. Bundle:
   - A round trip of the fixture folder through the bundle writer and `read_bundle` gives identical files.
-  - Each of these is rejected with exit 1: a wrong first line, too few or too many lines, and a line with characters outside base64 (such as `abc$%`).
+  - Each of these is rejected with exit 1: a wrong first line, too few or too many lines, trailing data without a newline, and a line with characters outside base64 (such as `abc$%`).
   - No file appears outside the temporary folder.
 - P12a. Validation, on a fixture folder with hostile values:
   - A `meta.tsv` count of `a[$(touch PWNED)]` is dropped, and no `PWNED` file appears.
@@ -130,6 +131,29 @@ Architecture review of the design, 2026-11-26, by an Opus subagent. Each line gi
 - AR12 Exit-status detection may turn a no-data result into a skip, such as MA-BACKUPS-001 on a Mac without Time Machine. Fixed: the build verifies each command's exit status in both cases (M7a) before relying on it. Breaks requirement 9; uncertain trigger, kept because the cost of a check is low.
 - Suggestion: fixed-order bundle without names. Adopted (decision in the design).
 - Suggestion: JXA writes the CSV and HTML table too. Declined: `md_html` must escape in `awk` anyway (decision in the design).
+
+## Plan review
+
+Review of `docs/superpowers/plans/2026-11-26-report-1.5.md`, 2026-11-26, by an Opus subagent that ran the plan's code under `/bin/bash` 3.2. No finding was Critical. Each line gives the finding, the outcome, and the reason. A plan defect that would fail the suite or ShellCheck breaks the `../AGENTS.md` commit gate; a test that cannot fail breaks the testing rules.
+
+- PR1 `jx` helper: `eval` in JXA cannot see `d`, so every JSON check fails. Fixed: `new Function("d", ...)`. Suite gate.
+- PR2 `plutil -lint` rejects all JSON. Fixed: `plutil -convert xml1 -o /dev/null`; P3 wording changed. Suite gate.
+- PR3 1.5 fixtures collide with the 1.3.1 files at `$T/p1` to `$T/p8`, and case names collide. Fixed: fixtures under `$V`, check names prefixed `1.5 `. Suite gate.
+- PR4 "no `onerror=`" fails on correctly escaped text. Fixed: test for an event handler inside a tag; P5 wording changed. Suite gate.
+- PR5 P19 label count needs 20, the script has 19. Fixed: `-ge 19`. Suite gate.
+- PR6 two `finding MA-APPS-005` call sites fail F16. Fixed: one call with `forced_ext_note`, tested as a function. F16; Stable finding IDs.
+- PR7 unused variables give SC2034. Fixed: `M_EPOCH` and `M_LAPTOP` dropped; each option default moves to the task that reads it. Lint gate.
+- PR8 the master copy is not executable. Fixed: run with `/bin/bash`. Task 5 step.
+- PR9 P12 file-name check cannot fail (BSD grep rejects an empty alternative). Fixed: optional group. Testing rules.
+- PR10 usage-error tests pass on "Unknown option" before the option exists. Fixed: `p17` requires no `Unknown option`. Testing rules.
+- PR11 weak P9 checks. Fixed: anchored on the reason, a real partial text, and a check that the regex line accepts nothing. P9.
+- PR12 D1 turns vacuous once `GUIDANCE` lists every ID. Fixed: D1 skips the constant tables. Stable finding IDs (D1).
+- PR13 UUIDs in the `--compare` file are never redacted. Fixed: `compare_load` uses `normalize_file`; design Comparison step 1 updated; P10 case added. Requirement 14.
+- PR14 `read_bundle` accepts trailing data without a newline. Fixed: a partial last line fails; P12 case added. Design Remote mode 3.
+- PR15 partial coverage of P3, P12a, P13, P14, P17. Fixed: all three hostile texts round-trip; invalid `skipped.tsv` lines; a managed finding's source; `read_enrollment` with a failed `profiles`; every P17 combination and `-o report.md --format md,json`. Approved test plan (A5).
+- PR16 Task 4 gives no guidance text; Task 14 gives prose for several branches. Task 14 fixed with exact code for both variants of each branch that Step 1 decides; Activation Lock stays outside the Find My check. Task 4 kept as rules plus examples, with a note on the F15 pattern: the 135 sentences are the task's deliverable, and the task reviewer checks each one.
+- PR17 Task 14 verifies only the success case. Fixed: failure cases for `log show` and `brew outdated`; the text-matched checks named as independent of exit status; a non-zero status is relied on only when the no-data case exits 0. Design requirement 9; M7a.
+- PR18 small items. Fixed: JXA constraint reworded (it writes fixed names), P23 mention dropped, `skip_row` output silenced in P19, the plan is committed before Task 0. Dropped: "Stealth mode enabled/disabled" text on older macOS (uncertain, training knowledge; an unknown text gives a skip, not a pass, so requirement 9 holds).
 
 ## Sources
 

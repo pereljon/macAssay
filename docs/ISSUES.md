@@ -110,7 +110,7 @@ Do these in the change that gives the repo a public remote.
 ## Next steps
 
 - [x] L1: read the battery condition and maximum capacity on a laptop; the `system_profiler SPPowerDataType` field names are from training knowledge (`dev/features/checks-1.3-tests.md`). (resolved 2026-11-26): pass on the MacBook.
-- [ ] Write the 1.5 implementation plan (`docs/superpowers/plans/`) from the approved design `dev/features/report-1.5.md`, then build on `feature/report-1.5`. The 135 guidance lines are part of the build.
+- [ ] Build 1.5 on `feature/report-1.5` from the plan `docs/superpowers/plans/2026-11-26-report-1.5.md`, written and reviewed 2026-11-26 (review record under Plan review in `dev/features/report-1.5-tests.md`). The 135 guidance lines are part of the build (Task 4). Task 14 needs two checks from the user first: `tmutil destinationinfo` on a Mac with no Time Machine destination, and `brew outdated` while a package is outdated.
 - [ ] T19 and X1: run remote mode against a second Mac. X1 was skipped on 2026-11-25 because `ssh localhost` failed host key verification.
 - [ ] Verify the open 1.3 assumptions in `dev/features/checks-1.3.md` (battery fields, `DiscoverableMode` values, Chromium forced-extension key paths, `nvram boot-args` on Intel). The Firefox key path is resolved (2026-11-25): it matches Mozilla's policy-templates documentation. The battery fields and the `Contacts Only` value are confirmed (2026-11-26, MacBook).
 - [x] Ask the user to choose sudo approach A or B, then write the design doc and test plan. (resolved 2026-11-24): B chosen; design doc and test plan drafted.

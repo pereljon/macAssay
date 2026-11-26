@@ -242,7 +242,7 @@ The CSV format holds the findings table: severity, ID, section, finding, source,
 
 `--compare OLD.json` compares this run with an earlier JSON report.
 
-1. OLD.json passes through `iconv -c` into the temporary folder.
+1. OLD.json passes through `normalize_file` (`iconv -c`, then `LC_ALL=C redact_ids`) into the temporary folder, so no UUID from it reaches a format (requirement 14; added 2026-11-26 after the plan review, PR13).
 2. The JXA script reads that copy with `JSON.parse`. A file without `"schema": "macassay-report/1"` stops the run before the audit starts, with exit 2.
 3. The script compares the two runs by ID only, and sorts IDs into three groups:
    - New: the ID is in this run and absent from the old run.
