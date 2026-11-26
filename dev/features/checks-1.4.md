@@ -56,7 +56,8 @@ Checked on the development Mac (a Mac mini, M4 Pro), 2026-11-26, as the user wit
 
 - `FMMEnabled` reads `1` when Find My is on (training knowledge; check on the MacBook).
 - `Activation Lock Status` reads `Enabled` when Find My is on with a personal Apple Account (training knowledge; check on the MacBook).
-- The remote-access names in "Check 1" come from the research in `checks-1.4-tests.md` (Sources). Each name without a primary source stays marked unverified there.
+- The remote-access names in "Check 1" come from the research in `checks-1.4-tests.md` (Sources), done by a research subagent on 2026-11-26. Many come from search snippets or third-party sources, because most vendor help pages refused automated fetches. None of the 15 tools is installed on the development Mac, so no name is checked on a real install. A fragment that misses a real install shows up only when someone runs the audit on a Mac with that tool.
+- No fragment matched any name on the development Mac (2026-11-26), in the scanned folders or in `ps`. This checks false matches on one Mac only.
 
 ## Check 1: installed remote-access tools
 
@@ -72,7 +73,41 @@ It matches each name, case-insensitively, against a fixed table of name fragment
 
 ### Which tools
 
-TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop, Splashtop, ConnectWise ScreenConnect, BeyondTrust (Bomgar), LogMeIn, GoTo Resolve, RealVNC Server, NoMachine, Parsec, Zoho Assist, Jump Desktop Connect, and Screens Connect. The fragments come from the research recorded in `checks-1.4-tests.md` (Sources). Viewer apps that only control other computers, such as RealVNC Viewer or Screens, do not count. Apple's own `AppleVNCServer` stays excluded.
+`REMOTE_TOOLS` holds one row per tool. Disk fragments match names in the folders above, case-insensitively. Process fragments match the last path component from `ps -axo comm=`. The sources for each fragment are in `checks-1.4-tests.md` (Sources).
+
+| Tool | Disk fragments | Process fragments |
+|---|---|---|
+| TeamViewer | `teamviewer` | `teamviewer` |
+| AnyDesk | `anydesk`, `philandro` | `anydesk` |
+| RustDesk | `rustdesk`, `com.carriez` | `rustdesk` |
+| Chrome Remote Desktop | `chromoting`, `chromeremotedesktop` | `remoting_me2me` |
+| Splashtop | `splashtop` | `splashtop` |
+| ConnectWise ScreenConnect | `screenconnect`, `connectwisecontrol` | `screenconnect`, `connectwisecontrol` |
+| BeyondTrust (Bomgar) | `bomgar` | `bomgar` |
+| LogMeIn | `logmein` | `logmein` |
+| GoTo Resolve | `com.goto.resolve`, `resolve-unattended` | `resolve-unattended` |
+| RealVNC Server | `realvnc` | `vncserver`, `vncagent` |
+| NoMachine | `nomachine` | `nxserver`, `nxnode` |
+| Parsec | `parsec` | the exact name `parsec` |
+| Zoho Assist | `zohoassist`, `zoho assist` | `zohoassist` |
+| Jump Desktop Connect | `jump.connect`, `jumpconnect`, `jump desktop connect` | `jumpconnect` |
+| Screens Connect | `screens.connect`, `screens connect` | `screensconnect`, `screens connect` |
+
+The existing process fragments `tigervnc` and `jumpcloud.?assist` stay.
+
+Each fragment is chosen to avoid known false matches:
+- `vnc` alone matches Apple's `AppleVNCServer`, which stays excluded.
+- `beyondtrust` alone matches BeyondTrust products that are not remote access, such as privilege management. Its jump client installs as a hidden folder, `/Applications/.com.bomgar.scc.<ID>`, so the scan lists hidden names too.
+- `goto` or `resolve` alone matches DaVinci Resolve and other apps.
+- `nx` alone is too short.
+- `parsec` as a process fragment matches Apple's Parsec services (the `CoreParsec` frameworks), so the process match needs the exact name. The disk scan never reads `/System`.
+- `zoho` alone matches other Zoho apps.
+- `jump desktop` alone matches the Jump Desktop viewer.
+- `screens` alone matches the Screens viewer.
+
+Viewer apps that only control other computers, such as RealVNC Viewer, Jump Desktop, or Screens, do not count. `LogMeIn` also matches older GoTo and LogMeIn apps; the finding names the matched item, so the user can judge it.
+
+Vendors rarely publish their launchd or process names. For most tools, the names come from third-party uninstall scripts or MDM guides. Process names for most tools are unverified, so the disk scan is the main detection, and the process match only adds the running state.
 
 ### Report and findings
 

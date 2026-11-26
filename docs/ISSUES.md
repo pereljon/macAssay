@@ -110,7 +110,7 @@ Do these in the change that gives the repo a public remote.
 - [x] Run a full 1.3.1 audit on the MacBook to confirm outbound process names and the `httpd` HIGH rating in a real run; the dev Mac cannot show either. (resolved 2026-11-25): the MacBook report confirms both and the other eight 1.3.1 fixes; the `sfltool` block still truncates (399 lines), as expected. New bugs are listed under Version 1.3.2.
 - [x] Build and verify the 1.3.2 fixes under Planned. (resolved 2026-11-26): merged and released as v1.3.2.
 - [ ] On the MacBook, install the sudo rules again and run a full 1.3.2 audit (test M4 in `dev/features/fixes-1.3.2-tests.md`): Recent logins shows no row from the run, and the non-Apple installs list holds only non-Apple installs.
-- [/] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. Drafted 2026-11-26 on `feature/checks-1.4`; the remote-access tool names wait for the research to land in `checks-1.4-tests.md` (Sources), then the user reviews.
+- [/] Write the 1.4 design doc and test plan in `dev/features/` from the 1.4 items under Planned. Drafted 2026-11-26 on `feature/checks-1.4`, with the remote-access research in `checks-1.4-tests.md` (Sources). Waiting for the user's review and answers to A3 to A5.
 
 ## Open questions
 
