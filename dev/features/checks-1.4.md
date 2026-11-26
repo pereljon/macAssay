@@ -60,7 +60,7 @@ Checked on the development Mac (a Mac mini, M4 Pro), 2026-11-26, as the user wit
 ## Assumptions to verify during the build
 
 - `FMMEnabled` reads `1` when Find My is on (training knowledge; check on the MacBook).
-- `Activation Lock Status` reads `Enabled` when Find My is on with a personal Apple Account (training knowledge; check on the MacBook).
+- `Activation Lock Status` reads `Enabled` when Find My is on with a personal Apple Account (training knowledge; check on the MacBook). Not confirmed (M3, 2026-11-26): the MacBook reads `FMMEnabled 1` and `Activation Lock Status: Disabled`. The MacBook was once assigned in Apple Business Manager and managed by Mosyle, per the user; `bputil` still shows `DEP-allowed MDM Control: Enabled`. Cause inferred: on a Mac assigned through Apple Business Manager, Find My does not turn on Activation Lock unless the MDM allows it (training knowledge). The check needs no change, because it reports the value and gives no finding on it.
 - The remote-access names in "Check 1" come from the research in `checks-1.4-tests.md` (Sources), done by a research subagent on 2026-11-26. Many come from search snippets or third-party sources, because most vendor help pages refused automated fetches. None of the 15 tools is installed on the development Mac, so no name is checked on a real install. A fragment that misses a real install shows up only when someone runs the audit on a Mac with that tool.
 - No fragment matched any name on the development Mac (2026-11-26), in the scanned folders or in `ps`. This checks false matches on one Mac only.
 

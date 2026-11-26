@@ -140,7 +140,7 @@ Delta review of the changes after the architecture review, 2026-11-24 (opus, hig
 - S1: pass. The full run places the privileged checks in topic sections (packet filter in 4, listeners in 7, background items in 8, sudo files and sudoers contents in 10) and has no "Privileged checks" section. `--print-sudoers` differs from 1.2 only in the version comment line.
 - R2 on the final full report: the 14 sections in order after Findings and Limitations; no MISPLACED and no UNLISTED line.
 - X1: skipped (SSH to this Mac not available): `ssh -o BatchMode=yes localhost true` failed host key verification, and no setting was changed. Open in `docs/ISSUES.md` with T19.
-- L1: open; needs a laptop.
+- L1 (2026-11-26, MacBook, 1.4 full run): pass. The Battery block shows `Condition: Normal` and `Maximum Capacity: 86%`.
 
 ## Task reviews
 

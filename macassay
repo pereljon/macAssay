@@ -1146,7 +1146,7 @@ TUN=$(ps -axo comm= | awk -F/ '{print $NF}' | grep -xE 'cloudflared|ngrok|frpc' 
 [ -n "$TUN" ] && finding MA-NETWORK-003 LOW Network "A tunnel program is running ($TUN); it can publish local services to the internet. Check what it exposes."
 run "VPN and tunnel processes" sh -c 'ps -axo user=,pid=,comm= | grep -iE "cloudflared|tailscale|wireguard|openvpn|nordvpn|anyconnect|ngrok|frpc|zerotier" | grep -v grep'
 h3 "All TCP listeners"
-if [ "$LSOFL" -eq 1 ]; then awk '{print $1, $2, $3, $9}' "$TMP/lsofl" | sort -u | block "All TCP listeners (lsof)"
+if [ "$LSOFL" -eq 1 ]; then awk 'NR == 1 {print $1, $2, $3, $9; fflush(); next} {print $1, $2, $3, $9 | "sort -u"}' "$TMP/lsofl" | block "All TCP listeners (lsof)"
 else say "- All TCP listeners (lsof): skipped ($(skip_reason "lsof listeners"))"; fi
 h3 "DNS, proxy and hosts"
 scutil --dns 2>/dev/null | grep -E 'nameserver\[' | sort | uniq -c | block "DNS servers in use"

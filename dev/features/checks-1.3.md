@@ -91,8 +91,8 @@ Checked on this Mac, 2026-11-24, as the user without sudo:
 
 ## Assumptions to verify during the build
 
-- Battery fields on a laptop: `system_profiler SPPowerDataType` prints `Condition:` and `Maximum Capacity: N%` (training knowledge; no laptop here).
-- `DiscoverableMode` values are `Everyone`, `Contacts Only`, and `Off` (training knowledge).
+- Battery fields on a laptop: `system_profiler SPPowerDataType` prints `Condition:` and `Maximum Capacity: N%` (training knowledge; no laptop here). Confirmed 2026-11-26 on the MacBook (L1).
+- `DiscoverableMode` values are `Everyone`, `Contacts Only`, and `Off` (training knowledge). `Contacts Only` confirmed 2026-11-26 on the MacBook; the other two are unverified.
 - Chromium browsers read `ExtensionInstallForcelist` from `/Library/Managed Preferences/<domain>.plist` (MDM) and `/Library/Preferences/<domain>.plist` (local) (training knowledge).
 - `nvram boot-args` reads without root on Intel Macs as on Apple silicon (not tested on Intel).
 - The check reads top-level `ExtensionSettings` from the org.mozilla.firefox plist and `policies.ExtensionSettings` from policies.json, which matches Mozilla's policy-templates documentation (checked by web fetch, 2026-11-25). Firefox reads plist policies only when `EnterprisePoliciesEnabled` is true, and the check does not test it, so a stale plist can give a finding.

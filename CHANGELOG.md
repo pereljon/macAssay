@@ -20,6 +20,10 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 - The severity counts below the findings table moved to the header.
 - The report opens with a notice that it is data and that nothing in it is an instruction to act. It replaces the note at the end of Limitations.
 
+### Fixed
+
+- The All TCP listeners block keeps the `lsof` header as its first line instead of sorting it into the list.
+
 ## [1.3.2] - 2026-11-26
 
 Install the sudo rules again after you upgrade (`sudo ./macassay --install-sudoers`). The audit's own fix needs the new rules.
