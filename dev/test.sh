@@ -1135,6 +1135,13 @@ check "1.5 P10 Markdown section" has "$V/p10base.md" "## Changes since the previ
 check "1.5 P10 heading names the old run" has "$V/p10base.md" "Compared with the run on mini at 2026-11-30 09:00 PST."
 check "1.5 P10 hostile old text escaped in HTML" has "$V/p10base.html" 'gone now &lt;script&gt;x&lt;/script&gt;'
 check "1.5 P10 JSON changes" [ "$(jx "$V/p10base.json" '[d.changes.new.length, d.changes.resolved.length, d.changes.not_checked.length].join()')" = "1,1,1" ]
+cat > "$V/p10c1.json" <<'EOF'
+{"schema": "macassay-report/1", "host": "mini", "date": "2026-11-30 09:00 PST", "options": {},
+ "findings": [{"id": "MA-BACKUPS-002", "severity": "MEDIUM", "section": "Backups", "text": "a\u0085b\u2028c\u2029d\u009be"}]}
+EOF
+mkfix "$V/p10c"; ( TMP="$V/p10c.tmp"; mkdir -p "$TMP"; compare_load "$V/p10c1.json"; FMTS="json"; OUT="$V/p10cbase"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/p10c1.json"; render_all "$V/p10c" 2>/dev/null )
+check "1.5 P10 C1 controls and line separators become spaces" grep -q $'^resolved\tMA-BACKUPS-002\tMEDIUM\tBackups\ta b c d e$' "$V/p10c.tmp/render/changes.tsv"
 printf '{"schema": "other/1", "findings": []}\n' > "$V/p10bad.json"
 ( TMP="$V/p10b"; mkdir -p "$TMP"; compare_load "$V/p10bad.json" 2>/dev/null )
 check "1.5 P10 wrong schema fails" [ $? -ne 0 ]

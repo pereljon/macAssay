@@ -1075,7 +1075,7 @@ REPORT_JS='function run(argv) {
   function read(p) { var s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; }
   function tsv(name) { var t = read(dir + "/" + name); return t ? t.split("\n").filter(function (l) { return l !== ""; }).map(function (l) { return l.split("\t"); }) : []; }
   var RANK = {HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1}, meta = {};
-  function c(s) { return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f|`]/g, " ").replace(/ +$/, ""); }
+  function c(s) { return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029|`]/g, " ").replace(/ +$/, ""); }
   function write(name, lines) { var s = $.NSString.alloc.initWithUTF8String(lines.length ? lines.join("\n") + "\n" : "");
     if (!s.writeToFileAtomicallyEncodingError(dir + "/" + name, true, $.NSUTF8StringEncoding, null)) throw new Error("write " + name); }
   if (mode === "check") { var o = JSON.parse(read(dir)); if (!o || o.schema !== "macassay-report/1") throw new Error("schema"); return ""; }
