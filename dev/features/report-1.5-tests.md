@@ -163,3 +163,7 @@ Review of `docs/superpowers/plans/2026-11-26-report-1.5.md`, 2026-11-26, by an O
 - AWS Security Lake accepts OCSF 1.3 and earlier for custom sources: https://docs.aws.amazon.com/security-lake/latest/userguide/custom-sources.html (search snippet, not read in full).
 - `/usr/bin/jq` first shipped in macOS 15: search snippets only.
 - Code survey of settings reads and silent failures in `macassay` 1.4.0: a research subagent, 2026-11-26. Its line numbers refer to commit `7ab6930`.
+
+## Results
+
+- B1 (2026-11-26, `master` at `7ab6930`): `bash -n` passes; `dev/test.sh` 339 cases pass; ShellCheck baseline 2 SC2010 and 3 SC2012.
