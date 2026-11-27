@@ -94,6 +94,11 @@ Version 1.5 (design `dev/features/report-1.5.md`, tests `dev/features/report-1.5
 - [x] CSV of the findings table, and an exit status by severity (for example 2 when a HIGH finding exists) for scheduled runs. (resolved 2026-11-26): built on `feature/report-1.5`: the `csv` format and `--fail-on` (exit 3, not 2; exit 2 is a usage error).
 - [x] Report ideas from the register for the 1.5 design (decision A10): missing evidence is INFO, never a pass (I079); a "managed" result for settings an MDM or DDM sets (I081); an accepted-risk list (I078); guidance text for each finding (I080). (resolved 2026-11-26): built on `feature/report-1.5`: skip records (I079), `(managed)` (I081), `--accepted` (I078), guidance lines (I080).
 
+Version 1.5.3 (design `dev/features/fixes-1.5.3.md`, tests `dev/features/fixes-1.5.3-tests.md`): fixes from the two outside reviews of 1.5.2 (2026-11-27), approved by the user (A2, A3). The listener proxy fix (A1) is on `master`, under Unreleased in `CHANGELOG.md`.
+
+- [ ] Escape untrusted text in the Markdown report, so that it never renders as a link, an image, or HTML.
+- [ ] Give each report file mode 0600, also when it replaces an existing file.
+
 Version 1.6 (needs a design doc and test plan; decided 2026-11-26, decision A10): new checks from `dev/prior-art-ideas.md`. Candidates, ranked by exposure; the 1.6 design picks the final list:
 
 - [ ] I030 Tailscale Funnel or Serve; I031 local AI servers and containers on all interfaces; I017 SSH `authorized_keys` options; I019 XProtect scans off; I024 password and lockout policy; I025 and I068 signing of privileged helpers and launch targets; I020 AI-agent hooks and MCP servers; I022 mounted network shares; I039 macOS release without security updates.
