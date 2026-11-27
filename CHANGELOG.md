@@ -2,9 +2,9 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
-## Unreleased
+## [1.5.0] - 2026-11-27
 
-Version 1.5. The sudo rules are unchanged; an upgrade needs no new install of them.
+The sudo rules are the same as in 1.4.0; an upgrade needs no new install of them.
 
 ### Fixed
 

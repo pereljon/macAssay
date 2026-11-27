@@ -1,6 +1,6 @@
 # macAssay
 
-macAssay checks the health and security of a Mac and writes the results to one Markdown report. It only reads: it changes no settings and fixes nothing. The report is formatted for review by an LLM (large language model), which can then carry out some or all of the fixes with you.
+macAssay checks the health and security of a Mac and writes the results to a report: Markdown by default, or JSON, OCSF, HTML, and CSV. It only reads: it changes no settings and fixes nothing. The Markdown report is formatted for review by an LLM (large language model), which can then carry out some or all of the fixes with you.
 
 ## Why
 

@@ -1,5 +1,6 @@
 #!/bin/bash
-# macassay - read-only health and security review of a Mac, written as a Markdown report.
+# macassay - read-only health and security review of a Mac, written as a report:
+# Markdown by default, or JSON, OCSF, HTML, and CSV.
 #
 # The audit makes no changes. It reads settings, logs and process state, and sends one
 # HTTP GET to each of this Mac's own network listeners to see which ones ask for a login.
@@ -56,7 +57,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.4.0+dev"
+VERSION="1.5.0 (2026-11-27)"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay

@@ -2,7 +2,7 @@
 
 ## Project
 
-**macAssay**: `macassay`, a read-only macOS health and security audit in Bash. It writes one Markdown report for a person or an LLM to review. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
+**macAssay**: `macassay`, a read-only macOS health and security audit in Bash. It writes a report in Markdown for a person or an LLM to review, and in JSON, OCSF, HTML, or CSV on request. It runs locally, or on a remote Mac over SSH. The script came from the network-manager project; `dev/HANDOFF.md` records its requirements, history, and verified facts.
 
 ## Design Principles
 
