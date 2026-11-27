@@ -820,5 +820,32 @@ check "S1 docs/SUDOERS.md example matches gen_rules" [ "$(tail -n +2 "$T/s1doc")
 grep '^    /' "$T/s1gen" | sed -e 's/, \\$//' -e 's#/Users/bob#HOME#g' -e 's#/var/root#HOME#g' -e 's#/etc/sudoers\.d/[A-Za-z0-9_-]*#/etc/sudoers.d/FILE#' -e 's/^ *//' | sort -u > "$T/s2cmds"
 check "S2 every rule command is in docs/SUDOERS.md" [ -z "$(while IFS= read -r c; do grep -qF "| \`$c\` |" docs/SUDOERS.md || echo "$c"; done < "$T/s2cmds")" ]
 
+# Version 1.5 cases. Their fixtures live in $V, apart from the 1.3.1 files at $T/p1 to $T/p8, and their check names
+# start with "1.5 " to keep them apart from the 1.3.1 P cases.
+V="$T/v15"; mkdir -p "$V"
+# P16 (V1): VERSION follows the release rule against the latest v* tag. Only the version number counts, never the date.
+ver_gt() { local a1 a2 a3 b1 b2 b3 re='^[0-9]+\.[0-9]+\.[0-9]+$'
+  [[ $1 =~ $re ]] && [[ $2 =~ $re ]] || return 1
+  IFS=. read -r a1 a2 a3 <<< "$1"; IFS=. read -r b1 b2 b3 <<< "$2"
+  [ "$a1" -gt "$b1" ] && return 0; [ "$a1" -lt "$b1" ] && return 1
+  [ "$a2" -gt "$b2" ] && return 0; [ "$a2" -lt "$b2" ] && return 1
+  [ "$a3" -gt "$b3" ]; }
+# version_rule TAGVERSION CHANGED VERSION: CHANGED is 1 when macassay differs from the tag.
+version_rule() {
+  if [ "$2" = 0 ]; then [ "$3" = "$1" ]; return; fi
+  [ "$3" = "$1+dev" ] && return 0
+  case "$3" in *+*) return 1 ;; esac
+  ver_gt "$3" "$1"; }
+check "1.5 P16 unchanged script, tag version" version_rule 1.4.0 0 1.4.0
+check "1.5 P16 unchanged script, +dev fails" not version_rule 1.4.0 0 1.4.0+dev
+check "1.5 P16 changed script, +dev" version_rule 1.4.0 1 1.4.0+dev
+check "1.5 P16 changed script, untagged higher release" version_rule 1.4.0 1 1.5.0
+check "1.5 P16 changed script, tag version fails" not version_rule 1.4.0 1 1.4.0
+check "1.5 P16 changed script, +dev of an older tag fails" not version_rule 1.4.0 1 1.3.2+dev
+if git rev-parse --git-dir >/dev/null 2>&1 && P16TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
+  if git diff --quiet "$P16TAG" -- macassay; then P16CH=0; else P16CH=1; fi
+  check "1.5 P16 VERSION ${VERSION%% *} follows the rule for $P16TAG" version_rule "${P16TAG#v}" "$P16CH" "${VERSION%% *}"
+else echo "skip P16 working-tree case: not a git checkout or no v* tag"; fi
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
