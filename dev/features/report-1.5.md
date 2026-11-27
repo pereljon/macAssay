@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: building
-status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5); built on feature/report-1.5 (Tasks 0 to 15); pre-merge review fixed 2026-11-26; manual tests M1 to M4 pass 2026-11-27; M6 (Safari) on hold
+status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5); built on feature/report-1.5 (Tasks 0 to 15); pre-merge review fixed 2026-11-26; manual tests M1 to M4 pass 2026-11-27; M5 layout pass 2026-11-27, rerun pending after the A6 fix; M6 (Safari) on hold
 ---
 
 # Report formats, run comparison, and managed Macs (version 1.5)
@@ -50,6 +50,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.5), a user decisio
 - 2026-11-26: Time Machine destinations keep the 1.4 behavior, as Unreadable evidence says for an unverified command. Neither available Mac lacks a destination, so the exit status of `tmutil destinationinfo` with no destination is unverified. `brew outdated` exits 0 with packages outdated (verified), so its failure is detected from the exit status.
 - 2026-11-26: `Time Machine settings` (the settings file is missing while a destination exists) records a skip that lists MA-BACKUPS-002, 003, and 004, and the report prints `unreadable (settings file missing)`. MA-BACKUPS-004 is listed because `AutoBackup` is read from the same file; this matches the Task 3 fix to the `Time Machine backup age and encryption` row. Rejected: the 1.4 value `unknown` with no skip, which reads as a clean result (requirement 9).
 - 2026-11-26 (A5): `--compare` with only `csv` or `ocsf` output is a usage error (exit 2) before the audit starts. Found by the pre-merge review: the run gave no comparison and no notice. Rejected: a notice on stderr while the run goes on, because the user asked for a comparison that the run cannot give. Conviction: `firm` (the user approved the recommendation).
+- 2026-11-27 (A6): the debug port check skips the audit's own process and its descendants. Found by M5: in remote mode the audit's command line is the script text, and the 1.5 guidance names `--remote-debugging-port`, so every remote run reported itself. Rejected: rewording the guidance, because any later script text could trip the check again. Conviction: `firm` (the user approved the recommendation).
 - 2026-11-26 (A4): `--fail-on LEVEL` is opt-in and exits 3. Rejected: exit 2 for a HIGH finding, as `docs/ISSUES.md` suggested, because exit 2 already means a usage error. Conviction: `ok`.
 
 ## Verified facts

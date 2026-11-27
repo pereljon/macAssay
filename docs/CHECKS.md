@@ -182,7 +182,7 @@ This section gives evidence only; no finding uses its label yet.
 | Safari web extensions | `pluginkit -mAvvv -p com.apple.Safari.web-extension` | none | none |
 | Forced browser extensions | managed and local preferences for Chrome, Edge, Brave, and Firefox; Firefox `policies.json`; MDM enrollment from `profiles status -type enrollment` | none | `MA-APPS-005` HIGH: forced by managed preferences or `policies.json` on a Mac not enrolled in MDM; `MA-APPS-006` MEDIUM: forced by local preferences; `MA-APPS-007` INFO: forced by policy on an MDM-enrolled Mac |
 | Native-messaging hosts | `NativeMessagingHosts` folders under the user's and system `Application Support` and Chrome folders | none | `MA-APPS-010` INFO: at least one host; `MA-APPS-008` MEDIUM: a host runs a program from a temporary or shared folder; `MA-APPS-009` LOW: a host points to a missing program |
-| Programs with a debug port | `ps -axwwo pid=,command=` for `--remote-debugging-port` and `--inspect` flags; `lsof` for the bind address; launch item `ProgramArguments` | none (reuses the sudo-rule `lsof` listeners when installed) | `MA-APPS-003` HIGH: debug port on a non-loopback address; `MA-APPS-004` MEDIUM: on loopback or an unknown address |
+| Programs with a debug port | `ps -axwwo pid=,ppid=,command=` for `--remote-debugging-port` and `--inspect` flags, leaving out the audit's own processes; `lsof` for the bind address; launch item `ProgramArguments` | none (reuses the sudo-rule `lsof` listeners when installed) | `MA-APPS-003` HIGH: debug port on a non-loopback address; `MA-APPS-004` MEDIUM: on loopback or an unknown address |
 
 ## 10. Accounts and privileges (Accounts)
 

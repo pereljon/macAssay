@@ -1281,9 +1281,13 @@ pref_line() { if [ "$PSRC" = managed ]; then say "- $1: $(mdesc "$PV") (managed)
 src_if() { [ "$1" = "$3" ] && [ "$2" = managed ] && printf managed; return 0; }
 # nmh_risk PATH: prints MEDIUM for a native-messaging host program in a temporary or shared folder, LOW for a missing one.
 nmh_risk() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) echo MEDIUM ;; /*) [ -e "$1" ] || echo LOW ;; esac; }
-# debug_pids; stdin: "PID command" lines from ps. Prints the PID of each process started with a debug port flag.
+# debug_pids SELF; stdin: "PID PPID command" lines from ps. Prints the PID of each process started with a debug port flag,
+# except SELF and its descendants: in remote mode the audit's command line is the script text, which names the flags.
 # The pattern text has "--(" where a match needs "--r" or "--i", so this awk never matches its own command line.
-debug_pids() { awk '/ --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}'; }
+debug_pids() { awk -v self="$1" '
+  { par[$1] = $2 }
+  / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ { hit[$1] = 1 }
+  END { for (p in hit) { q = p; n = 0; while (q != "" && q != self && q > 1 && n++ < 64) q = par[q]; if (q != self) print p } }' | sort -n; }
 # launch_debug_class; stdin: a launch item's arguments, one per line. Prints nonloopback or loopback for an item with a debug port flag.
 launch_debug_class() { awk '
   prev == "--remote-debugging-address" { a = $0 }
@@ -2012,7 +2016,7 @@ NML=$(awk -F'\t' '$1 == "LOW" {print $2 " -> " $3}' "$TMP/nmr" | paste -sd';' -)
 [ -n "$NML" ] && finding MA-APPS-009 LOW Apps "Native-messaging host points to a missing program: $NML"
 h3 "Debug ports"
 # ps command lines go straight into debug_pids and never reach $TMP; only PIDs come out.
-ps -axwwo pid=,command= 2>/dev/null | debug_pids | while read -r pid; do
+ps -axwwo pid=,ppid=,command= 2>/dev/null | debug_pids "$$" | while read -r pid; do
   pp=$(ps -o comm= -p "$pid" 2>/dev/null); [ -n "$pp" ] || continue
   la=$(lsof -nP -a -p "$pid" -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}')
   [ -z "$la" ] && [ "$LSOFL" -eq 1 ] && la=$(awk -v p="$pid" '$2 == p {print $9}' "$TMP/lsofl")

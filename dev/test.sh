@@ -391,12 +391,15 @@ check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = "RealVNC Se
 check "G23 sshd gives nothing" [ -z "$(rs /usr/sbin/sshd)" ]
 
 # G8: debug ports. Only PIDs, classes and program paths leave the parsers.
-printf '%s\n' '101 /Applications/Foo App.app/Contents/MacOS/Foo --remote-debugging-port=9222 --token=SECRET_A' \
-  '102 /usr/bin/node --inspect-brk=0.0.0.0:9229 app.js' '103 /usr/bin/node --inspect-wait app.js' \
-  '104 /usr/bin/node --inspect-port=9229 app.js' '105 /x/chrome --remote-debugging-pipe' \
-  '106 awk / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}' \
-  '107 /usr/bin/node --inspect' | debug_pids > "$T/g8"
-check "G8 PIDs of debug-port processes only" [ "$(paste -sd, - < "$T/g8")" = "101,102,103,107" ]
+printf '%s\n' '101 1 /Applications/Foo App.app/Contents/MacOS/Foo --remote-debugging-port=9222 --token=SECRET_A' \
+  '102 1 /usr/bin/node --inspect-brk=0.0.0.0:9229 app.js' '103 101 /usr/bin/node --inspect-wait app.js' \
+  '104 1 /usr/bin/node --inspect-port=9229 app.js' '105 1 /x/chrome --remote-debugging-pipe' \
+  '106 1 awk / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}' \
+  '107 1 /usr/bin/node --inspect' \
+  '500 400 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' \
+  '510 500 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' \
+  '520 510 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' | debug_pids 500 > "$T/g8"
+check "G8 PIDs of debug-port processes only, not the audit's own" [ "$(paste -sd, - < "$T/g8")" = "101,102,103,107" ]
 check "G8 no command text in the output" hasnt "$T/g8" "SECRET"
 printf '%s\n' /usr/bin/node --inspect=0.0.0.0:9229 --token=SECRET_B | launch_debug_class > "$T/g8l"
 check "G8 launch item non-loopback inspect" [ "$(cat "$T/g8l")" = nonloopback ]
