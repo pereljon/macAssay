@@ -36,7 +36,10 @@
 #   --key PATH       SSH private key (adds IdentitiesOnly=yes)
 #   --port N         SSH port (default 22)
 #   --known-hosts F  known_hosts file to use for the host key check
+#   --bundle         used by remote mode on the audited Mac: print the data files instead of a report
 #   With --host, --print-sudoers and --install-sudoers act on the remote Mac.
+#   With --host, the report is built on this Mac, so --format, -o, --stdout, --compare,
+#   --accepted, and --fail-on all work.
 #
 # Examples:
 #   ./macassay                                  audit this Mac
@@ -937,6 +940,21 @@ osascript -e 'do shell script \"rm $RULES\" with administrator privileges'"
   echo "Undo: sudo rm $RULES"
   exit 0; }
 
+# write_bundle DIR: the remote result, exactly five lines: a version line, then the four data files as base64 without line breaks.
+write_bundle() { local f; echo "macassay-bundle 1"
+  for f in meta.tsv findings.tsv skipped.tsv body.md; do /usr/bin/base64 < "$1/$f" | tr -d '\n'; echo; done; }
+# read_bundle FILE DIR: decodes a bundle into fixed file names in DIR. The bundle comes from the audited Mac, so every line
+# is checked against the base64 alphabet before decoding (base64 -D exits 0 on some invalid input), and no name or path
+# comes from it.
+read_bundle() { local l f re='^[A-Za-z0-9+/]*={0,2}$'
+  { IFS= read -r l && [ "$l" = "macassay-bundle 1" ] || return 1
+    for f in meta.tsv findings.tsv skipped.tsv body.md; do
+      IFS= read -r l || return 1
+      [[ $l =~ $re ]] && [ $(( ${#l} % 4 )) -eq 0 ] || return 1
+      printf '%s' "$l" | /usr/bin/base64 -D > "$2/$f" 2>/dev/null || return 1
+    done
+    if IFS= read -r l || [ -n "$l" ]; then return 1; fi; } < "$1"; }
+
 remote_mode() {
   local target ssho os b64 rcmd pass rc
   [ -f "$0" ] || die "Remote mode needs the script file on disk." 2
@@ -955,13 +973,15 @@ remote_mode() {
     print-sudoers) /usr/bin/ssh "${ssho[@]}" "$target" "$rcmd --print-sudoers${SUSER:+=$SUSER}" </dev/null; exit $? ;;
     install-sudoers) /usr/bin/ssh -t "${ssho[@]}" "$target" "/usr/bin/sudo $rcmd --install-sudoers${SUSER:+=$SUSER}"; exit $? ;;
   esac
-  pass="--stdout"; [ "$QUICK" -eq 1 ] && pass="$pass --quick"; [ "$OFFLINE" -eq 1 ] && pass="$pass --offline"; [ "$SKIPDU" -eq 1 ] && pass="$pass --skip-du"
-  [ -n "$OUT" ] || OUT="./macassay-${RHOST}-$(date +%Y%m%d-%H%M).md"
+  pass="--bundle"; [ "$QUICK" -eq 1 ] && pass="$pass --quick"; [ "$OFFLINE" -eq 1 ] && pass="$pass --offline"; [ "$SKIPDU" -eq 1 ] && pass="$pass --skip-du"
+  DEFBASE="./macassay-${RHOST}-$(date +%Y%m%d-%H%M)"
   echo "Auditing $target over SSH..." >&2
   # shellcheck disable=SC2029  # as above
-  /usr/bin/ssh "${ssho[@]}" "$target" "$rcmd $pass" </dev/null > "$OUT.part"; rc=$?
-  if [ "$rc" -ne 0 ] || [ ! -s "$OUT.part" ]; then rm -f "$OUT.part"; die "Remote audit failed (exit $rc)."; fi
-  mv "$OUT.part" "$OUT"; echo "Report written to $OUT" >&2; exit 0; }
+  /usr/bin/ssh "${ssho[@]}" "$target" "$rcmd $pass" </dev/null > "$TMP/bundle"; rc=$?
+  [ "$rc" -eq 0 ] || die "Remote audit failed (exit $rc)."
+  mkdir "$TMP/rb" || exit 1
+  read_bundle "$TMP/bundle" "$TMP/rb" || die "Remote audit returned a malformed result."
+  render_all "$TMP/rb"; exit $?; }
 
 # recent_installs CUTOFF; stdin: plutil -p of /Library/Receipts/InstallHistory.plist.
 # Prints "date  name version" for each install on or after CUTOFF (YYYY-MM-DD) that Apple did not make.
@@ -1311,7 +1331,7 @@ git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/,
 
 # ---------- options and mode ----------
 OUT=""; QUICK=0; OFFLINE=0; SKIPDU=0; STDOUT=0; MODE=""; SUSER=""
-DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""; COMPARE=""; FAILON=""
+DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""; COMPARE=""; FAILON=""; BUNDLE=0
 RHOST=""; RUSER=""; RKEY=""; RPORT=""; RKH=""
 need() { [ $# -ge 2 ] || die "Option $1 needs a value (see -h)." 2; }
 setmode() { [ -z "$MODE" ] || [ "$MODE" = "$1" ] || die "--$MODE and --$1 cannot be combined." 2; MODE="$1"; }
@@ -1328,6 +1348,7 @@ while [ $# -gt 0 ]; do
     --accepted) need "$@"; ACCEPTED="$2"; OUTOPTS="$OUTOPTS --accepted"; shift 2 ;;
     --compare) need "$@"; COMPARE="$2"; OUTOPTS="$OUTOPTS --compare"; shift 2 ;;
     --fail-on) need "$@"; FAILON="$2"; OUTOPTS="$OUTOPTS --fail-on"; shift 2 ;;
+    --bundle) BUNDLE=1; shift ;;
     --host) need "$@"; RHOST="$2"; shift 2 ;;
     --user) need "$@"; RUSER="$2"; shift 2 ;;
     --key) need "$@"; RKEY="$2"; shift 2 ;;
@@ -1346,6 +1367,10 @@ FMTS=$(check_formats "$FORMATS") || die "Unknown format in --format: $FORMATS (u
 case " $OUTOPTS " in *" --fail-on "*) case "$FAILON" in high|medium|low|info) ;; *) die "--fail-on takes high, medium, low, or info." 2 ;; esac ;; esac
 if [ -n "$MODE" ] && [ -n "$OUTOPTS" ]; then die "--$MODE cannot be combined with$OUTOPTS." 2; fi
 case "$FMTS" in *" "*) [ "$STDOUT" -eq 0 ] || die "--stdout works with one format only." 2 ;; esac
+if [ "$BUNDLE" -eq 1 ]; then
+  [ -z "$OUTOPTS" ] || die "--bundle cannot be combined with$OUTOPTS." 2
+  [ -z "$RHOST" ] || die "--bundle and --host cannot be combined." 2
+fi
 
 TMP=$(mktemp -d /tmp/macassay.XXXXXX) || exit 1
 trap 'rm -rf "$TMP"' EXIT
@@ -2072,4 +2097,5 @@ sect_end
 NPR=$(grep -c . "$TMP/privran"); NPS=$(grep -c '^priv' "$SKIPS"); NOS=$(grep -c '^other' "$SKIPS")
 write_meta
 total_status
+if [ "$BUNDLE" -eq 1 ]; then write_bundle "$TMP"; exit $?; fi
 render_all "$TMP"; exit $?

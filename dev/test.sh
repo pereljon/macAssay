@@ -1158,5 +1158,26 @@ check "1.5 P11 bad level exits 2" p17 --fail-on severe
 check "1.5 P11 empty level exits 2" p17 --fail-on ""
 for m in --print-sudoers --install-sudoers; do check "1.5 P17 --fail-on with $m" p17 "$m" --fail-on high; done
 
+# P12: bundle round trip and rejections.
+mkfix "$V/p12"; write_bundle "$V/p12" > "$V/p12.b"; mkdir "$V/p12r"
+check "1.5 P12 round trip succeeds" read_bundle "$V/p12.b" "$V/p12r"
+for f in meta.tsv findings.tsv skipped.tsv body.md; do check "1.5 P12 $f identical" cmp -s "$V/p12/$f" "$V/p12r/$f"; done
+check "1.5 P12 five lines" [ "$(wc -l < "$V/p12.b" | tr -d ' ')" -eq 5 ]
+p12bad() { mkdir -p "$V/p12x"; ! read_bundle "$1" "$V/p12x"; }
+{ echo "macassay-bundle 2"; tail -n +2 "$V/p12.b"; } > "$V/p12w"; check "1.5 P12 wrong first line rejected" p12bad "$V/p12w"
+head -4 "$V/p12.b" > "$V/p12s"; check "1.5 P12 too few lines rejected" p12bad "$V/p12s"
+{ cat "$V/p12.b"; echo; } > "$V/p12l"; check "1.5 P12 too many lines rejected" p12bad "$V/p12l"
+{ head -1 "$V/p12.b"; echo 'abc$%'; tail -n +3 "$V/p12.b"; } > "$V/p12c"; check "1.5 P12 non-base64 line rejected" p12bad "$V/p12c"
+{ cat "$V/p12.b"; printf 'JUNK'; } > "$V/p12j"; check "1.5 P12 trailing data without a newline rejected" p12bad "$V/p12j"
+check "1.5 P12 only the four fixed names are written" [ -z "$(ls "$V/p12r" "$V/p12x" | grep -vxE '(meta\.tsv|findings\.tsv|skipped\.tsv|body\.md|.*:)?')" ]
+# P17 (rest): --bundle with each output option, and with --host.
+check "1.5 P17 --bundle with --format" p17 --bundle --format md
+check "1.5 P17 --bundle with -o" p17 --bundle -o x.md
+check "1.5 P17 --bundle with --stdout" p17 --bundle --stdout
+check "1.5 P17 --bundle with --compare" p17 --bundle --compare "$V/p10old.json"
+check "1.5 P17 --bundle with --accepted" p17 --bundle --accepted "$V/p9.txt"
+check "1.5 P17 --bundle with --fail-on" p17 --bundle --fail-on high
+check "1.5 P17 --bundle with --host" p17 --bundle --host example.invalid
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
