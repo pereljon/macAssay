@@ -651,6 +651,18 @@ SKIP_IDS=$(printf '%s\n' \
   $'sudoers.d/*\tMA-ACCOUNTS-005 MA-ACCOUNTS-006 MA-ACCOUNTS-008 MA-ACCOUNTS-009 MA-ACCOUNTS-010 MA-ACCOUNTS-011' \
   $'Privacy permissions (user TCC database)\t' \
   $'Privacy permissions (system TCC database)\t' \
+  $'Time Machine settings\tMA-BACKUPS-002 MA-BACKUPS-003 MA-BACKUPS-004' \
+  $'Jetsam reports\tMA-HEALTH-002' \
+  $'Kernel panics\tMA-HEALTH-005' \
+  $'Homebrew outdated packages\tMA-UPDATES-002' \
+  $'XProtect version\tMA-UPDATES-005' \
+  $'Browser policies (*)\tMA-APPS-005 MA-APPS-006 MA-APPS-007' \
+  $'Remote Management settings\tMA-SHARING-004 MA-SHARING-005 MA-SHARING-006' \
+  $'Find My\tMA-PLATFORM-019' \
+  $'Firewall stealth mode\tMA-PLATFORM-004' \
+  $'Screen lock\tMA-PLATFORM-010' \
+  $'XProtect log search\tMA-EVENTS-001' \
+  $'SSH log search\tMA-EVENTS-002' \
   $'7-day log searches (XProtect, SSH)\tMA-EVENTS-001 MA-EVENTS-002')
 # skip_row LABEL: prints the IDs of the first SKIP_IDS row whose pattern matches LABEL. Fails when no row matches.
 skip_row() { local p i; while IFS=$'\t' read -r p i; do
@@ -811,6 +823,11 @@ load_accepted() { local line id rest match reason n=0
 # skip LABEL REASON: record a check that could not run.
 skip() { printf 'other\t%s\t%s\t%s\n' "$1" "$2" "$(skip_row "$1")" >> "$SKIPS"; }
 skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }
+# readable PATH LABEL: succeeds when PATH is absent or can be read. Tries a real read: a privacy-protected file can pass -r.
+readable() {
+  [ -e "$1" ] || return 0
+  if [ -d "$1" ]; then ls "$1" >/dev/null 2>&1 && return 0; else head -c 1 "$1" >/dev/null 2>&1 && return 0; fi
+  skip "$2" "$1 is not readable; Full Disk Access for the terminal app may be needed"; return 1; }
 # priv LABEL COMMAND ARGS...: run one command allowed by the macassay sudo rules. Fails when skipped.
 priv() {
   local label="$1" rc; shift
@@ -1441,9 +1458,11 @@ if [ "${SWT:-0}" -gt 0 ] && [ $(( SWU * 100 / SWT )) -ge 75 ]; then finding MA-H
 run "Memory pressure" sh -c 'memory_pressure | tail -2; vm_stat | grep -E "Pageouts|Swapouts"'
 ps -axo rss=,pcpu=,pid=,user=,comm= | sort -rn | head -15 | top_mem | block "Top 15 processes by memory"
 ps -axo pcpu=,rss=,pid=,comm= | sort -rn | head -10 | block "Top 10 processes by CPU"
-JET=$(find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -name 'JetsamEvent-*' -mtime -7 2>/dev/null | wc -l | tr -d ' ')
-say "- Out-of-memory (Jetsam) reports in the last 7 days: $JET"
-[ "$JET" -ge 3 ] && finding MA-HEALTH-002 MEDIUM Health "$JET out-of-memory (Jetsam) events in 7 days; macOS is killing processes to free memory."
+if readable /Library/Logs/DiagnosticReports "Jetsam reports" && readable "$THOME/Library/Logs/DiagnosticReports" "Jetsam reports"; then
+  JET=$(find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -name 'JetsamEvent-*' -mtime -7 2>/dev/null | wc -l | tr -d ' ')
+  say "- Out-of-memory (Jetsam) reports in the last 7 days: $JET"
+  [ "$JET" -ge 3 ] && finding MA-HEALTH-002 MEDIUM Health "$JET out-of-memory (Jetsam) events in 7 days; macOS is killing processes to free memory."
+else say "- Out-of-memory (Jetsam) reports in the last 7 days: unreadable (DiagnosticReports folder not readable)"; fi
 h3 "Storage"
 run "Volumes" df -h / /System/Volumes/Data
 DPCT=$(df -k /System/Volumes/Data | awk 'NR==2{gsub("%","",$5); print $5}')
@@ -1454,8 +1473,10 @@ system_profiler SPStorageDataType 2>/dev/null | grep -E 'Mount Point|Device Name
 system_profiler SPStorageDataType 2>/dev/null | grep 'S.M.A.R.T' | grep -qv Verified && finding MA-HEALTH-004 HIGH Health "A drive reports a SMART status other than Verified."
 h3 "Crash reports"
 find /Library/Logs/DiagnosticReports "$THOME/Library/Logs/DiagnosticReports" -type f -mtime -14 2>/dev/null | crash_kinds | block "Crash and diagnostic reports, last 14 days (count by kind)"
-NP=$(find /Library/Logs/DiagnosticReports -name '*.panic' -mtime -30 2>/dev/null | wc -l | tr -d ' ')
-say "- Kernel panics in 30 days: $NP"; [ "$NP" -gt 0 ] && finding MA-HEALTH-005 HIGH Health "$NP kernel panic(s) in the last 30 days."
+if readable /Library/Logs/DiagnosticReports "Kernel panics"; then
+  NP=$(find /Library/Logs/DiagnosticReports -name '*.panic' -mtime -30 2>/dev/null | wc -l | tr -d ' ')
+  say "- Kernel panics in 30 days: $NP"; [ "$NP" -gt 0 ] && finding MA-HEALTH-005 HIGH Health "$NP kernel panic(s) in the last 30 days."
+else say "- Kernel panics in 30 days: unreadable (DiagnosticReports folder not readable)"; fi
 h3 "Disk usage"
 if [ "$SKIPDU" -eq 0 ]; then
   echo "Measuring home folder usage..." >&2
@@ -1483,17 +1504,22 @@ h2 "2. Backups"
 run "Local snapshots" tmutil listlocalsnapshots /
 NSNAP=$(tmutil listlocalsnapshots / 2>/dev/null | grep -c TimeMachine)
 TMP_PL=/Library/Preferences/com.apple.TimeMachine.plist
-TMDEST=$(tmutil destinationinfo 2>/dev/null | awk -F': ' '/^Name/{print $2}' | paste -sd, -)
+TMDEST=$(tmutil destinationinfo 2>/dev/null | awk -F': ' '/^Name/{print $2}' | paste -sd, -); TMRC=0
+TMU=""
 if [ -e "$TMP_PL" ] && ! plutil -lint "$TMP_PL" >/dev/null 2>&1; then
   skip "Time Machine backup age and encryption" "settings file unreadable; needs Full Disk Access for the terminal app"
+  TMU="unreadable (needs Full Disk Access for the terminal app)"
+elif [ -n "$TMDEST" ] && [ ! -e "$TMP_PL" ]; then
+  skip "Time Machine settings" "settings file missing while a destination exists"; TMU="unreadable (settings file missing)"
 fi
 NSD=$(plutil -extract Destinations.0.SnapshotDates raw -o - "$TMP_PL" 2>/dev/null)
 LASTBK=""; [ -n "$NSD" ] && [ "$NSD" -gt 0 ] 2>/dev/null && LASTBK=$(plutil -extract "Destinations.0.SnapshotDates.$((NSD-1))" raw -o - "$TMP_PL" 2>/dev/null)
 TMENC=$(plutil -extract Destinations.0.LastKnownEncryptionState raw -o - "$TMP_PL" 2>/dev/null)
-say "- Time Machine destinations: ${TMDEST:-none}"; say "- Local snapshots: $NSNAP"
-say "- Latest backup on first destination: ${LASTBK:-unknown} (UTC); backups recorded: ${NSD:-unknown}"
-say "- First destination encryption: ${TMENC:-unknown}"
-[ -z "$TMDEST" ] && finding MA-BACKUPS-001 MEDIUM Backups "No Time Machine destination configured."
+if [ "$TMRC" -eq 0 ]; then say "- Time Machine destinations: ${TMDEST:-none}"; else say "- Time Machine destinations: unreadable (tmutil destinationinfo failed)"; fi
+say "- Local snapshots: $NSNAP"
+say "- Latest backup on first destination: ${LASTBK:-${TMU:-unknown}} (UTC); backups recorded: ${NSD:-${TMU:-unknown}}"
+say "- First destination encryption: ${TMENC:-${TMU:-unknown}}"
+[ "$TMRC" -eq 0 ] && [ -z "$TMDEST" ] && finding MA-BACKUPS-001 MEDIUM Backups "No Time Machine destination configured."
 [ "$TMENC" = "NotEncrypted" ] && finding MA-BACKUPS-002 MEDIUM Backups "Time Machine disk is not encrypted."
 if [ -n "$LASTBK" ]; then
   AGE=$(( ( $(date +%s) - $(date -j -u -f "%Y-%m-%dT%H:%M:%SZ" "$LASTBK" +%s 2>/dev/null || date +%s) ) / 3600 ))
@@ -1536,13 +1562,16 @@ if [ "$OFFLINE" -eq 0 ]; then
   SU=$(softwareupdate -l 2>&1); echo "$SU" | block "softwareupdate -l"
   echo "$SU" | grep -q '^\* Label' && finding MA-UPDATES-001 MEDIUM Updates "macOS updates are available: $(echo "$SU" | awk -F': ' '/^\* Label/{print $2}' | paste -sd';' -)"
   if [ -n "$BREW" ]; then
-    OBF=$("$BREW" outdated --quiet --formula 2>/dev/null); OBC=$("$BREW" outdated --quiet --cask 2>/dev/null)
-    OBG=$(greedy_only "$OBC" "$("$BREW" outdated --quiet --cask --greedy 2>/dev/null)")
-    NBF=$(printf '%s' "$OBF" | grep -c .); NBC=$(printf '%s' "$OBC" | grep -c .); NB=$(( NBF + NBC ))
-    printf '%s' "$OBF" | block "Outdated Homebrew formulae ($NBF)"
-    printf '%s' "$OBC" | block "Outdated Homebrew casks ($NBC)"
-    printf '%s' "$OBG" | block "Casks outdated only under --greedy: they update themselves or track latest ($(printf '%s' "$OBG" | grep -c .))"
-    [ "$NB" -ge 20 ] && finding MA-UPDATES-002 LOW Updates "$NB Homebrew packages are outdated ($NBF formulae, $NBC casks)."
+    OBF=$("$BREW" outdated --quiet --formula 2>/dev/null); R1=$?; OBC=$("$BREW" outdated --quiet --cask 2>/dev/null); R2=$?
+    if [ "$R1" -ne 0 ] || [ "$R2" -ne 0 ]; then skip "Homebrew outdated packages" "brew outdated failed"; say "- Outdated Homebrew packages: unreadable (brew outdated failed)"
+    else
+      OBG=$(greedy_only "$OBC" "$("$BREW" outdated --quiet --cask --greedy 2>/dev/null)")
+      NBF=$(printf '%s' "$OBF" | grep -c .); NBC=$(printf '%s' "$OBC" | grep -c .); NB=$(( NBF + NBC ))
+      printf '%s' "$OBF" | block "Outdated Homebrew formulae ($NBF)"
+      printf '%s' "$OBC" | block "Outdated Homebrew casks ($NBC)"
+      printf '%s' "$OBG" | block "Casks outdated only under --greedy: they update themselves or track latest ($(printf '%s' "$OBG" | grep -c .))"
+      [ "$NB" -ge 20 ] && finding MA-UPDATES-002 LOW Updates "$NB Homebrew packages are outdated ($NBF formulae, $NBC casks)."
+    fi
   fi
 else say "Skipped (--offline)."; skip "macOS and Homebrew update checks" "--offline"; fi
 if [ -n "$BREW" ]; then
@@ -1558,12 +1587,13 @@ if [ -n "$BREW" ]; then
   [ -s "$TMP/bnq" ] && finding MA-UPDATES-011 LOW Updates "$(grep -c . "$TMP/bnq") Homebrew cask app(s) have no quarantine attribute, so Gatekeeper may not have checked them; an app that updates itself can also remove it: $(sed 's#.*/##' "$TMP/bnq" | paste -sd, -)"
 fi
 system_profiler SPInstallHistoryDataType 2>/dev/null | xprotect_versions | block "XProtect versions (latest install of each component)"
-XPI=$(xprotect version 2>/dev/null | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
+XPV=$(xprotect version 2>/dev/null); XPRC=$?
+XPI=$(printf '%s\n' "$XPV" | sed -n 's/.*Installed: \([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
 if [ -n "$XPI" ]; then
   XPD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d' "$XPI" +%s 2>/dev/null || date +%s) ) / 86400 ))
   say "- XProtect installed: $XPI ($XPD days ago)"
   [ "$XPD" -gt 60 ] && finding MA-UPDATES-005 MEDIUM Updates "XProtect was last updated $XPD days ago."
-else say "- XProtect installed: unknown"; fi
+else skip "XProtect version" "xprotect version failed or gave no date (exit $XPRC)"; say "- XProtect installed: unreadable (xprotect version gave no date)"; fi
 plutil -p /Library/Receipts/InstallHistory.plist 2>/dev/null | recent_installs "$(date -u -v-30d +%Y-%m-%d)" > "$TMP/inst"
 say "- Non-Apple installer packages recorded: $(pkgutil --pkgs 2>/dev/null | grep -vc '^com\.apple\.')"
 if [ -s "$TMP/inst" ]; then block "Non-Apple installs in the last 30 days (date, name, version)" < "$TMP/inst"
@@ -1583,12 +1613,19 @@ printf '%s\n' "$SIP" "$FV" "Gatekeeper: $GK" "$FWS$FWM" "$FWST$FWSTM" "$FWSIG" "
 echo "$SIP" | grep -q enabled || finding MA-PLATFORM-001 HIGH Platform "System Integrity Protection is not enabled."
 echo "$GK" | grep -q enabled || finding MA-PLATFORM-002 HIGH Platform "Gatekeeper is disabled."
 echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 MEDIUM Platform "Application firewall is off." "${FWM:+managed}"
-echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)." "${FWSTM:+managed}"
+case "$FWST" in
+  *"stealth mode is on"*) ;;
+  *"stealth mode is off"*) finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)." "${FWSTM:+managed}" ;;
+  *) skip "Firewall stealth mode" "socketfilterfw gave no state"; say "- Firewall stealth mode: unreadable (socketfilterfw gave no state)" ;;
+esac
 echo "$FV" | grep -q 'On' || finding MA-PLATFORM-005 MEDIUM Platform "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
 [ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL." "$AUTOL_S"
-SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
-SLR=$(screen_lock_sev "$SL")
-[ -n "$SLR" ] && finding MA-PLATFORM-010 "${SLR%%$'\t'*}" Platform "Screen lock is ${SLR#*$'\t'}."
+SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //')
+case "$SL" in
+  *immediate*|*[Oo]ff*|*seconds*) say "- Screen lock: $(mdesc "$SL")"; SLR=$(screen_lock_sev "$SL")
+    [ -n "$SLR" ] && finding MA-PLATFORM-010 "${SLR%%$'\t'*}" Platform "Screen lock is ${SLR#*$'\t'}." ;;
+  *) skip "Screen lock" "sysadminctl gave no screen lock state"; say "- Screen lock: unreadable (sysadminctl gave no state)" ;;
+esac
 BA=$(nvram boot-args 2>/dev/null | cut -f2-)
 say "- Boot arguments: $(mdesc "${BA:-none}")"
 case "$(boot_args_sev "$BA")" in
@@ -1603,11 +1640,14 @@ pref_line "Library validation disabled (DisableLibraryValidation)" "0, library v
 pref com.apple.LaunchServices LSQuarantine "$(defaults read com.apple.LaunchServices LSQuarantine 2>/dev/null)"; LQ="$PV"
 pref_line "Quarantine for downloads (LSQuarantine)" "1, on"
 [ "$LQ" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off (LSQuarantine=0), so Gatekeeper does not check downloaded files." "$PSRC"
-pref com.apple.FindMyMac FMMEnabled "$(defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled 2>/dev/null)"; FMM="$PV"; FMM_S="$PSRC"
-if [ "$FMM_S" = managed ]; then say "- Find My Mac (FMMEnabled): $(mdesc "$FMM") (managed)"; else say "- Find My Mac (FMMEnabled): $(mdesc "${FMM:-not set}")"; fi
+FMOK=0
+if readable /Library/Preferences/com.apple.FindMyMac.plist "Find My"; then FMOK=1
+  pref com.apple.FindMyMac FMMEnabled "$(defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled 2>/dev/null)"; FMM="$PV"; FMM_S="$PSRC"
+  if [ "$FMM_S" = managed ]; then say "- Find My Mac (FMMEnabled): $(mdesc "$FMM") (managed)"; else say "- Find My Mac (FMMEnabled): $(mdesc "${FMM:-not set}")"; fi
+else say "- Find My Mac (FMMEnabled): unreadable (settings file not readable)"; fi
 AL=$(printf '%s\n' "$HW" | awk -F': ' '/Activation Lock Status/ {print $2; exit}')
 say "- Activation Lock: $(mdesc "${AL:-unknown}")"
-FMF=$(findmy_finding "$FMM" "$HASBAT")
+FMF=""; [ "$FMOK" = 1 ] && FMF=$(findmy_finding "$FMM" "$HASBAT")
 [ -n "$FMF" ] && finding MA-PLATFORM-019 "${FMF#*$'\t'}" Platform "Find My Mac is off. Confirm that this is intended; an MDM can turn it off on purpose." "$FMM_S"
 find /Applications -maxdepth 2 -name '*.app' -type d -perm -2 2>/dev/null > "$TMP/wwa"
 if [ -s "$TMP/wwa" ]; then block "Apps writable by everyone" < "$TMP/wwa"
@@ -1668,15 +1708,17 @@ launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.tftpd" => enab
 listening 445 && finding MA-SHARING-003 LOW Sharing "SMB file sharing is on: $(sharing -l 2>/dev/null | awk -F'\t+' '/^name:/{print $2}' | paste -sd';' -)"
 RM=/Library/Preferences/com.apple.RemoteManagement.plist
 if listening 3283 || pgrep -x ARDAgent >/dev/null; then
-  RMS=""; for k in ARD_AllLocalUsers VNCLegacyConnectionsEnabled allowInsecureDH ScreenSharingReqPerm; do
-    v=$(managed_val com.apple.RemoteManagement "$k") && RMS="$RMS$k = $v (managed)"$'\n'; done
-  say ""; { defaults read "$RM" 2>/dev/null | grep -E 'ARD_AllLocalUsers|VNCLegacy|allowInsecureDH|ScreenSharingReqPerm'; printf '%s' "$RMS"; } | block "Remote Management settings"
-  pref com.apple.RemoteManagement ARD_AllLocalUsers "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)"
-  [ "$PV" = 1 ] && finding MA-SHARING-004 MEDIUM Sharing "Remote Management (ARD) is on for all local users." "$PSRC"
-  pref com.apple.RemoteManagement VNCLegacyConnectionsEnabled "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)"
-  [ "$PV" = 1 ] && finding MA-SHARING-005 MEDIUM Sharing "Remote Management allows legacy VNC password connections." "$PSRC"
-  pref com.apple.RemoteManagement allowInsecureDH "$(defaults read "$RM" allowInsecureDH 2>/dev/null)"
-  [ "$PV" = 1 ] && finding MA-SHARING-006 MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)." "$PSRC"
+  if readable "$RM" "Remote Management settings"; then
+    RMS=""; for k in ARD_AllLocalUsers VNCLegacyConnectionsEnabled allowInsecureDH ScreenSharingReqPerm; do
+      v=$(managed_val com.apple.RemoteManagement "$k") && RMS="$RMS$k = $v (managed)"$'\n'; done
+    say ""; { defaults read "$RM" 2>/dev/null | grep -E 'ARD_AllLocalUsers|VNCLegacy|allowInsecureDH|ScreenSharingReqPerm'; printf '%s' "$RMS"; } | block "Remote Management settings"
+    pref com.apple.RemoteManagement ARD_AllLocalUsers "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)"
+    [ "$PV" = 1 ] && finding MA-SHARING-004 MEDIUM Sharing "Remote Management (ARD) is on for all local users." "$PSRC"
+    pref com.apple.RemoteManagement VNCLegacyConnectionsEnabled "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)"
+    [ "$PV" = 1 ] && finding MA-SHARING-005 MEDIUM Sharing "Remote Management allows legacy VNC password connections." "$PSRC"
+    pref com.apple.RemoteManagement allowInsecureDH "$(defaults read "$RM" allowInsecureDH 2>/dev/null)"
+    [ "$PV" = 1 ] && finding MA-SHARING-006 MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)." "$PSRC"
+  else say "- Remote Management settings: unreadable (settings file not readable)"; fi
 fi
 if listening 22; then
   AM=$(/usr/bin/ssh -F /dev/null -o PreferredAuthentications=none -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 nobody@127.0.0.1 true </dev/null 2>&1 | grep -o '([^)]*)' | tail -1)
@@ -1926,10 +1968,12 @@ if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.we
 h3 "Browser policies and extensions"
 case "$MDM" in Yes) ENROLLED=1 ;; No) ENROLLED=0 ;; *) ENROLLED=unknown ;; esac
 : > "$TMP/fx"
+FXU=0
 for dom in com.google.Chrome com.microsoft.Edge com.brave.Browser org.mozilla.firefox; do
   case "$dom" in org.mozilla.firefox) key=ExtensionSettings ;; *) key=ExtensionInstallForcelist ;; esac
   for src in "managed:/Library/Managed Preferences/$dom.plist" "managed:/Library/Managed Preferences/$TUSER/$dom.plist" "local:/Library/Preferences/$dom.plist" "local:$THOME/Library/Preferences/$dom.plist"; do
     f="${src#*:}"; [ -f "$f" ] || continue
+    readable "$f" "Browser policies ($dom)" || { FXU=1; continue; }
     ids=$(forced_ext_ids "$f" "$key" | paste -sd, -)
     [ -n "$ids" ] && printf '%s\t%s\t%s\n' "${src%%:*}" "$dom" "$ids" >> "$TMP/fx"
   done
@@ -1944,6 +1988,7 @@ if [ -s "$TMP/fx" ]; then
     MA-APPS-006) finding MA-APPS-006 MEDIUM Apps "Browser extensions are force-installed by local preferences: $fbr" ;;
     MA-APPS-007) finding MA-APPS-007 INFO Apps "Browser extensions are force-installed by policy on this MDM-enrolled Mac: $fbr" ;;
   esac
+elif [ "$FXU" = 1 ]; then say "- Forced browser extensions: unreadable for some policy files (see Limitations)"
 else say "- Forced browser extensions: none"; fi
 { find "$THOME/Library/Application Support" -maxdepth 4 -type d -name NativeMessagingHosts 2>/dev/null
   for d in /Library/Google/Chrome/NativeMessagingHosts "/Library/Application Support/Mozilla/NativeMessagingHosts"; do [ -d "$d" ] && echo "$d"; done; } > "$TMP/nmd"
@@ -2118,13 +2163,19 @@ skip "Privacy permissions (system TCC database)" "needs root and Full Disk Acces
 h2 "14. Security events from the logs"
 if [ "$QUICK" -eq 0 ]; then
   echo "Searching 7 days of logs (this can take a few minutes)..." >&2
-  XP=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND (eventMessage CONTAINS[c] "detected" OR eventMessage CONTAINS[c] "remediat")' 2>/dev/null | grep -viE 'NoThreatDetected|no (threats|detections)|status: 0|^Timestamp ' | tail -20)
-  XN=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND eventMessage CONTAINS "NoThreatDetected"' 2>/dev/null | grep -c NoThreatDetected)
-  say "- XProtect scanner results reporting NoThreatDetected (7 days): $XN"
-  if [ -n "$XP" ]; then echo "$XP" | block "XProtect detection or remediation messages (7 days)"; finding MA-EVENTS-001 HIGH Events "XProtect logged detection or remediation messages (see section 14)."; else say "- XProtect detections (7 days): none found"; fi
-  SS=$(log show --last 7d --style compact --predicate 'process BEGINSWITH "sshd" AND (eventMessage CONTAINS "Failed" OR eventMessage CONTAINS "Invalid user" OR eventMessage CONTAINS "Accepted")' 2>/dev/null)
-  say "- SSH log lines (7 days): accepted $(echo "$SS" | grep -c Accepted), failed $(echo "$SS" | grep -c Failed), invalid user $(echo "$SS" | grep -c 'Invalid user'). Without admin rights these lines are often hidden."
-  NF=$(echo "$SS" | grep -c -E 'Failed|Invalid user'); [ "$NF" -ge 20 ] && finding MA-EVENTS-002 MEDIUM Events "$NF failed SSH sign-in attempts in 7 days."
+  XP=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND (eventMessage CONTAINS[c] "detected" OR eventMessage CONTAINS[c] "remediat")' 2>/dev/null | grep -viE 'NoThreatDetected|no (threats|detections)|status: 0|^Timestamp ' | tail -20; exit "${PIPESTATUS[0]}"); XPRC=$?
+  XN=$(log show --last 7d --style compact --predicate 'subsystem BEGINSWITH "com.apple.XProtect" AND eventMessage CONTAINS "NoThreatDetected"' 2>/dev/null | grep -c NoThreatDetected; exit "${PIPESTATUS[0]}"); XNRC=$?
+  if [ "$XPRC" -ne 0 ] || [ "$XNRC" -ne 0 ]; then skip "XProtect log search" "log show failed"; say "- XProtect detections (7 days): unreadable (log show failed)"
+  else
+    say "- XProtect scanner results reporting NoThreatDetected (7 days): $XN"
+    if [ -n "$XP" ]; then echo "$XP" | block "XProtect detection or remediation messages (7 days)"; finding MA-EVENTS-001 HIGH Events "XProtect logged detection or remediation messages (see section 14)."; else say "- XProtect detections (7 days): none found"; fi
+  fi
+  SS=$(log show --last 7d --style compact --predicate 'process BEGINSWITH "sshd" AND (eventMessage CONTAINS "Failed" OR eventMessage CONTAINS "Invalid user" OR eventMessage CONTAINS "Accepted")' 2>/dev/null); SSRC=$?
+  if [ "$SSRC" -ne 0 ]; then skip "SSH log search" "log show failed"; say "- SSH log lines (7 days): unreadable (log show failed)"
+  else
+    say "- SSH log lines (7 days): accepted $(echo "$SS" | grep -c Accepted), failed $(echo "$SS" | grep -c Failed), invalid user $(echo "$SS" | grep -c 'Invalid user'). Without admin rights these lines are often hidden."
+    NF=$(echo "$SS" | grep -c -E 'Failed|Invalid user'); [ "$NF" -ge 20 ] && finding MA-EVENTS-002 MEDIUM Events "$NF failed SSH sign-in attempts in 7 days."
+  fi
 else say "Log searches skipped (--quick)."; skip "7-day log searches (XProtect, SSH)" "--quick"; fi
 
 sect_end

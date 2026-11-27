@@ -1212,5 +1212,18 @@ check "1.5 P14 unknown enrollment gives MA-APPS-005" [ "$(printf 'managed\tcom.g
 check "1.5 P14 unknown enrollment text" [ "$(forced_ext_note unknown)" = " (enrollment state unknown)" ]
 check "1.5 P14 unenrolled text" [ "$(forced_ext_note 0)" = ", and this Mac is not enrolled in MDM" ]
 
+# P22: readable records a skip only for a path that exists but cannot be read.
+mkdir -p "$V/p22d"; : > "$V/p22f"; chmod 000 "$V/p22f"
+( SKIPS="$V/p22s"; : > "$SKIPS"
+  readable "$T/none" "Find My"; echo "absent $?" > "$V/p22r"
+  readable "$V/p22d" "Find My"; echo "dir $?" >> "$V/p22r"
+  readable "$V/p22f" "Find My"; echo "unreadable $?" >> "$V/p22r" )
+chmod 600 "$V/p22f"
+check "1.5 P22 absent path passes" has "$V/p22r" "absent 0"
+check "1.5 P22 readable folder passes" has "$V/p22r" "dir 0"
+check "1.5 P22 unreadable file fails" has "$V/p22r" "unreadable 1"
+check "1.5 P22 one skip" [ "$(grep -c . "$V/p22s")" -eq 1 ]
+check "1.5 P22 skip carries the IDs" [ "$(cut -f2,4 "$V/p22s")" = $'Find My\tMA-PLATFORM-019' ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

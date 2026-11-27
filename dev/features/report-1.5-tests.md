@@ -96,6 +96,7 @@ Cases:
 - P19. `SKIP_IDS`: every literal skip label in `macassay` has a row, and every ID in it is a known ID.
 - P20. `finding` writes six fields: the section number from `h2`, and the source, `local` by default.
 - P21. `write_meta` writes the 16 keys of the design's `meta.tsv` table, each once.
+- P22. `readable` passes an absent or readable path and records one skip, with its IDs, for a path that exists but cannot be read.
 
 The 1.4 cases stay. F15, F16, and D1 cover the new optional SOURCE argument to `finding`.
 
@@ -169,3 +170,5 @@ Review of `docs/superpowers/plans/2026-11-26-report-1.5.md`, 2026-11-26, by an O
 ## Results
 
 - B1 (2026-11-26, `master` at `7ab6930`): `bash -n` passes; `dev/test.sh` 339 cases pass; ShellCheck baseline 2 SC2010 and 3 SC2012.
+- M7a (Task 14, 2026-11-26, development Mac, `/bin/bash`): `tmutil destinationinfo`, `xprotect version`, `sysadminctl -screenLock status`, and `socketfilterfw --getstealthmode` each exit 0; one destination is listed, stealth mode prints `Firewall stealth mode is off`, the screen lock prints `screenLock delay is 900 seconds`. `brew outdated --quiet --formula` exits 0; with `--no-such-flag` it exits 1. `log show` with a no-match predicate exits 0; with a bad predicate it exits 64, also through `exit "${PIPESTATUS[0]}"` in a command substitution. All values match the earlier record. `tmutil destinationinfo` on a Mac with no destination was not run (variant B keeps the 1.4 behavior). Note: in zsh `log` is a shell built-in, so run these under `/bin/bash` or as `/usr/bin/log`; zsh gives a false exit status 1.
+- M7 (Task 14, 2026-11-26, `--quick --offline --skip-du`, agent session in tmux without Full Disk Access): Time Machine backup age and encryption showed `unreadable (needs Full Disk Access for the terminal app)` on the backup age, count, and encryption lines, with a skip record and no MA-BACKUPS-001 to 004 finding. The other cases did not apply on this Mac: the DiagnosticReports folders (Jetsam, kernel panics) and `com.apple.FindMyMac.plist` are readable here; Remote Management is not listening; no browser policy file exists; `xprotect version`, `sysadminctl`, and `socketfilterfw` gave a known state; `--offline` and `--quick` skip the Homebrew and log checks under their own labels. The no-answer paths for those cases have no live M7 evidence.
