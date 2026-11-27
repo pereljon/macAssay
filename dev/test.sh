@@ -1050,5 +1050,37 @@ check "1.5 P18 uid form" [ "$(jxl "$P18" 'd[1].finding_info.uid')" = "mini:MA-SH
 check "1.5 P18 skip uid form" [ "$(jxl "$P18" 'd[4].finding_info.uid')" = "mini:MA-SKIP:2" ]
 check "1.5 P18 control is the bare ID" [ "$(jxl "$P18" 'd[1].compliance.control')" = "MA-SHARING-026" ]
 
+# P6: md_html converts each construct that macAssay writes, and escapes before it converts.
+printf '%s\n' '## 6. Sharing and remote access' '### Memory' '**Top 15 processes by memory**' '- Swap: `a<b`' \
+  '| Rule | Path |' '|---|---|' '| Allow | `p&q` |' '' 'Skipped (--quick).' '```text' 'x < y ``` z' '```' 'after ``` fence' \
+  '**Account **evil** <b>**' '[link](http://x)' > "$V/p6in"
+md_html < "$V/p6in" > "$V/p6"
+check "1.5 P6 h2 with section anchor" has "$V/p6" '<details open id="section-6"><summary><h2>6. Sharing and remote access</h2></summary>'
+check "1.5 P6 h3" has "$V/p6" '<h3>Memory</h3>'
+check "1.5 P6 bold line" has "$V/p6" '<p><strong>Top 15 processes by memory</strong></p>'
+check "1.5 P6 list item with inline code" has "$V/p6" '<li>Swap: <code>a&lt;b</code></li>'
+check "1.5 P6 table header" has "$V/p6" '<table><thead><tr><th>Rule</th><th>Path</th></tr></thead><tbody>'
+check "1.5 P6 table row" has "$V/p6" '<tr><td>Allow</td><td><code>p&amp;q</code></td></tr>'
+check "1.5 P6 plain line" has "$V/p6" '<p>Skipped (--quick).</p>'
+check "1.5 P6 fenced block" has "$V/p6" '<pre><code>x &lt; y ``` z'
+check "1.5 P6 a fence inside text stays text" not grep -q '<pre><code>after' "$V/p6"
+check "1.5 P6 bold around attacker text stays escaped" has "$V/p6" '&lt;b&gt;'
+check "1.5 P6 no link from text" hasnt "$V/p6" '<a '
+check "1.5 P6 details closed" [ "$(tail -1 "$V/p6")" = "</details>" ]
+# P5: the page holds no script, handler, image, or external link, escapes hostile text, and links findings to sections.
+mkfix "$V/p5"; rfix "$V/p5" html
+P5=$V/p5.out.html
+check "1.5 P5 render succeeds" [ -s "$P5" ]
+for bad in '<script' '<img' 'href="http'; do check "1.5 P5 no $bad" hasnt "$P5" "$bad"; done
+check "1.5 P5 no event handler in a tag" not grep -qE '<[a-zA-Z][^>]* on[a-z]+=' "$P5"
+check "1.5 P5 escaped script" has "$P5" '&lt;script&gt;alert(1)&lt;/script&gt;'
+check "1.5 P5 escaped quotes" has "$P5" '&quot;q&quot; &#39;s&#39; &amp; \ café'
+check "1.5 P5 CSP is the first element in head" [ "$(awk '/<head>/ {getline; print; exit}' "$P5")" = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">" ]
+check "1.5 P5 every finding link has a section" [ -z "$(grep -oE 'href="#section-[0-9]+"' "$P5" | sed 's/href="#//; s/"$//' | sort -u | while read -r a; do grep -q "id=\"$a\"" "$P5" || echo "$a"; done)" ]
+check "1.5 P5 four filter buttons" [ "$(grep -c 'type="radio" name="sev"' "$P5")" -eq 4 ]
+# P8 (rest): three formats with one base path.
+mkfix "$V/p8b"; rfix "$V/p8b" "md json html" "$V/p8b-base"
+for e in md json html; do check "1.5 P8 $e written with two other formats" [ -s "$V/p8b-base.$e" ]; done
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

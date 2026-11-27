@@ -441,6 +441,97 @@ check_formats() { local f out="" IFS=,
 render_csv() { awk -F'\t' 'BEGIN { ORS = "\r\n"; print "\"severity\",\"id\",\"section\",\"finding\",\"source\",\"accepted\",\"guidance\"" }
   function csv_field(s) { if (s ~ /^[=+@\t-]/) s = "\047" s; gsub(/"/, "\"\"", s); return "\"" s "\"" }
   { print csv_field($1) "," csv_field($2) "," csv_field($3) "," csv_field($4) "," csv_field($6) "," csv_field($7 == 1 ? "yes" : "no") "," csv_field($9) }' "$1/rows.tsv"; }
+# awk functions for the HTML format. html_esc is the one escaping function for text on the page; md_html applies it to
+# every evidence line before it converts markup, so text from the audited Mac cannot add a tag or an attribute.
+HTML_LIB='function html_esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); gsub(sprintf("%c", 39), "\\&#39;", s); return s }
+function md_bold(s,   o, a, b) { o = ""
+  while ((a = index(s, "**")) > 0) { b = index(substr(s, a + 2), "**"); if (b == 0) break
+    o = o substr(s, 1, a - 1) "<strong>" substr(s, a + 2, b - 1) "</strong>"; s = substr(s, a + b + 3) }
+  return o s }
+function md_inline(s,   n, p, i, o) { n = split(s, p, "`"); o = ""
+  for (i = 1; i <= n; i++) { if (i % 2 == 0 && i < n) o = o "<code>" p[i] "</code>"; else if (i % 2 == 0) o = o "`" p[i]; else o = o md_bold(p[i]) }
+  return o }
+'
+# md_html; stdin: body.md. Converts only the Markdown that macAssay writes: ## and ### headings, bold, fenced blocks,
+# list items, pipe tables, inline code, and plain lines. It never makes a link.
+md_html() { awk "$HTML_LIB"'
+function close_blocks() { if (inlist) { print "</ul>"; inlist = 0 } if (intable) { print "</tbody></table>"; intable = 0 } }
+infence { if ($0 == "```") { print "</code></pre>"; infence = 0 } else print html_esc($0); next }
+/^```/ { close_blocks(); printf "<pre><code>"; infence = 1; next }
+{ e = html_esc($0) }
+e ~ /^## / { close_blocks(); if (indet) print "</details>"; t = substr(e, 4); n = t; sub(/\..*/, "", n)
+  if (n ~ /^[0-9]+$/) printf "<details open id=\"section-%s\"><summary><h2>%s</h2></summary>\n", n, md_inline(t)
+  else printf "<details open><summary><h2>%s</h2></summary>\n", md_inline(t)
+  indet = 1; next }
+e ~ /^### / { close_blocks(); print "<h3>" md_inline(substr(e, 5)) "</h3>"; next }
+e ~ /^- / { if (intable) { print "</tbody></table>"; intable = 0 } if (!inlist) { print "<ul>"; inlist = 1 }
+  print "<li>" md_inline(substr(e, 3)) "</li>"; next }
+e ~ /^\|/ { if (inlist) { print "</ul>"; inlist = 0 }
+  if (e ~ /^\|[-| ]+$/) next
+  s = e; sub(/^\| ?/, "", s); sub(/ ?\|[ ]*$/, "", s); n = split(s, c, / \| /)
+  if (!intable) { printf "<table><thead><tr>"; for (i = 1; i <= n; i++) printf "<th>%s</th>", md_inline(c[i]); print "</tr></thead><tbody>"; intable = 1 }
+  else { printf "<tr>"; for (i = 1; i <= n; i++) printf "<td>%s</td>", md_inline(c[i]); print "</tr>" }
+  next }
+e ~ /^[ \t]*$/ { close_blocks(); next }
+{ close_blocks(); if (e ~ /^\*\*.*\*\*$/ && index(substr(e, 3, length(e) - 4), "**") == 0) print "<p><strong>" substr(e, 3, length(e) - 4) "</strong></p>"; else print "<p>" md_inline(e) "</p>" }
+END { close_blocks(); if (infence) print "</code></pre>"; if (indet) print "</details>" }'; }
+HTML_CSS=':root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #6e6e73; --line: #d2d2d7; --code: rgba(127,127,127,.12);
+  --high: #b3261e; --medium: #a14a00; --low: #7a6200; --info: #3a5f8f; }
+@media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #1d1d1f; --muted: #a1a1a6; --line: #424245;
+  --high: #ff6b60; --medium: #ff9f40; --low: #e0c040; --info: #80aee0; } }
+body { font: 15px/1.45 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--bg); max-width: 72rem; margin: 0 auto; padding: 1rem; }
+table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; } th, td { border-bottom: 1px solid var(--line); padding: .3rem .5rem; text-align: left; vertical-align: top; }
+pre, code { background: var(--code); border-radius: 4px; } pre { padding: .5rem; overflow-x: auto; white-space: pre-wrap; } code { padding: 0 .2rem; }
+blockquote { border-left: 3px solid var(--line); margin: 1rem 0; padding: 0 1rem; color: var(--muted); }
+td.sev { font-weight: 600; white-space: nowrap; } tr.sev-high td.sev { color: var(--high); } tr.sev-medium td.sev { color: var(--medium); }
+tr.sev-low td.sev { color: var(--low); } tr.sev-info td.sev { color: var(--info); }
+.filter { border: 0; padding: 0; margin: .5rem 0; } .filter label { margin-right: 1rem; }
+#findings:has(#f-high:checked) tr.sev-medium, #findings:has(#f-high:checked) tr.sev-low, #findings:has(#f-high:checked) tr.sev-info,
+#findings:has(#f-medium:checked) tr.sev-low, #findings:has(#f-medium:checked) tr.sev-info, #findings:has(#f-low:checked) tr.sev-info { display: none; }
+summary h2 { display: inline; } details { margin: 1rem 0; }
+@media print { .filter { display: none; } a { color: inherit; text-decoration: none; } }'
+# render_html R: one self-contained page with no JavaScript. A Content-Security-Policy blocks every script, image, frame, and form.
+render_html() { local r="$1"
+  printf '%s\n' '<!DOCTYPE html>' '<html lang="en">' '<head>' \
+    "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">" \
+    '<meta charset="utf-8">' '<meta name="viewport" content="width=device-width, initial-scale=1">'
+  printf '%s\n' "$M_HOST" | awk "$HTML_LIB"'{ print "<title>macAssay report: " html_esc($0) "</title>"; print "<style>" }'
+  printf '%s\n' "$HTML_CSS" '</style>' '</head>' '<body>'
+  {
+    printf 'h1\t%s\n' "Mac health and security audit: $M_HOST"
+    printf 'notice\t%s\n' "${REPORT_NOTICE#> }"
+    printf 'li\t%s\n' "Date: $M_DATE" "User: $M_USER" \
+      "Script: macassay $M_VERSION (read-only; options: quick=$M_QUICK offline=$M_OFFLINE skip-du=$M_SKIPDU)" \
+      "Management: enrolled via Apple Business Manager: $M_DEP; MDM enrollment: $M_MDM" \
+      "Privileged checks: $M_PRAN ran, $M_PSKIP skipped" "Other checks skipped: $M_OSKIP" "$(sev_header "$r/rows.tsv" | sed 's/^- //')"
+  } | awk -F'\t' "$HTML_LIB"'$1 == "h1" { print "<header><h1>" html_esc($2) "</h1>" } $1 == "notice" { print "<blockquote>" html_esc($2) "</blockquote><ul>" }
+    $1 == "li" { print "<li>" md_inline(html_esc($2)) "</li>" } END { print "</ul></header><main>" }'
+  echo '<section id="findings"><h2>Findings</h2>'
+  echo '<p>Automatic findings, highest severity first. Each finding is a lead for review, not a verdict. Sections below hold the evidence.</p>'
+  if awk -F'\t' '$7 == 0 {f = 1} END {exit !f}' "$r/rows.tsv"; then
+    printf '%s\n' '<fieldset class="filter"><legend>Show</legend>' \
+      '<input type="radio" name="sev" id="f-all" checked><label for="f-all">All</label>' \
+      '<input type="radio" name="sev" id="f-low"><label for="f-low">LOW and above</label>' \
+      '<input type="radio" name="sev" id="f-medium"><label for="f-medium">MEDIUM and above</label>' \
+      '<input type="radio" name="sev" id="f-high"><label for="f-high">HIGH</label></fieldset>' \
+      '<table><thead><tr><th>Severity</th><th>ID</th><th>Section</th><th>Finding</th><th>Source</th></tr></thead><tbody>'
+    awk -F'\t' "$HTML_LIB"'$7 == 0 { printf "<tr class=\"sev-%s\"><td class=\"sev\">%s</td><td>%s</td><td><a href=\"#section-%s\">%s</a></td><td>%s</td><td>%s</td></tr>\n",
+      tolower($1), $1, html_esc($2), $5, html_esc($3), html_esc($4), ($6 == "managed" ? "managed" : "") }' "$r/rows.tsv"
+    echo '</tbody></table><h3>Guidance</h3><dl>'
+    awk -F'\t' "$HTML_LIB"'$7 == 0 && !seen[$2]++ { print "<dt>" html_esc($2) "</dt><dd>" html_esc($9) "</dd>" }' "$r/rows.tsv"
+    echo '</dl>'
+  else echo '<p>No automatic findings.</p>'; fi
+  echo '</section>'
+  if awk -F'\t' '$7 == 1 {f = 1} END {exit !f}' "$r/rows.tsv"; then
+    echo '<section id="accepted"><h2>Accepted risks</h2><table><thead><tr><th>Severity</th><th>ID</th><th>Section</th><th>Finding</th><th>Reason</th></tr></thead><tbody>'
+    awk -F'\t' "$HTML_LIB"'$7 == 1 { print "<tr><td>" $1 "</td><td>" html_esc($2) "</td><td>" html_esc($3) "</td><td>" html_esc($4) "</td><td>" html_esc($8) "</td></tr>" }' "$r/rows.tsv"
+    echo '</tbody></table></section>'
+  fi
+  echo '<section id="limitations"><h2>Limitations</h2><ul>'
+  awk "$HTML_LIB"'{ print "<li>" md_inline(html_esc($0)) "</li>" }' "$r/limits.txt"
+  echo '</ul></section><section id="evidence">'
+  md_html < "$r/body.md"
+  printf '%s\n' '</section></main>' '</body>' '</html>'; }
 fmt_ext() { case "$1" in md) echo .md ;; json) echo .json ;; ocsf) echo .ocsf.jsonl ;; html) echo .html ;; csv) echo .csv ;; esac; }
 # out_paths OUT DEFBASE FORMAT...: prints FORMAT<TAB>PATH. One format with -o writes to OUT as given; otherwise OUT, or
 # DEFBASE without OUT, is a base path, with a trailing report extension removed, and each format adds its own extension.
@@ -450,7 +541,7 @@ out_paths() { local out="$1" base="$2" f; shift 2
     case "$base" in *.ocsf.jsonl) base="${base%.ocsf.jsonl}" ;; *.md|*.json|*.jsonl|*.html|*.csv) base="${base%.*}" ;; esac; fi
   for f; do printf '%s\t%s%s\n' "$f" "$base" "$(fmt_ext "$f")"; done; }
 # render_one FORMAT R: prints one format on stdout.
-render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; json|ocsf) osascript -l JavaScript -e "$REPORT_JS" "$1" "$2" ;; *) return 1 ;; esac; }
+render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; json|ocsf) osascript -l JavaScript -e "$REPORT_JS" "$1" "$2" ;; html) render_html "$2" ;; *) return 1 ;; esac; }
 # render_all SRC: normalizes, validates, and renders the data files in SRC into every format in FMTS.
 # Writes no file unless every format rendered. Returns 0, 1, or 3 (--fail-on).
 render_all() { local R="$TMP/render" f p n
