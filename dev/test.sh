@@ -920,5 +920,62 @@ check "1.5 P15 guidance lookup" [ -n "$(guidance MA-SHARING-026)" ]
 check "1.5 P15 known_id" known_id MA-SHARING-026
 check "1.5 P15 unknown id" not known_id MA-SHARING-999
 
+# Fixture run folder for the 1.5 render cases: hostile text in every field that can hold text from the audited Mac.
+Q="'"
+mkfix() { mkdir -p "$1"
+  printf '%s\n' $'host\tmini' $'user\talice' $'date\t2026-12-01 10:00 PST' $'epoch\t1764612000' \
+    $'version\t1.5.0 (2026-12-01)' $'quick\t0' $'offline\t0' $'skip_du\t0' $'priv_ran\t17' $'priv_skipped\t0' \
+    $'other_skipped\t1' $'rules\t1' $'brew\t0' $'dep\tNo' $'mdm\tNo' $'laptop\t1' > "$1/meta.tsv"
+  { printf 'MEDIUM\tMA-SHARING-026\tSharing\t<script>alert(1)</script> "q" %ss%s & \\ caf\303\251\t6\tlocal\n' "$Q" "$Q"
+    printf 'LOW\tMA-SHARING-026\tSharing\t=HYPERLINK("http://x")\t6\tlocal\n'
+    printf 'LOW\tMA-PLATFORM-015\tPlatform\t-dash 11111111-2222-3333-4444-555555555555 bad\377byte\t4\tmanaged\n'
+  } > "$1/findings.tsv"
+  printf 'other\t7-day log searches (XProtect, SSH)\t--quick\tMA-EVENTS-001 MA-EVENTS-002\n' > "$1/skipped.tsv"
+  printf '%s\n' '' '## 4. Platform security' '' '- Quarantine: on' '' '## 6. Sharing and remote access' '' \
+    '- AirDrop: <img src=x onerror=alert(1)>' '**Account **evil** <b>**' '' '```text' '[link](http://x) <script>x</script>' '```' > "$1/body.md"; }
+# rfix DIR FORMATS [OUT]: renders fixture DIR with the given formats; without OUT the files are DIR.out.<extension>.
+# Copies DIR.acc, when it exists, as the accepted-risk entries. Returns render_all's status; its stderr goes to DIR.err.
+rfix() { ( TMP="$1.tmp"; mkdir -p "$TMP"; FMTS="$2"; OUT="${3:-}"; DEFBASE="$1.out"; STDOUT=0
+  ACCEPTED=""; COMPARE=""; FAILON="${FAILON:-}"; rm -f "$TMP/acc.tsv"; [ -f "$1.acc" ] && cp "$1.acc" "$TMP/acc.tsv"
+  render_all "$1" 2>"$1.err" ); }
+
+# P2: Markdown keeps the 1.4 layout, with the Source column, the Management line, and the Guidance list.
+mkfix "$V/p2"; rfix "$V/p2" md
+check "1.5 P2 render succeeds" [ $? -eq 0 ]
+P2=$V/p2.out.md
+check "1.5 P2 notice after the title" [ "$(sed -n 3p "$P2")" = "$REPORT_NOTICE" ]
+check "1.5 P2 Management line" has "$P2" "- Management: enrolled via Apple Business Manager: No; MDM enrollment: No"
+check "1.5 P2 Source column" has "$P2" "| Severity | ID | Section | Finding | Source |"
+check "1.5 P2 managed source" has "$P2" "| LOW | MA-PLATFORM-015 | Platform |"
+check "1.5 P2 managed cell" grep -qE '^\| LOW \| MA-PLATFORM-015 .* \| managed \|$' "$P2"
+check "1.5 P2 one guidance line per ID" [ "$(awk '/^### Guidance/ {g = 1; next} /^## / {g = 0} g && /^- MA-/' "$P2" | grep -c .)" -eq 2 ]
+check "1.5 P2 counts" has "$P2" "- Findings: **0 HIGH**, **1 MEDIUM**, 2 LOW, 0 INFO"
+check "1.5 P2 limitations list the skip" has "$P2" "- Skipped: 7-day log searches (XProtect, SSH) (--quick)"
+check "1.5 P2 evidence follows" has "$P2" "## 6. Sharing and remote access"
+check "1.5 P2 UUID redacted" not grep -q 11111111-2222 "$P2"
+mkfix "$V/p2e"; : > "$V/p2e/findings.tsv"; rfix "$V/p2e" md
+check "1.5 P2 empty findings" has "$V/p2e.out.md" "No automatic findings."
+# P1 (end to end): a failed redaction writes no report and returns 1.
+mkfix "$V/p1e"; ( redact_ids() { return 1; }; rfix "$V/p1e" md )
+check "1.5 P1 render returns 1 when redaction fails" [ $? -eq 1 ]
+check "1.5 P1 no report when redaction fails" [ ! -e "$V/p1e.out.md" ]
+# P12a: validation drops hostile data-file lines, runs nothing from them, and keeps the output path.
+mkfix "$V/p12a"
+{ printf 'priv_ran\ta[$(touch PWNED)]\nbogus\tx\nhost\t../x\n'; cat "$V/p12a/meta.tsv"; } > "$V/p12a/m" && mv "$V/p12a/m" "$V/p12a/meta.tsv"
+printf '%s\n' $'SEVERE\tMA-SHARING-026\tSharing\tx\t6\tlocal' $'LOW\tMA-FAKE-999\tSharing\tx\t6\tlocal' \
+  $'LOW\tMA-SHARING-026\tSharing\tx\t15\tlocal' $'LOW\tMA-SHARING-026\tSharing\tx\t6\tremote' >> "$V/p12a/findings.tsv"
+printf '%s\n' $'root\tx\ty\t' $'other\t\ty\t' $'other\tx\ty\tMA-FAKE' $'other\tx\ty' >> "$V/p12a/skipped.tsv"
+( cd "$T" && rfix "$V/p12a" md )
+check "1.5 P12a nothing ran from a meta value" [ ! -e "$T/PWNED" ]
+check "1.5 P12a output path ignores meta host" [ -f "$V/p12a.out.md" ]
+check "1.5 P12a bad host replaced" has "$V/p12a.out.md" "# Mac health and security audit: unknown"
+check "1.5 P12a meta drops counted" has "$V/p12a.out.md" "- 5 line(s) of meta.tsv failed validation and were left out."
+check "1.5 P12a findings drops counted" has "$V/p12a.out.md" "- 4 line(s) of findings.tsv failed validation and were left out."
+check "1.5 P12a valid findings kept" [ "$(grep -c '^| [A-Z]* | MA-' "$V/p12a.out.md")" -eq 3 ]
+check "1.5 P12a skipped drops counted" has "$V/p12a.out.md" "- 4 line(s) of skipped.tsv failed validation and were left out."
+check "1.5 P12a valid skip kept" has "$V/p12a.out.md" "- Skipped: 7-day log searches (XProtect, SSH) (--quick)"
+check "1.5 P12a out_paths, one format with -o" [ "$(out_paths r.txt base md)" = $'md\tr.txt' ]
+check "1.5 P12a out_paths, default" [ "$(out_paths "" base md)" = $'md\tbase.md' ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
