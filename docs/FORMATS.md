@@ -19,7 +19,8 @@ Output paths follow these rules:
 - With several formats, `-o PATH` is a base path. A trailing `.md`, `.json`, `.jsonl`, `.html`, `.csv`, or `.ocsf.jsonl` is removed, and each format adds its own extension. So `-o report.md --format md,json` writes `report.md` and `report.json`.
 - Without `-o`, the base path is `./macassay-<host>-<date>`. In remote mode `<host>` is the `--host` value.
 - `--stdout` works with one format only. With several formats it is a usage error (exit 2).
-- A format that fails to build stops the run with exit 1, and no report is written.
+- The run builds every format before it writes any. A builder that returns a failure status stops the run with exit 1, and no report is written. The HTML builder returns the status of its last write, so an earlier failure in the page goes unnoticed.
+- A failed copy of one format stops the run with exit 1. Formats copied before it stay written.
 
 Every format starts from text that is valid UTF-8 with dashed UUIDs replaced by `<UUID>`. Text read from the audited Mac never reaches a format without passing the format's own escaping function.
 

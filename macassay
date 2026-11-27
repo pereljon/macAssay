@@ -80,7 +80,9 @@ die() { echo "$1" >&2; exit "${2:-1}"; }
 
 # ---------- logic functions (stdin/arguments to stdout; tested by dev/test.sh) ----------
 # Strip control characters, tabs, pipes and backticks so text from the audited Mac stays in one table cell.
-clean_field() { LC_ALL=C tr '\t\n\r|' '   /' | LC_ALL=C tr -d '`\000-\010\013-\037\177' | sed 's/ *$//'; }
+# SEP_SED turns C1 controls (U+0080 to U+009F) and U+2028 and U+2029 into spaces. It runs under LC_ALL=C: BSD sed prints nothing at an invalid byte under a UTF-8 locale.
+SEP_SED="s/$(printf '\302')[$(printf '\200')-$(printf '\237')]/ /g;s/$(printf '\342\200')[$(printf '\250\251')]/ /g"
+clean_field() { LC_ALL=C tr '\t\n\r|' '   /' | LC_ALL=C tr -d '`\000-\010\013-\037\177' | LC_ALL=C sed "$SEP_SED;"'s/ *$//'; }
 valid_name() { local re='^[A-Za-z0-9_][A-Za-z0-9_.-]*$'; [[ $1 =~ $re ]]; }
 # sudoers reads an all-capitals name as an alias, and ALL as every user.
 alias_name() { local re='^[A-Z][A-Z0-9_]*$' LC_ALL=C; [[ $1 =~ $re ]]; }
@@ -273,7 +275,8 @@ normalize_file() {
 norm_all() { local f; for f in meta.tsv findings.tsv skipped.tsv body.md; do
   [ -f "$1/$f" ] || : > "$1/$f"; normalize_file "$1/$f" "$2/$f" || return 1; done; }
 # clean_tsv: the clean_field rules for whole data-file lines, keeping tabs and newlines as field and line breaks.
-clean_tsv() { LC_ALL=C tr -d '\000-\010\013-\037\177`' | LC_ALL=C tr '|' '/'; }
+# Controls and backticks become spaces, not deletions: render_all redacts UUIDs first, and a deletion could rejoin a split UUID.
+clean_tsv() { LC_ALL=C tr '\000-\010\013-\037\177`' ' ' | LC_ALL=C tr '|' '/' | LC_ALL=C sed "$SEP_SED"; }
 META_KEYS="host user date epoch version quick offline skip_du priv_ran priv_skipped other_skipped rules brew dep mdm laptop"
 # valid_meta; stdin: meta.tsv. Prints each line with a known key, first occurrence only, whose value has the key's shape.
 valid_meta() { awk -F'\t' -v keys="$META_KEYS" '
@@ -794,7 +797,7 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-SHARING-025\tTurn off Content Caching in System Settings, General, Sharing unless this Mac must serve Apple downloads to other devices.' \
   $'MA-SHARING-026\tFind out whether you still need the installed remote-access tool, and remove it with its own uninstaller if you do not.' \
   $'MA-TRUST-001\tCheck each administrator-trusted certificate in Keychain Access against software that you installed, and set unknown ones back to Use System Defaults.' \
-  $'MA-TRUST-002\tCheck each custom-trust certificate in your login keychain against software or a workplace that needs it, and set the others back to Use System Defaults.' \
+  $'MA-TRUST-002\tCheck each custom-trust certificate in Keychain Access against software or a workplace that needs it, and set the others back to Use System Defaults.' \
   $'MA-UPDATES-001\tInstall the listed macOS updates in System Settings, General, Software Update, at a time when a restart is acceptable.' \
   $'MA-UPDATES-002\tReview the outdated packages with brew outdated and upgrade the ones that you use; brew upgrade replaces the installed versions with newer ones.' \
   $'MA-UPDATES-003\tTurn on automatic update checks in System Settings, General, Software Update, Automatic Updates, or run a manual check if the last full one is old.' \
@@ -805,7 +808,7 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-UPDATES-008\tReview the non-Apple installs listed in section 3 and confirm that you recognise each one.' \
   $'MA-UPDATES-009\tRemove the tap with brew untap if nothing needs it; brew untap deletes the tap\'s files from Homebrew.' \
   $'MA-UPDATES-010\tConfirm that you trust each third-party tap that supplies installed packages, because the tap owner controls the code that brew installs from it.' \
-  $'MA-UPDATES-011\tCheck that each listed app matches its official download, and reinstall it with brew reinstall --cask, which downloads the app again.')
+  $'MA-UPDATES-011\tCheck that each listed app matches its official download, and reinstall it with brew reinstall --cask NAME, which downloads the app again.')
 guidance() { printf '%s\n' "$GUIDANCE" | awk -F'\t' -v i="$1" '$1 == i {print $2; exit}'; }
 known_id() { printf '%s\n' "$GUIDANCE" | cut -f1 | grep -qxF -- "$1"; }
 # load_accepted FILE: prints ID<TAB>MATCH<TAB>REASON for each entry in an accepted-risk file. The file is read as text,
@@ -1119,7 +1122,7 @@ REPORT_JS='function run(argv) {
   function read(p) { var s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; }
   function tsv(name) { var t = read(dir + "/" + name); return t ? t.split("\n").filter(function (l) { return l !== ""; }).map(function (l) { return l.split("\t"); }) : []; }
   var RANK = {HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1}, meta = {};
-  function c(s) { return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029|`]/g, " ").replace(/ +$/, ""); }
+  function c(s) { return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029|`]/g, " ").replace(/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/g, "<UUID>").replace(/ +$/, ""); }
   function write(name, lines) { var s = $.NSString.alloc.initWithUTF8String(lines.length ? lines.join("\n") + "\n" : "");
     if (!s.writeToFileAtomicallyEncodingError(dir + "/" + name, true, $.NSUTF8StringEncoding, null)) throw new Error("write " + name); }
   if (mode === "check") { var o = JSON.parse(read(dir)); if (!o || o.schema !== "macassay-report/1") throw new Error("schema"); return ""; }

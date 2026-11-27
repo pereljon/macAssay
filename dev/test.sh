@@ -1225,5 +1225,52 @@ check "1.5 P22 unreadable file fails" has "$V/p22r" "unreadable 1"
 check "1.5 P22 one skip" [ "$(grep -c . "$V/p22s")" -eq 1 ]
 check "1.5 P22 skip carries the IDs" [ "$(cut -f2,4 "$V/p22s")" = $'Find My\tMA-PLATFORM-019' ]
 
+# PM: pre-merge review fixes. Invalid and multibyte sequences are built with printf octal escapes.
+UURE='[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}'
+# lcg TEXT: the text field that finding writes for TEXT under a UTF-8 locale.
+lcg() { ( export LC_ALL=en_US.UTF-8; FIND="$V/pm.f"; : > "$FIND"; SECT_N=4; finding MA-PLATFORM-015 LOW Platform "$1" ); LC_ALL=C cut -f4 "$V/pm.f"; }
+# pmrow DIR TEXT [LABEL]: fixture DIR whose only finding has TEXT, and whose only skipped label is LABEL.
+pmrow() { mkfix "$1"; printf 'LOW\tMA-PLATFORM-015\tPlatform\t%s\t4\tlocal\n' "$2" > "$1/findings.tsv"
+  printf 'other\t%s\t--quick\tMA-EVENTS-001\n' "${3:-label}" > "$1/skipped.tsv"; }
+
+# N1: an invalid byte under a UTF-8 locale must not empty the text field.
+check "1.5 PM N1 finding text keeps its words after an invalid byte" [ "$(lcg "$(printf 'evil\377x')")" != "" ]
+pmrow "$V/pm1" "$(lcg "$(printf 'path /tmp/evil\377x')")"; rfix "$V/pm1" "json ocsf"
+check "1.5 PM N1 the finding survives render_all" [ "$(jx "$V/pm1.out.json" 'd.findings.length')" = 1 ]
+check "1.5 PM N1 the finding reaches OCSF" [ "$(grep -c 'MA-PLATFORM-015' "$V/pm1.out.ocsf.jsonl")" -eq 1 ]
+
+# T10 and T7: C1 controls and U+2028 and U+2029 become spaces.
+SEPS=$(printf 'a\302\205b\342\200\250c\302\233d\342\200\251e\302\237f')
+check "1.5 PM T10 clean_field replaces C1 controls and separators with spaces" [ "$(lcg "$SEPS")" = "a b c d e f" ]
+pmrow "$V/pm3" "$SEPS"; rfix "$V/pm3" "json ocsf csv"
+check "1.5 PM T10 clean_tsv replaces them in findings.tsv" [ "$(cut -f4 "$V/pm3.tmp/render/findings.tsv")" = "a b c d e f" ]
+check "1.5 PM T10 the OCSF line has the spaces" has "$V/pm3.out.ocsf.jsonl" "a b c d e f"
+check "1.5 PM T10 no C1 byte pair in OCSF" not env LC_ALL=C grep -q "$(printf '\302[\200-\237]')" "$V/pm3.out.ocsf.jsonl"
+check "1.5 PM T10 no separator in OCSF" not env LC_ALL=C grep -q "$(printf '\342\200[\250\251]')" "$V/pm3.out.ocsf.jsonl"
+check "1.5 PM T10 no separator in CSV" not env LC_ALL=C grep -q "$(printf '\342\200[\250\251]')" "$V/pm3.out.csv"
+printf 'a\302\200b\302\237c\302\240d\n' | clean_tsv > "$V/pm3.edge"
+check "1.5 PM T10 the range ends at U+009F and keeps U+00A0" [ "$(cat "$V/pm3.edge")" = "$(printf 'a b c\302\240d')" ]
+
+# N2: a UUID split by a control or a backtick must not be rebuilt by clean_tsv.
+SPLIT1="ABCDEF01-2345-6789-abcd-ef01$(printf '\001')23456789"; SPLIT2='ABCDEF01-2345-6789-abcd-ef01`23456789'
+pmrow "$V/pm2" "x $SPLIT1 y $SPLIT2 z" "lab $SPLIT1 $SPLIT2"
+rfix "$V/pm2" "md html json csv ocsf"
+check "1.5 PM N2 the split-UUID finding survives" [ "$(jx "$V/pm2.out.json" 'd.findings.length')" = 1 ]
+check "1.5 PM N2 the skipped label survives" [ "$(jx "$V/pm2.out.json" 'd.skipped.length')" = 1 ]
+for f in "$V"/pm2.out.*; do check "1.5 PM N2 no whole UUID in ${f##*/}" not grep -qE "$UURE" "$f"; done
+check "1.5 PM N2 the limitations hold no whole UUID" not grep -qE "$UURE" "$V/pm2.tmp/render/limits.txt"
+
+# N3: a JSON escape in the --compare file must not carry a UUID into the Changes lists.
+cat > "$V/pm4old.json" <<'EOT'
+{"schema": "macassay-report/1", "host": "mini1111111\u0031-2222-3333-4444-555555555555", "date": "2026-11-30 09:00 PST", "options": {},
+ "findings": [{"id": "MA-BACKUPS-003", "severity": "MEDIUM", "section": "Backups", "text": "gone 1111111\u0031-2222-3333-4444-555555555555 and AAAAAAA\u0041-BBBB-CCCC-DDDD-EEEEEEEEEEEE end"}]}
+EOT
+mkfix "$V/pm4"; ( TMP="$V/pm4.tmp"; mkdir -p "$TMP"; compare_load "$V/pm4old.json"; FMTS="md html json"; OUT="$V/pm4base"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/pm4old.json"; render_all "$V/pm4" 2>/dev/null )
+check "1.5 PM N3 the resolved finding is listed" grep -q $'^resolved\tMA-BACKUPS-003\t' "$V/pm4.tmp/render/changes.tsv"
+check "1.5 PM N3 the escaped UUID becomes a marker" grep -q $'\tgone <UUID> and <UUID> end$' "$V/pm4.tmp/render/changes.tsv"
+for f in "$V"/pm4base.*; do check "1.5 PM N3 no whole UUID in ${f##*/}" not grep -qE "$UURE" "$f"; done
+check "1.5 PM N3 no whole UUID in compare.tsv" not grep -qE "$UURE" "$V/pm4.tmp/render/compare.tsv"
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
