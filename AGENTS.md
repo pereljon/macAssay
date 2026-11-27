@@ -45,3 +45,4 @@ Project rows, in addition to `../AGENTS.md`:
 
 - Help text: the header comment block in `macassay` matches the options.
 - Version: `VERSION` in `macassay`.
+- Release: before each release, run the two measured side-effect checks in `dev/SKELETON.md` (The audit changes nothing on the Mac), and record the results in the release's test plan.

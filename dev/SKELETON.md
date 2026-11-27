@@ -47,7 +47,11 @@ Rule: a run has only these side effects:
 
 Reason: users run the audit on Macs they depend on, and the report must describe the Mac as it was. A new side effect needs the user's approval (`AGENTS.md`, Read-only).
 
-Enforced by: review. `README.md` (Limits) and the help text at the top of `macassay` list the same side effects.
+Enforced by: review, and two measured checks before each release. Run both in the user's terminal, because the agent's shell has no terminal and no Full Disk Access, and sudo writes no login record without a terminal.
+1. Login records: with the sudo rules installed, note `last | wc -l`, run `script -q /dev/null ./macassay --quick --offline --skip-du -o <temp path>`, and count again. Pass: no new row.
+2. Network: log `nettop -P -x -L 240 -s 1` to a file during a `./macassay --offline` run. Pass: the only processes the audit starts that show traffic are the `nc` and `curl` probes of the Mac's own listeners.
+
+`README.md` (Limits) and the help text at the top of `macassay` list the same side effects.
 
 ### Network promise
 
@@ -68,7 +72,7 @@ Enforced by: `clean_field`, `block`, `mdesc`; one escaping function for each out
 ### No secrets in the report
 
 Rule: the report never holds a secret or a hardware identifier.
-- Serial numbers and UUIDs are left out or replaced (`drop_ids`; `redact_ids`, which runs under `LC_ALL=C` after `iconv -c` through `strict_utf8`, because BSD `sed` stops at an invalid byte under a UTF-8 locale and the report must not be written then); long hex strings in certificate and drive names are masked (`mask_hex`).
+- Serial numbers and UUIDs are left out or replaced (`drop_ids`; `redact_ids`, which runs under `LC_ALL=C` after `iconv -c` through `strict_utf8`, because BSD `sed` stops at an invalid byte under a UTF-8 locale and the report must not be written then); values read from the `--compare` file are redacted again after `JSON.parse` (`c()` in `REPORT_JS`), because a `\u` escape decodes to a UUID only then; long hex strings in certificate and drive names are masked (`mask_hex`).
 - `authorized_keys` shows key bits, fingerprint, type, and comment only.
 - Shell startup files are searched for patterns; their lines are never copied (`rc_hits`).
 - Credential files show presence, mode, owner, and whether a secret is inline, never the value (`cred_scan`).
@@ -78,7 +82,7 @@ Rule: the report never holds a secret or a hardware identifier.
 
 Reason: reports are shared with people and LLMs. `AGENTS.md` (No secrets in the report).
 
-Enforced by: `normalize_file`, `norm_all`; fixtures F7, F8, F11, F12, G1, G3, G4, G6, and R7 (Homebrew settings); P1 (normalization under a UTF-8 locale).
+Enforced by: `normalize_file`, `norm_all`, and `c()` in `REPORT_JS`; fixtures F7, F8, F11, F12, G1, G3, G4, G6, and R7 (Homebrew settings); P1 (normalization under a UTF-8 locale); "1.5 PM N3" (an escaped UUID in the `--compare` file).
 
 ### Least privilege
 

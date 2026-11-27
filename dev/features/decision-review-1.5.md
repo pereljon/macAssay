@@ -1,6 +1,6 @@
 ---
 kind: investigation
-status: run 2026-11-27 after the v1.5.0 release; waiting for the user's answers to A13 and A14
+status: run 2026-11-27 after the v1.5.0 release; A13 to A16 approved by the user 2026-11-27 and applied
 ---
 
 # Post-release decision review, releases 1.2 to 1.5.0
