@@ -757,15 +757,15 @@ known_id() { printf '%s\n' "$GUIDANCE" | cut -f1 | grep -qxF -- "$1"; }
 # load_accepted FILE: prints ID<TAB>MATCH<TAB>REASON for each entry in an accepted-risk file. The file is read as text,
 # never run. A first word that GUIDANCE does not list fails the load, so a typo cannot accept nothing in silence.
 load_accepted() { local line id rest match reason n=0
-  [ -r "$1" ] || { echo "Cannot read the accepted-risk file: $1" >&2; return 1; }
+  { [ -f "$1" ] && [ -r "$1" ] && normalize_file "$1" "$TMP/acc.in"; } || { echo "Cannot read the accepted-risk file: $1" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do n=$((n + 1))
     line="${line#"${line%%[![:space:]]*}"}"
     case "$line" in ''|'#'*) continue ;; esac
     id="${line%%[[:space:]#]*}"; rest="${line#"$id"}"
     case "$rest" in *'#'*) reason="${rest#*#}"; match="${rest%%#*}" ;; *) reason=""; match="$rest" ;; esac
     known_id "$id" || { echo "Line $n of $1: $id is not an ID that macassay gives to a finding." >&2; return 1; }
-    printf '%s\t%s\t%s\n' "$id" "$(printf '%s' "$match" | sed 's/^[[:space:]]*//' | clean_field)" "$(printf '%s' "$reason" | sed 's/^[[:space:]]*//' | clean_field)"
-  done < <(iconv -c -f UTF-8 -t UTF-8 < "$1" | redact_ids); }
+    printf '%s\t%s\t%s\n' "$id" "$(printf '%s' "$match" | LC_ALL=C sed 's/^[[:space:]]*//' | clean_field)" "$(printf '%s' "$reason" | LC_ALL=C sed 's/^[[:space:]]*//' | clean_field)"
+  done < "$TMP/acc.in"; }
 # skip LABEL REASON: record a check that could not run.
 skip() { printf 'other\t%s\t%s\t%s\n' "$1" "$2" "$(skip_row "$1")" >> "$SKIPS"; }
 skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }

@@ -1085,7 +1085,8 @@ for e in md json html; do check "1.5 P8 $e written with two other formats" [ -s 
 # P9: accepted risks.
 printf '%s\n' '# comment' '' 'MA-PLATFORM-015   # forced by IT | `x` <script>' \
   'MA-SHARING-026 =HYPERLINK("http://x")   # approved' 'MA-SHARING-026 .*' > "$V/p9.txt"
-load_accepted "$V/p9.txt" > "$V/p9.acc"
+mkdir -p "$V/p9tmp"; la() { TMP="$V/p9tmp" load_accepted "$@"; }
+la "$V/p9.txt" > "$V/p9.acc"
 check "1.5 P9 load succeeds" [ $? -eq 0 ]
 check "1.5 P9 comments and blank lines ignored" [ "$(grep -c . "$V/p9.acc")" -eq 3 ]
 check "1.5 P9 reason cleaned" [ "$(head -1 "$V/p9.acc" | cut -f3)" = "forced by IT / x <script>" ]
@@ -1097,11 +1098,15 @@ check "1.5 P9 a regex line accepts nothing" not grep -qE '^\| MEDIUM \| MA-SHARI
 check "1.5 P9 accepted findings leave the open counts" has "$V/p9base.md" "- Findings: **0 HIGH**, **1 MEDIUM**, 0 LOW, 0 INFO, 2 accepted"
 check "1.5 P9 reason escaped in HTML" has "$V/p9base.html" 'forced by IT / x &lt;script&gt;'
 check "1.5 P9 JSON accepted list" [ "$(jx "$V/p9base.json" 'd.accepted.length + " " + d.counts.accepted')" = "2 2" ]
-printf 'MA-SHARING-026 =HYPERLINK\n' > "$V/p9part.txt"; load_accepted "$V/p9part.txt" > "$V/p9part.acc"
+printf 'MA-SHARING-026 =HYPERLINK\n' > "$V/p9part.txt"; la "$V/p9part.txt" > "$V/p9part.acc"
 mkfix "$V/p9p"; cp "$V/p9part.acc" "$V/p9p.acc"; rfix "$V/p9p" md
 check "1.5 P9 partial text does not accept" not grep -q '^## Accepted risks' "$V/p9p.out.md"
 printf 'MA-SHARING-999\n' > "$V/p9bad.txt"
-check "1.5 P9 unlisted ID fails" not load_accepted "$V/p9bad.txt"
+check "1.5 P9 unlisted ID fails" not la "$V/p9bad.txt"
+printf 'MA-SHARING-026 a\365b # r\n' > "$V/p9inv.txt"
+check "1.5 P9 invalid byte does not give an empty match" [ -n "$(la "$V/p9inv.txt" 2>/dev/null | cut -f2)" ]
+mkdir -p "$V/p9dir"
+check "1.5 P9 a directory fails" not la "$V/p9dir"
 check "1.5 P9 bad ID exits 2 before any audit work" p17 --accepted "$V/p9bad.txt"
 for m in --print-sudoers --install-sudoers; do check "1.5 P17 --accepted with $m" p17 "$m" --accepted "$V/p9.txt"; done
 
