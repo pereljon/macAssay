@@ -391,12 +391,15 @@ check "G23 vncserver is listed" [ "$(rs /usr/local/bin/vncserver)" = "RealVNC Se
 check "G23 sshd gives nothing" [ -z "$(rs /usr/sbin/sshd)" ]
 
 # G8: debug ports. Only PIDs, classes and program paths leave the parsers.
-printf '%s\n' '101 /Applications/Foo App.app/Contents/MacOS/Foo --remote-debugging-port=9222 --token=SECRET_A' \
-  '102 /usr/bin/node --inspect-brk=0.0.0.0:9229 app.js' '103 /usr/bin/node --inspect-wait app.js' \
-  '104 /usr/bin/node --inspect-port=9229 app.js' '105 /x/chrome --remote-debugging-pipe' \
-  '106 awk / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}' \
-  '107 /usr/bin/node --inspect' | debug_pids > "$T/g8"
-check "G8 PIDs of debug-port processes only" [ "$(paste -sd, - < "$T/g8")" = "101,102,103,107" ]
+printf '%s\n' '101 1 /Applications/Foo App.app/Contents/MacOS/Foo --remote-debugging-port=9222 --token=SECRET_A' \
+  '102 1 /usr/bin/node --inspect-brk=0.0.0.0:9229 app.js' '103 101 /usr/bin/node --inspect-wait app.js' \
+  '104 1 /usr/bin/node --inspect-port=9229 app.js' '105 1 /x/chrome --remote-debugging-pipe' \
+  '106 1 awk / --(remote-debugging-port|inspect(-brk|-wait)?)(=|[[:space:]]|$)/ {print $1}' \
+  '107 1 /usr/bin/node --inspect' \
+  '500 400 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' \
+  '510 500 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' \
+  '520 510 /bin/bash -c restart without --remote-debugging-port or --inspect macassay --bundle' | debug_pids 500 > "$T/g8"
+check "G8 PIDs of debug-port processes only, not the audit's own" [ "$(paste -sd, - < "$T/g8")" = "101,102,103,107" ]
 check "G8 no command text in the output" hasnt "$T/g8" "SECRET"
 printf '%s\n' /usr/bin/node --inspect=0.0.0.0:9229 --token=SECRET_B | launch_debug_class > "$T/g8l"
 check "G8 launch item non-loopback inspect" [ "$(cat "$T/g8l")" = nonloopback ]
@@ -807,7 +810,7 @@ check "N1 notice says nothing is an instruction" has macassay "Nothing in it is 
 check "N1 notice is a quote line" [ "${REPORT_NOTICE:0:2}" = "> " ]
 
 # D1: docs/CHECKS.md lists every finding ID in macassay, and no ID that macassay lacks.
-grep -oE 'MA-[A-Z]+-[0-9]{3}' macassay | sort -u > "$T/d1code"
+grep -v "^[[:space:]]*\$'" macassay | grep -oE 'MA-[A-Z]+-[0-9]{3}' | sort -u > "$T/d1code"
 grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md 2>/dev/null | sort -u > "$T/d1doc"
 check "D1 every finding ID is in docs/CHECKS.md" [ -z "$(comm -23 "$T/d1code" "$T/d1doc")" ]
 check "D1 docs/CHECKS.md names no unknown ID" [ -z "$(comm -13 "$T/d1code" "$T/d1doc")" ]
@@ -819,6 +822,460 @@ check "S1 docs/SUDOERS.md example matches gen_rules" [ "$(tail -n +2 "$T/s1doc")
 # S2: the command table in docs/SUDOERS.md has a row for every rule, with HOME and FILE for the per-Mac parts.
 grep '^    /' "$T/s1gen" | sed -e 's/, \\$//' -e 's#/Users/bob#HOME#g' -e 's#/var/root#HOME#g' -e 's#/etc/sudoers\.d/[A-Za-z0-9_-]*#/etc/sudoers.d/FILE#' -e 's/^ *//' | sort -u > "$T/s2cmds"
 check "S2 every rule command is in docs/SUDOERS.md" [ -z "$(while IFS= read -r c; do grep -qF "| \`$c\` |" docs/SUDOERS.md || echo "$c"; done < "$T/s2cmds")" ]
+
+# Version 1.5 cases. Their fixtures live in $V, apart from the 1.3.1 files at $T/p1 to $T/p8, and their check names
+# start with "1.5 " to keep them apart from the 1.3.1 P cases.
+V="$T/v15"; mkdir -p "$V"
+# P16 (V1): VERSION follows the release rule against the latest v* tag. Only the version number counts, never the date.
+ver_gt() { local a1 a2 a3 b1 b2 b3 re='^[0-9]+\.[0-9]+\.[0-9]+$'
+  [[ $1 =~ $re ]] && [[ $2 =~ $re ]] || return 1
+  IFS=. read -r a1 a2 a3 <<< "$1"; IFS=. read -r b1 b2 b3 <<< "$2"
+  [ "$a1" -gt "$b1" ] && return 0; [ "$a1" -lt "$b1" ] && return 1
+  [ "$a2" -gt "$b2" ] && return 0; [ "$a2" -lt "$b2" ] && return 1
+  [ "$a3" -gt "$b3" ]; }
+# version_rule TAGVERSION CHANGED VERSION: CHANGED is 1 when macassay differs from the tag.
+version_rule() {
+  if [ "$2" = 0 ]; then [ "$3" = "$1" ]; return; fi
+  [ "$3" = "$1+dev" ] && return 0
+  case "$3" in *+*) return 1 ;; esac
+  ver_gt "$3" "$1"; }
+check "1.5 P16 unchanged script, tag version" version_rule 1.4.0 0 1.4.0
+check "1.5 P16 unchanged script, +dev fails" not version_rule 1.4.0 0 1.4.0+dev
+check "1.5 P16 changed script, +dev" version_rule 1.4.0 1 1.4.0+dev
+check "1.5 P16 changed script, untagged higher release" version_rule 1.4.0 1 1.5.0
+check "1.5 P16 changed script, tag version fails" not version_rule 1.4.0 1 1.4.0
+check "1.5 P16 changed script, +dev of an older tag fails" not version_rule 1.4.0 1 1.3.2+dev
+if git rev-parse --git-dir >/dev/null 2>&1 && P16TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
+  if git diff --quiet "$P16TAG" -- macassay; then P16CH=0; else P16CH=1; fi
+  check "1.5 P16 VERSION ${VERSION%% *} follows the rule for $P16TAG" version_rule "${P16TAG#v}" "$P16CH" "${VERSION%% *}"
+else echo "skip P16 working-tree case: not a git checkout or no v* tag"; fi
+
+# P1: normalization keeps valid text, drops invalid bytes, redacts UUIDs (also one that an invalid byte split), and fails closed.
+printf 'caf\303\251 ok\nbad \377 byte 11111111-2222-3333-4444-555555555555\nsplit 12345678\377-1234-1234-1234-123456789012 end\nover a\364\220\200\200b\nlead a\365\200\200\200b\nfive a\370\210\200\200\200b\nmax a\364\217\277\277b emoji \360\237\230\200 end\nsplit2 12345678\364\220\200\200-1234-1234-1234-123456789012 end\n' > "$V/p1in"
+( export LC_ALL=C.UTF-8; normalize_file "$V/p1in" "$V/p1out" )
+check "1.5 P1 normalize succeeds" [ $? -eq 0 ]
+check "1.5 P1 output is valid UTF-8" sh -c 'iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1' _ "$V/p1out"
+check "1.5 P1 non-ASCII text kept" has "$V/p1out" "café ok"
+check "1.5 P1 line after an invalid byte kept and redacted" has "$V/p1out" "bad  byte <UUID>"
+check "1.5 P1 UUID split by an invalid byte redacted" has "$V/p1out" "split <UUID> end"
+check "1.5 P1 sequences iconv -c keeps are removed" not env LC_ALL=C grep -qE "$(printf '[\365-\377]|\364[\220-\277]')" "$V/p1out"
+check "1.5 P1 above-range and lead-byte sequences dropped" has "$V/p1out" "over ab"
+check "1.5 P1 lead F5 sequence dropped" has "$V/p1out" "lead ab"
+check "1.5 P1 lead F8 sequence dropped" has "$V/p1out" "five ab"
+check "1.5 P1 U+10FFFF and emoji kept" has "$V/p1out" "$(printf 'max a\364\217\277\277b emoji \360\237\230\200 end')"
+check "1.5 P1 UUID split by an F4 90 sequence redacted" has "$V/p1out" "split2 <UUID> end"
+if command -v python3 >/dev/null 2>&1; then
+  check "1.5 P1 output passes a strict UTF-8 decoder" python3 -I -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' < "$V/p1out"
+else echo "skip P1 strict decoder case: python3 not installed"; fi
+check "1.5 P1 no dashed UUID left" not grep -qE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-' "$V/p1out"
+( redact_ids() { return 1; }; normalize_file "$V/p1in" "$V/p1fail" )
+check "1.5 P1 failed redaction returns 1" [ $? -eq 1 ]
+check "1.5 P1 failed redaction leaves no file" [ ! -e "$V/p1fail" ]
+
+# P20: finding writes six fields, with the section number from h2 and the source.
+( FIND="$V/p20f"; : > "$FIND"; SECT_N=6
+  finding MA-SHARING-022 LOW Sharing "a|b	c"; finding MA-SHARING-022 LOW Sharing "x" managed )
+check "1.5 P20 six fields per finding" [ "$(awk -F'\t' '{print NF}' "$V/p20f" | sort -u)" = 6 ]
+check "1.5 P20 section number" [ "$(cut -f5 "$V/p20f" | sort -u)" = 6 ]
+check "1.5 P20 source local by default, managed when given" [ "$(cut -f6 "$V/p20f" | paste -sd, -)" = "local,managed" ]
+check "1.5 P20 text cleaned" [ "$(head -1 "$V/p20f" | cut -f4)" = "a/b c" ]
+# P19: every literal skip label has a SKIP_IDS row, the per-account labels match, and every ID in SKIP_IDS is known.
+grep -v '^[[:space:]]*#' macassay | grep -oE '(^|[^A-Za-z_])(skip|priv) "[^"$]*"' | sed -E 's/^.*(skip|priv) "//; s/"$//' | sort -u > "$V/p19"
+check "1.5 P19 skip labels found" [ "$(grep -c . "$V/p19")" -ge 19 ]
+check "1.5 P19 every literal skip label has a row" [ -z "$(while IFS= read -r l; do skip_row "$l" >/dev/null || echo "$l"; done < "$V/p19")" ]
+quiet() { "$@" > /dev/null; }
+for l in "shell startup files (bob)" "authorized_keys (bob)" "LaunchAgents (bob)" "sudoers" "sudoers.d/extra_rules"; do
+  check "1.5 P19 row for $l" quiet skip_row "$l"; done
+grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md | sort -u > "$V/p19known"
+check "1.5 P19 every ID in SKIP_IDS is known" [ -z "$(printf '%s\n' "$SKIP_IDS" | cut -f2 | tr ' ' '\n' | grep . | sort -u | comm -23 - "$V/p19known")" ]
+( SKIPS="$V/p19s"; : > "$SKIPS"; skip "7-day log searches (XProtect, SSH)" "--quick" )
+check "1.5 P19 skip writes the IDs" [ "$(cut -f4 "$V/p19s")" = "MA-EVENTS-001 MA-EVENTS-002" ]
+check "1.5 P19 skip writes four fields" [ "$(awk -F'\t' '{print NF}' "$V/p19s")" = 4 ]
+check "1.5 P19 Time Machine skip lists the three IDs" [ "$(skip_row "Time Machine backup age and encryption")" = "MA-BACKUPS-002 MA-BACKUPS-003 MA-BACKUPS-004" ]
+# P14 (first part): enrollment state from profiles status output.
+check "1.5 P14 not enrolled" [ "$(printf 'Enrolled via DEP: No\nMDM enrollment: No\n' | enroll_state)" = $'No\tNo' ]
+check "1.5 P14 enrolled" [ "$(printf 'Enrolled via DEP: Yes\nMDM enrollment: Yes (User Approved)\n' | enroll_state)" = $'Yes\tYes' ]
+check "1.5 P14 unreadable output" [ "$(printf 'profiles: error\n' | enroll_state)" = $'unknown\tunknown' ]
+( profiles() { return 1; }; SKIPS="$V/p14s"; : > "$SKIPS"; read_enrollment; printf '%s %s\n' "$DEP" "$MDM" > "$V/p14r" )
+check "1.5 P14 failed command gives unknown" [ "$(cat "$V/p14r")" = "unknown unknown" ]
+check "1.5 P14 failed command records a skip" [ "$(cut -f1,2 "$V/p14s")" = $'other\tEnrollment state' ]
+( profiles() { printf 'Enrolled via DEP: No\nMDM enrollment: Yes\n'; }; SKIPS="$V/p14t"; : > "$SKIPS"; read_enrollment; printf '%s %s\n' "$DEP" "$MDM" > "$V/p14u" )
+check "1.5 P14 answered command records no skip" [ ! -s "$V/p14t" ]
+check "1.5 P14 answered command sets the state" [ "$(cat "$V/p14u")" = "No Yes" ]
+# P21: meta.tsv holds the 16 keys, each once.
+( TMP="$V/p21"; mkdir -p "$TMP"; HOST=mini; TUSER=alice; NOW="2026-12-01 10:00 PST"; EPOCH=1764612000; QUICK=0; OFFLINE=1; SKIPDU=0
+  NPR=3; NPS=1; NOS=2; RULES="$T/none"; BREW=""; DEP=No; MDM=No; HASBAT=1; write_meta )
+check "1.5 P21 sixteen keys" [ "$(cut -f1 "$V/p21/meta.tsv" | sort -u | grep -c .)" -eq 16 ]
+check "1.5 P21 no repeated key" [ "$(grep -c . "$V/p21/meta.tsv")" -eq 16 ]
+check "1.5 P21 rules 0 when the file is absent" has "$V/p21/meta.tsv" $'rules\t0'
+
+# P15: every ID in docs/CHECKS.md has one GUIDANCE line, no line names an unknown ID, and each text fits the rules.
+grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md | sort -u > "$V/p15doc"
+printf '%s\n' "$GUIDANCE" | cut -f1 | sort > "$V/p15ids"
+check "1.5 P15 one line per ID" [ -z "$(uniq -d "$V/p15ids")" ]
+check "1.5 P15 every documented ID has guidance" [ -z "$(comm -23 "$V/p15doc" "$V/p15ids")" ]
+check "1.5 P15 no guidance for an unknown ID" [ -z "$(comm -13 "$V/p15doc" "$V/p15ids")" ]
+check "1.5 P15 every text is non-empty, one field, no pipe or backtick, at most 200 characters, at most 25 words" \
+  [ -z "$(printf '%s\n' "$GUIDANCE" | awk -F'\t' 'NF != 2 || $2 == "" || $2 ~ /[|`]/ || length($2) > 200 || split($2, w, " ") > 25')" ]
+check "1.5 P15 no em-dash or en-dash in a text" \
+  [ -z "$(printf '%s\n' "$GUIDANCE" | grep -e $'\xe2\x80\x94' -e $'\xe2\x80\x93')" ]
+check "1.5 P15 guidance lookup" [ -n "$(guidance MA-SHARING-026)" ]
+check "1.5 P15 known_id" known_id MA-SHARING-026
+check "1.5 P15 unknown id" not known_id MA-SHARING-999
+
+# Fixture run folder for the 1.5 render cases: hostile text in every field that can hold text from the audited Mac.
+Q="'"
+mkfix() { mkdir -p "$1"
+  printf '%s\n' $'host\tmini' $'user\talice' $'date\t2026-12-01 10:00 PST' $'epoch\t1764612000' \
+    $'version\t1.5.0 (2026-12-01)' $'quick\t0' $'offline\t0' $'skip_du\t0' $'priv_ran\t17' $'priv_skipped\t0' \
+    $'other_skipped\t1' $'rules\t1' $'brew\t0' $'dep\tNo' $'mdm\tNo' $'laptop\t1' > "$1/meta.tsv"
+  { printf 'MEDIUM\tMA-SHARING-026\tSharing\t<script>alert(1)</script> "q" %ss%s & \\ caf\303\251\t6\tlocal\n' "$Q" "$Q"
+    printf 'LOW\tMA-SHARING-026\tSharing\t=HYPERLINK("http://x")\t6\tlocal\n'
+    printf 'LOW\tMA-PLATFORM-015\tPlatform\t-dash 11111111-2222-3333-4444-555555555555 bad\377byte\t4\tmanaged\n'
+  } > "$1/findings.tsv"
+  printf 'other\t7-day log searches (XProtect, SSH)\t--quick\tMA-EVENTS-001 MA-EVENTS-002\n' > "$1/skipped.tsv"
+  printf '%s\n' '' '## 4. Platform security' '' '- Quarantine: on' '' '## 6. Sharing and remote access' '' \
+    '- AirDrop: <img src=x onerror=alert(1)>' '**Account **evil** <b>**' '' '```text' '[link](http://x) <script>x</script>' '```' > "$1/body.md"; }
+# rfix DIR FORMATS [OUT]: renders fixture DIR with the given formats; without OUT the files are DIR.out.<extension>.
+# Copies DIR.acc, when it exists, as the accepted-risk entries. Returns render_all's status; its stderr goes to DIR.err.
+rfix() { ( TMP="$1.tmp"; mkdir -p "$TMP"; FMTS="$2"; OUT="${3:-}"; DEFBASE="$1.out"; STDOUT=0
+  ACCEPTED=""; COMPARE=""; FAILON="${FAILON:-}"; rm -f "$TMP/acc.tsv"; [ -f "$1.acc" ] && cp "$1.acc" "$TMP/acc.tsv"
+  render_all "$1" 2>"$1.err" ); }
+
+# P2: Markdown keeps the 1.4 layout, with the Source column, the Management line, and the Guidance list.
+mkfix "$V/p2"; rfix "$V/p2" md
+check "1.5 P2 render succeeds" [ $? -eq 0 ]
+P2=$V/p2.out.md
+check "1.5 P2 notice after the title" [ "$(sed -n 3p "$P2")" = "$REPORT_NOTICE" ]
+check "1.5 P2 Management line" has "$P2" "- Management: enrolled via Apple Business Manager: No; MDM enrollment: No"
+check "1.5 P2 Source column" has "$P2" "| Severity | ID | Section | Finding | Source |"
+check "1.5 P2 managed source" has "$P2" "| LOW | MA-PLATFORM-015 | Platform |"
+check "1.5 P2 managed cell" grep -qE '^\| LOW \| MA-PLATFORM-015 .* \| managed \|$' "$P2"
+check "1.5 P2 one guidance line per ID" [ "$(awk '/^### Guidance/ {g = 1; next} /^## / {g = 0} g && /^- MA-/' "$P2" | grep -c .)" -eq 2 ]
+check "1.5 P2 counts" has "$P2" "- Findings: **0 HIGH**, **1 MEDIUM**, 2 LOW, 0 INFO"
+check "1.5 P2 limitations list the skip" has "$P2" "- Skipped: 7-day log searches (XProtect, SSH) (--quick)"
+check "1.5 P2 evidence follows" has "$P2" "## 6. Sharing and remote access"
+check "1.5 P2 UUID redacted" not grep -q 11111111-2222 "$P2"
+mkfix "$V/p2e"; : > "$V/p2e/findings.tsv"; rfix "$V/p2e" md
+check "1.5 P2 empty findings" has "$V/p2e.out.md" "No automatic findings."
+# P1 (end to end): a failed redaction writes no report and returns 1.
+mkfix "$V/p1e"; ( redact_ids() { return 1; }; rfix "$V/p1e" md )
+check "1.5 P1 render returns 1 when redaction fails" [ $? -eq 1 ]
+check "1.5 P1 no report when redaction fails" [ ! -e "$V/p1e.out.md" ]
+# P12a: validation drops hostile data-file lines, runs nothing from them, and keeps the output path.
+mkfix "$V/p12a"
+{ printf 'priv_ran\ta[$(touch PWNED)]\nbogus\tx\nhost\t../x\n'; cat "$V/p12a/meta.tsv"; } > "$V/p12a/m" && mv "$V/p12a/m" "$V/p12a/meta.tsv"
+printf '%s\n' $'SEVERE\tMA-SHARING-026\tSharing\tx\t6\tlocal' $'LOW\tMA-FAKE-999\tSharing\tx\t6\tlocal' \
+  $'LOW\tMA-SHARING-026\tSharing\tx\t15\tlocal' $'LOW\tMA-SHARING-026\tSharing\tx\t6\tremote' >> "$V/p12a/findings.tsv"
+printf '%s\n' $'root\tx\ty\t' $'other\t\ty\t' $'other\tx\ty\tMA-FAKE' $'other\tx\ty' >> "$V/p12a/skipped.tsv"
+( cd "$T" && rfix "$V/p12a" md )
+check "1.5 P12a nothing ran from a meta value" [ ! -e "$T/PWNED" ]
+check "1.5 P12a output path ignores meta host" [ -f "$V/p12a.out.md" ]
+check "1.5 P12a bad host replaced" has "$V/p12a.out.md" "# Mac health and security audit: unknown"
+check "1.5 P12a meta drops counted" has "$V/p12a.out.md" "- 5 line(s) of meta.tsv failed validation and were left out."
+check "1.5 P12a findings drops counted" has "$V/p12a.out.md" "- 4 line(s) of findings.tsv failed validation and were left out."
+check "1.5 P12a valid findings kept" [ "$(grep -c '^| [A-Z]* | MA-' "$V/p12a.out.md")" -eq 3 ]
+check "1.5 P12a skipped drops counted" has "$V/p12a.out.md" "- 4 line(s) of skipped.tsv failed validation and were left out."
+check "1.5 P12a valid skip kept" has "$V/p12a.out.md" "- Skipped: 7-day log searches (XProtect, SSH) (--quick)"
+check "1.5 P12a out_paths, one format with -o" [ "$(out_paths r.txt base md)" = $'md\tr.txt' ]
+check "1.5 P12a out_paths, default" [ "$(out_paths "" base md)" = $'md\tbase.md' ]
+
+# P7: CSV quotes every field, doubles inner quotes, defuses formula starts, and keeps one field count.
+mkfix "$V/p7"; rfix "$V/p7" csv
+P7=$V/p7.out.csv
+check "1.5 P7 render succeeds" [ -s "$P7" ]
+check "1.5 P7 header" [ "$(head -1 "$P7" | tr -d '\r')" = '"severity","id","section","finding","source","accepted","guidance"' ]
+check "1.5 P7 inner quotes doubled" has "$P7" '""q""'
+check "1.5 P7 formula start defused" has "$P7" "\"'=HYPERLINK(\"\"http://x\"\")\""
+check "1.5 P7 leading dash defused" has "$P7" "\"'-dash <UUID>"
+check "1.5 P7 one field count" [ "$(tr -d '\r' < "$P7" | awk -F'","' '{print NF}' | sort -u | grep -c .)" -eq 1 ]
+check "1.5 P7 CRLF line ends" [ "$(grep -c $'\r$' "$P7")" -eq "$(grep -c . "$P7")" ]
+# P8: formats and paths.
+check "1.5 P8 check_formats" [ "$(check_formats md,csv,md)" = "md csv" ]
+check "1.5 P8 unknown format" not check_formats md,pdf
+check "1.5 P8 empty format name" not check_formats md,,csv
+check "1.5 P8 trailing empty name" not check_formats md,
+check "1.5 P8 trailing empty name after two" not check_formats md,csv,
+check "1.5 P8 base path with several formats" [ "$(out_paths base "" md csv | cut -f2 | paste -sd, -)" = "base.md,base.csv" ]
+check "1.5 P8 one format keeps -o as given" [ "$(out_paths file.txt "" csv | cut -f2)" = "file.txt" ]
+check "1.5 P8 trailing extension removed" [ "$(out_paths report.md "" md json | cut -f2 | paste -sd, -)" = "report.md,report.json" ]
+mkfix "$V/p8"; rfix "$V/p8" "md csv" "$V/p8base"
+check "1.5 P8 md written" [ -s "$V/p8base.md" ]
+check "1.5 P8 csv written" [ -s "$V/p8base.csv" ]
+# P17 (part): usage errors exit 2 before any audit work.
+# p17 ARGS: the run exits 2 with a usage error that names no unknown option, before any audit work.
+p17() { ./macassay "$@" > "$V/p17.out" 2>&1; P17RC=$?; [ "$P17RC" -eq 2 ] && hasnt "$V/p17.out" "== 1." && hasnt "$V/p17.out" "Unknown option"; }
+check "1.5 P17 --stdout with two formats" p17 --stdout --format md,csv
+check "1.5 P17 unknown format" p17 --format pdf
+for m in --print-sudoers --install-sudoers; do
+  check "1.5 P17 --format with $m" p17 "$m" --format md
+  check "1.5 P17 -o with $m" p17 "$m" -o x.md
+  check "1.5 P17 --stdout with $m" p17 "$m" --stdout
+done
+
+# JSON helpers for the tests: jx FILE EXPR evaluates EXPR with d bound to the parsed file; jxl does the same for
+# newline-delimited JSON, with d an array of events. Test input only.
+JX_JS='function run(a) { var t = $.NSString.stringWithContentsOfFileEncodingError(a[0], $.NSUTF8StringEncoding, null).js;
+  var d = a[2] === "l" ? t.split("\n").filter(String).map(function (l) { return JSON.parse(l); }) : JSON.parse(t);
+  return String(new Function("d", "return (" + a[1] + ");")(d)); }'
+jx()  { osascript -l JavaScript -e "$JX_JS" "$1" "$2" j 2>/dev/null; }
+jxl() { osascript -l JavaScript -e "$JX_JS" "$1" "$2" l 2>/dev/null; }
+# P3: JSON parses, round-trips hostile text, and carries the schema and counts.
+mkfix "$V/p3"; rfix "$V/p3" json
+P3=$V/p3.out.json
+check "1.5 P3 plutil accepts the JSON" plutil -convert xml1 -o /dev/null "$P3"
+check "1.5 P3 schema" [ "$(jx "$P3" 'd.schema')" = "macassay-report/1" ]
+check "1.5 P3 hostile text round-trips" [ "$(jx "$P3" 'd.findings[0].text')" = "<script>alert(1)</script> \"q\" ${Q}s${Q} & \\ café" ]
+check "1.5 P3 formula text round-trips" [ "$(jx "$P3" 'd.findings[1].text')" = '=HYPERLINK("http://x")' ]
+check "1.5 P3 normalized text round-trips" [ "$(jx "$P3" 'd.findings[2].text')" = "-dash <UUID> badbyte" ]
+mkfix "$V/p17e"; rfix "$V/p17e" "md json" "$V/p17e-report.md"
+check "1.5 P17 -o report.md with md and json writes report.md" [ -s "$V/p17e-report.md" ]
+check "1.5 P17 -o report.md with md and json writes report.json" [ -s "$V/p17e-report.json" ]
+check "1.5 P3 counts" [ "$(jx "$P3" '[d.counts.HIGH, d.counts.MEDIUM, d.counts.LOW, d.counts.INFO, d.counts.accepted].join()')" = "0,1,2,0,0" ]
+check "1.5 P3 typed options" [ "$(jx "$P3" 'typeof d.options.quick + " " + typeof d.epoch')" = "boolean number" ]
+check "1.5 P3 guidance present" [ -n "$(jx "$P3" 'd.findings[2].guidance')" ]
+check "1.5 P3 no changes block without --compare" [ "$(jx "$P3" '"changes" in d')" = false ]
+# P4: OCSF events hold the required 1.10.0 attributes with the mapped values.
+mkfix "$V/p4"; printf 'MA-PLATFORM-015\t\tforced by IT\n' > "$V/p4.acc"; rfix "$V/p4" ocsf
+P4=$V/p4.out.ocsf.jsonl
+check "1.5 P4 four events" [ "$(jxl "$P4" 'd.length')" = 4 ]
+check "1.5 P4 required attributes" [ "$(jxl "$P4" 'd.every(function (e) { return e.activity_id === 1 && e.category_uid === 2 && e.class_uid === 2003 && e.type_uid === 200301 && e.compliance && e.finding_info.uid && e.metadata.version === "1.10.0" && e.metadata.product.name === "macAssay" && e.severity_id >= 1 && e.time === 1764612000000 && e.device.type_id === 3 && e.device.hostname === "mini"; })')" = true ]
+check "1.5 P4 MEDIUM is severity 3" [ "$(jxl "$P4" 'd[0].severity_id')" = 3 ]
+check "1.5 P4 skipped check is Warning" [ "$(jxl "$P4" 'd[3].compliance.status_id + " " + d[3].compliance.status_details[0]')" = "2 --quick" ]
+check "1.5 P4 accepted finding is Suppressed" [ "$(jxl "$P4" 'd[2].status_id')" = 3 ]
+check "1.5 P4 open finding is New" [ "$(jxl "$P4" 'd[0].status_id')" = 1 ]
+check "1.5 P4 remediation holds guidance" [ -n "$(jxl "$P4" 'd[0].remediation.desc')" ]
+# P18: two findings with one ID and two skipped checks give four distinct uids; control keeps the bare ID.
+mkfix "$V/p18"; printf 'priv\tbputil -d\trefused or unavailable\tMA-PLATFORM-009\n' >> "$V/p18/skipped.tsv"; rfix "$V/p18" ocsf
+P18=$V/p18.out.ocsf.jsonl
+check "1.5 P18 distinct uids" [ "$(jxl "$P18" 'd.map(function (e) { return e.finding_info.uid; }).filter(function (u, i, a) { return a.indexOf(u) === i; }).length')" = 5 ]
+check "1.5 P18 uid form" [ "$(jxl "$P18" 'd[1].finding_info.uid')" = "mini:MA-SHARING-026:2" ]
+check "1.5 P18 skip uid form" [ "$(jxl "$P18" 'd[4].finding_info.uid')" = "mini:MA-SKIP:2" ]
+check "1.5 P18 control is the bare ID" [ "$(jxl "$P18" 'd[1].compliance.control')" = "MA-SHARING-026" ]
+
+# P6: md_html converts each construct that macAssay writes, and escapes before it converts.
+printf '%s\n' '## 6. Sharing and remote access' '### Memory' '**Top 15 processes by memory**' '- Swap: `a<b`' \
+  '| Rule | Path |' '|---|---|' '| Allow | `p&q` |' '' 'Skipped (--quick).' '```text' 'x < y ``` z' '```' 'after ``` fence' \
+  '**Account **evil** <b>**' '[link](http://x)' > "$V/p6in"
+md_html < "$V/p6in" > "$V/p6"
+check "1.5 P6 h2 with section anchor" has "$V/p6" '<details open id="section-6"><summary><h2>6. Sharing and remote access</h2></summary>'
+check "1.5 P6 h3" has "$V/p6" '<h3>Memory</h3>'
+check "1.5 P6 bold line" has "$V/p6" '<p><strong>Top 15 processes by memory</strong></p>'
+check "1.5 P6 list item with inline code" has "$V/p6" '<li>Swap: <code>a&lt;b</code></li>'
+check "1.5 P6 table header" has "$V/p6" '<table><thead><tr><th>Rule</th><th>Path</th></tr></thead><tbody>'
+check "1.5 P6 table row" has "$V/p6" '<tr><td>Allow</td><td><code>p&amp;q</code></td></tr>'
+check "1.5 P6 plain line" has "$V/p6" '<p>Skipped (--quick).</p>'
+check "1.5 P6 fenced block" has "$V/p6" '<pre><code>x &lt; y ``` z'
+check "1.5 P6 a fence inside text stays text" not grep -q '<pre><code>after' "$V/p6"
+check "1.5 P6 bold around attacker text stays escaped" has "$V/p6" '&lt;b&gt;'
+check "1.5 P6 no link from text" hasnt "$V/p6" '<a '
+check "1.5 P6 details closed" [ "$(tail -1 "$V/p6")" = "</details>" ]
+# P5: the page holds no script, handler, image, or external link, escapes hostile text, and links findings to sections.
+mkfix "$V/p5"; rfix "$V/p5" html
+P5=$V/p5.out.html
+check "1.5 P5 render succeeds" [ -s "$P5" ]
+for bad in '<script' '<img' 'href="http'; do check "1.5 P5 no $bad" hasnt "$P5" "$bad"; done
+check "1.5 P5 no event handler in a tag" not grep -qE '<[a-zA-Z][^>]* on[a-z]+=' "$P5"
+check "1.5 P5 escaped script" has "$P5" '&lt;script&gt;alert(1)&lt;/script&gt;'
+check "1.5 P5 escaped quotes" has "$P5" '&quot;q&quot; &#39;s&#39; &amp; \ café'
+check "1.5 P5 CSP is the first element in head" [ "$(awk '/<head>/ {getline; print; exit}' "$P5")" = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\">" ]
+check "1.5 P5 every finding link has a section" [ -z "$(grep -oE 'href="#section-[0-9]+"' "$P5" | sed 's/href="#//; s/"$//' | sort -u | while read -r a; do grep -q "id=\"$a\"" "$P5" || echo "$a"; done)" ]
+check "1.5 P5 four filter buttons" [ "$(grep -c 'type="radio" name="sev"' "$P5")" -eq 4 ]
+# P8 (rest): three formats with one base path.
+mkfix "$V/p8b"; rfix "$V/p8b" "md json html" "$V/p8b-base"
+for e in md json html; do check "1.5 P8 $e written with two other formats" [ -s "$V/p8b-base.$e" ]; done
+
+# P9: accepted risks.
+printf '%s\n' '# comment' '' 'MA-PLATFORM-015   # forced by IT | `x` <script>' \
+  'MA-SHARING-026 =HYPERLINK("http://x")   # approved' 'MA-SHARING-026 .*' > "$V/p9.txt"
+mkdir -p "$V/p9tmp"; la() { TMP="$V/p9tmp" load_accepted "$@"; }
+la "$V/p9.txt" > "$V/p9.acc"
+check "1.5 P9 load succeeds" [ $? -eq 0 ]
+check "1.5 P9 comments and blank lines ignored" [ "$(grep -c . "$V/p9.acc")" -eq 3 ]
+check "1.5 P9 reason cleaned" [ "$(head -1 "$V/p9.acc" | cut -f3)" = "forced by IT / x <script>" ]
+mkfix "$V/p9r"; cp "$V/p9.acc" "$V/p9r.acc"; rfix "$V/p9r" "md html json" "$V/p9base"
+check "1.5 P9 ID-only line accepts every finding with the ID" grep -qE '^\| LOW \| MA-PLATFORM-015 .* \| forced by IT / x <script> \|$' "$V/p9base.md"
+check "1.5 P9 whole-text match accepts" grep -qE '^\| LOW \| MA-SHARING-026 \| Sharing \| =HYPERLINK\("http://x"\) \| approved \|$' "$V/p9base.md"
+check "1.5 P9 regex characters match as fixed text" grep -qE '^\| MEDIUM \| MA-SHARING-026 .* \|  \|$' "$V/p9base.md"
+check "1.5 P9 a regex line accepts nothing" not grep -qE '^\| MEDIUM \| MA-SHARING-026 .* \|  \|$' <(sed -n '/^## Accepted risks/,/^## Limitations/p' "$V/p9base.md")
+check "1.5 P9 accepted findings leave the open counts" has "$V/p9base.md" "- Findings: **0 HIGH**, **1 MEDIUM**, 0 LOW, 0 INFO, 2 accepted"
+check "1.5 P9 reason escaped in HTML" has "$V/p9base.html" 'forced by IT / x &lt;script&gt;'
+check "1.5 P9 JSON accepted list" [ "$(jx "$V/p9base.json" 'd.accepted.length + " " + d.counts.accepted')" = "2 2" ]
+printf 'MA-SHARING-026 =HYPERLINK\n' > "$V/p9part.txt"; la "$V/p9part.txt" > "$V/p9part.acc"
+mkfix "$V/p9p"; cp "$V/p9part.acc" "$V/p9p.acc"; rfix "$V/p9p" md
+check "1.5 P9 partial text does not accept" not grep -q '^## Accepted risks' "$V/p9p.out.md"
+printf 'MA-SHARING-999\n' > "$V/p9bad.txt"
+check "1.5 P9 unlisted ID fails" not la "$V/p9bad.txt"
+printf 'MA-SHARING-026 a\365b # r\n' > "$V/p9inv.txt"
+check "1.5 P9 invalid byte does not give an empty match" [ -n "$(la "$V/p9inv.txt" 2>/dev/null | cut -f2)" ]
+mkdir -p "$V/p9dir"
+check "1.5 P9 a directory fails" not la "$V/p9dir"
+check "1.5 P9 bad ID exits 2 before any audit work" p17 --accepted "$V/p9bad.txt"
+for m in --print-sudoers --install-sudoers; do check "1.5 P17 --accepted with $m" p17 "$m" --accepted "$V/p9.txt"; done
+
+# P10: comparison groups, schema check, untrusted old text.
+cat > "$V/p10old.json" <<'EOF'
+{"schema": "macassay-report/1", "host": "mini", "date": "2026-11-30 09:00 PST", "options": {"quick": false, "offline": false, "skip_du": false},
+ "findings": [{"id": "MA-SHARING-026", "severity": "LOW", "section": "Sharing", "text": "old"},
+              {"id": "MA-BACKUPS-001", "severity": "MEDIUM", "section": "Backups", "text": "gone\tnow\n<script>x</script>"},
+              {"id": "MA-EVENTS-002", "severity": "MEDIUM", "section": "Events", "text": "not run 11111111-2222-3333-4444-555555555555"},
+              {"id": "bad id", "severity": "HIGH", "section": "x", "text": "dropped"}]}
+EOF
+printf '\377' >> "$V/p10old.json"
+for f in csv ocsf csv,ocsf; do check "1.5 P17 --compare with only $f" p17 --compare "$V/p10old.json" --format "$f"; done
+check "1.5 P17 the --compare format error names the formats" has "$V/p17.out" "--compare needs md, html, or json"
+( TMP="$V/p10t"; mkdir -p "$TMP"; compare_load "$V/p10old.json" )
+check "1.5 P10 old file loads" [ $? -eq 0 ]
+mkfix "$V/p10"; ( TMP="$V/p10.tmp"; mkdir -p "$TMP"; compare_load "$V/p10old.json"; FMTS="md html json"; OUT="$V/p10base"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/p10old.json"; render_all "$V/p10" 2>/dev/null )
+C=$V/p10.tmp/render/changes.tsv
+check "1.5 P10 new: ID only in this run" grep -q $'^new\tMA-PLATFORM-015\t' "$C"
+check "1.5 P10 resolved: ID only in the old run" grep -q $'^resolved\tMA-BACKUPS-001\tMEDIUM\tBackups\tgone now <script>x</script>$' "$C"
+check "1.5 P10 not checked: ID listed by this run's skipped check" grep -q $'^not_checked\tMA-EVENTS-002\t' "$C"
+check "1.5 P10 UUID in the old file redacted" grep -q $'^not_checked\tMA-EVENTS-002\tMEDIUM\tEvents\tnot run <UUID>$' "$C"
+check "1.5 P10 kept ID is not a change" not grep -q 'MA-SHARING-026' "$C"
+check "1.5 P10 malformed old ID left out" not grep -q 'dropped' "$C"
+check "1.5 P10 one line per change" [ "$(grep -c . "$C")" -eq 3 ]
+check "1.5 P10 Markdown section" has "$V/p10base.md" "## Changes since the previous run"
+check "1.5 P10 heading names the old run" has "$V/p10base.md" "Compared with the run on mini at 2026-11-30 09:00 PST."
+check "1.5 P10 hostile old text escaped in HTML" has "$V/p10base.html" 'gone now &lt;script&gt;x&lt;/script&gt;'
+check "1.5 P10 JSON changes" [ "$(jx "$V/p10base.json" '[d.changes.new.length, d.changes.resolved.length, d.changes.not_checked.length].join()')" = "1,1,1" ]
+cat > "$V/p10c1.json" <<'EOF'
+{"schema": "macassay-report/1", "host": "mini", "date": "2026-11-30 09:00 PST", "options": {},
+ "findings": [{"id": "MA-BACKUPS-002", "severity": "MEDIUM", "section": "Backups", "text": "a\u0085b\u2028c\u2029d\u009be"}]}
+EOF
+mkfix "$V/p10c"; ( TMP="$V/p10c.tmp"; mkdir -p "$TMP"; compare_load "$V/p10c1.json"; FMTS="json"; OUT="$V/p10cbase"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/p10c1.json"; render_all "$V/p10c" 2>/dev/null )
+check "1.5 P10 C1 controls and line separators become spaces" grep -q $'^resolved\tMA-BACKUPS-002\tMEDIUM\tBackups\ta b c d e$' "$V/p10c.tmp/render/changes.tsv"
+printf '{"schema": "other/1", "findings": []}\n' > "$V/p10bad.json"
+( TMP="$V/p10b"; mkdir -p "$TMP"; compare_load "$V/p10bad.json" 2>/dev/null )
+check "1.5 P10 wrong schema fails" [ $? -ne 0 ]
+check "1.5 P10 wrong schema exits 2 before any audit work" p17 --compare "$V/p10bad.json"
+for m in --print-sudoers --install-sudoers; do check "1.5 P17 --compare with $m" p17 "$m" --compare "$V/p10old.json"; done
+
+# P11: --fail-on. The fixture has one MEDIUM and two LOW findings.
+mkfix "$V/p11"
+( FAILON=medium; rfix "$V/p11" md ); check "1.5 P11 --fail-on medium exits 3" [ $? -eq 3 ]
+( FAILON=high; rfix "$V/p11" md ); check "1.5 P11 --fail-on high exits 0" [ $? -eq 0 ]
+printf 'MA-SHARING-026\t\tok\n' > "$V/p11.acc"
+( FAILON=medium; rfix "$V/p11" md ); check "1.5 P11 accepted MEDIUM with --fail-on medium exits 0" [ $? -eq 0 ]
+check "1.5 P11 bad level exits 2" p17 --fail-on severe
+check "1.5 P11 empty level exits 2" p17 --fail-on ""
+for m in --print-sudoers --install-sudoers; do check "1.5 P17 --fail-on with $m" p17 "$m" --fail-on high; done
+
+# P12: bundle round trip and rejections.
+mkfix "$V/p12"; write_bundle "$V/p12" > "$V/p12.b"; mkdir "$V/p12r"
+check "1.5 P12 round trip succeeds" read_bundle "$V/p12.b" "$V/p12r"
+for f in meta.tsv findings.tsv skipped.tsv body.md; do check "1.5 P12 $f identical" cmp -s "$V/p12/$f" "$V/p12r/$f"; done
+check "1.5 P12 five lines" [ "$(wc -l < "$V/p12.b" | tr -d ' ')" -eq 5 ]
+p12bad() { mkdir -p "$V/p12x"; ! read_bundle "$1" "$V/p12x"; }
+{ echo "macassay-bundle 2"; tail -n +2 "$V/p12.b"; } > "$V/p12w"; check "1.5 P12 wrong first line rejected" p12bad "$V/p12w"
+head -4 "$V/p12.b" > "$V/p12s"; check "1.5 P12 too few lines rejected" p12bad "$V/p12s"
+{ cat "$V/p12.b"; echo; } > "$V/p12l"; check "1.5 P12 too many lines rejected" p12bad "$V/p12l"
+{ head -1 "$V/p12.b"; echo 'abc$%'; tail -n +3 "$V/p12.b"; } > "$V/p12c"; check "1.5 P12 non-base64 line rejected" p12bad "$V/p12c"
+{ cat "$V/p12.b"; printf 'JUNK'; } > "$V/p12j"; check "1.5 P12 trailing data without a newline rejected" p12bad "$V/p12j"
+{ cat "$V/p12.b"; printf '\0'; } > "$V/p12n1"; check "1.5 P12 final NUL-only line rejected" p12bad "$V/p12n1"
+{ head -1 "$V/p12.b"; sed -n 2p "$V/p12.b" | tr -d '\n'; printf '\0\n'; tail -n +3 "$V/p12.b"; } > "$V/p12n2"; check "1.5 P12 NUL after base64 text rejected" p12bad "$V/p12n2"
+check "1.5 P12 only the four fixed names are written" [ -z "$(ls "$V/p12r" "$V/p12x" | grep -vxE '(meta\.tsv|findings\.tsv|skipped\.tsv|body\.md|.*:)?')" ]
+# P17 (rest): --bundle with each output option, and with --host.
+check "1.5 P17 --bundle with --format" p17 --bundle --format md
+check "1.5 P17 --bundle with -o" p17 --bundle -o x.md
+check "1.5 P17 --bundle with --stdout" p17 --bundle --stdout
+check "1.5 P17 --bundle with --compare" p17 --bundle --compare "$V/p10old.json"
+check "1.5 P17 --bundle with --accepted" p17 --bundle --accepted "$V/p9.txt"
+check "1.5 P17 --bundle with --fail-on" p17 --bundle --fail-on high
+check "1.5 P17 --bundle with --host" p17 --bundle --host example.invalid
+
+# P13: managed settings from a fixture MANAGED_DIR.
+mkdir -p "$V/mp/alice"
+plist() { printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>%s</dict></plist>\n' "$2" > "$1"; }
+plist "$V/mp/com.apple.LaunchServices.plist" '<key>LSQuarantine</key><false/><key>DeviceID</key><string>SECRET_DEVICE_1234</string>'
+plist "$V/mp/alice/com.apple.sharingd.plist" '<key>DiscoverableMode</key><string>Everyone</string>'
+plist "$V/mp/com.apple.FindMyMac.plist" '<key>FMMEnabled</key><true/>'
+( MANAGED_DIR="$V/mp"; TUSER=alice; BODY="$V/p13.md"; : > "$BODY"
+  pref com.apple.LaunchServices LSQuarantine 1; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13a"; pref_line "Quarantine for downloads (LSQuarantine)" "1, on"
+  pref com.apple.sharingd DiscoverableMode "Contacts Only"; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13b"
+  pref com.apple.FindMyMac FMMEnabled ""; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13c"
+  pref com.apple.AssetCache Activated 0; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13d"; pref_line "Content caching (AssetCache Activated)" "0, off"
+  pref com.apple.TimeMachine AutoBackup ""; pref_line "Automatic backups (AutoBackup)" "1, on"
+  FIND="$V/p13f"; : > "$FIND"; SECT_N=4
+  pref com.apple.LaunchServices LSQuarantine 1; [ "$PV" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off." "$PSRC" )
+check "1.5 P13 a forced false gives a finding with source managed" [ "$(cut -f2,6 "$V/p13f")" = $'MA-PLATFORM-015\tmanaged' ]
+check "1.5 P13 device-level false reads 0, managed" [ "$(cat "$V/p13a")" = "0 managed" ]
+check "1.5 P13 managed line" has "$V/p13.md" "- Quarantine for downloads (LSQuarantine): 0 (managed)"
+check "1.5 P13 user-level key" [ "$(cat "$V/p13b")" = "Everyone managed" ]
+check "1.5 P13 true reads 1" [ "$(cat "$V/p13c")" = "1 managed" ]
+check "1.5 P13 no managed file keeps the local value" [ "$(cat "$V/p13d")" = "0 local" ]
+check "1.5 P13 no managed file gives the 1.4 line" has "$V/p13.md" "- Content caching (AssetCache Activated): 0"
+check "1.5 P13 unset and unmanaged gives the default line" has "$V/p13.md" "- Automatic backups (AutoBackup): not set (macOS default: 1, on)"
+check "1.5 P13 an identifier key is never printed" hasnt "$V/p13.md" "SECRET_DEVICE"
+check "1.5 P13 src_if on a managed trigger" [ "$(src_if 0 managed 0)" = managed ]
+check "1.5 P13 src_if on another value" [ -z "$(src_if 1 managed 0)" ]
+check "1.5 P13 src_if on a local value" [ -z "$(src_if 0 local 0)" ]
+# P14 (rest): with unknown enrollment, a managed force-installed extension still gives MA-APPS-005 HIGH.
+check "1.5 P14 unknown enrollment gives MA-APPS-005" [ "$(printf 'managed\tcom.google.Chrome\tabc\n' | forced_ext_finding unknown | cut -f1,2)" = $'MA-APPS-005\tHIGH' ]
+check "1.5 P14 unknown enrollment text" [ "$(forced_ext_note unknown)" = " (enrollment state unknown)" ]
+check "1.5 P14 unenrolled text" [ "$(forced_ext_note 0)" = ", and this Mac is not enrolled in MDM" ]
+
+# P22: readable records a skip only for a path that exists but cannot be read.
+mkdir -p "$V/p22d"; : > "$V/p22f"; chmod 000 "$V/p22f"
+( SKIPS="$V/p22s"; : > "$SKIPS"
+  readable "$T/none" "Find My"; echo "absent $?" > "$V/p22r"
+  readable "$V/p22d" "Find My"; echo "dir $?" >> "$V/p22r"
+  readable "$V/p22f" "Find My"; echo "unreadable $?" >> "$V/p22r" )
+chmod 600 "$V/p22f"
+check "1.5 P22 absent path passes" has "$V/p22r" "absent 0"
+check "1.5 P22 readable folder passes" has "$V/p22r" "dir 0"
+check "1.5 P22 unreadable file fails" has "$V/p22r" "unreadable 1"
+check "1.5 P22 one skip" [ "$(grep -c . "$V/p22s")" -eq 1 ]
+check "1.5 P22 skip carries the IDs" [ "$(cut -f2,4 "$V/p22s")" = $'Find My\tMA-PLATFORM-019' ]
+
+# PM: pre-merge review fixes. Invalid and multibyte sequences are built with printf octal escapes.
+UURE='[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}'
+# lcg TEXT: the text field that finding writes for TEXT under a UTF-8 locale.
+lcg() { ( export LC_ALL=en_US.UTF-8; FIND="$V/pm.f"; : > "$FIND"; SECT_N=4; finding MA-PLATFORM-015 LOW Platform "$1" ); LC_ALL=C cut -f4 "$V/pm.f"; }
+# pmrow DIR TEXT [LABEL]: fixture DIR whose only finding has TEXT, and whose only skipped label is LABEL.
+pmrow() { mkfix "$1"; printf 'LOW\tMA-PLATFORM-015\tPlatform\t%s\t4\tlocal\n' "$2" > "$1/findings.tsv"
+  printf 'other\t%s\t--quick\tMA-EVENTS-001\n' "${3:-label}" > "$1/skipped.tsv"; }
+
+# N1: an invalid byte under a UTF-8 locale must not empty the text field.
+check "1.5 PM N1 finding text keeps its words after an invalid byte" [ "$(lcg "$(printf 'evil\377x')")" != "" ]
+pmrow "$V/pm1" "$(lcg "$(printf 'path /tmp/evil\377x')")"; rfix "$V/pm1" "json ocsf"
+check "1.5 PM N1 the finding survives render_all" [ "$(jx "$V/pm1.out.json" 'd.findings.length')" = 1 ]
+check "1.5 PM N1 the finding reaches OCSF" [ "$(grep -c 'MA-PLATFORM-015' "$V/pm1.out.ocsf.jsonl")" -eq 1 ]
+
+# T10 and T7: C1 controls and U+2028 and U+2029 become spaces.
+SEPS=$(printf 'a\302\205b\342\200\250c\302\233d\342\200\251e\302\237f')
+check "1.5 PM T10 clean_field replaces C1 controls and separators with spaces" [ "$(lcg "$SEPS")" = "a b c d e f" ]
+pmrow "$V/pm3" "$SEPS"; rfix "$V/pm3" "json ocsf csv"
+check "1.5 PM T10 clean_tsv replaces them in findings.tsv" [ "$(cut -f4 "$V/pm3.tmp/render/findings.tsv")" = "a b c d e f" ]
+check "1.5 PM T10 the OCSF line has the spaces" has "$V/pm3.out.ocsf.jsonl" "a b c d e f"
+check "1.5 PM T10 no C1 byte pair in OCSF" not env LC_ALL=C grep -q "$(printf '\302[\200-\237]')" "$V/pm3.out.ocsf.jsonl"
+check "1.5 PM T10 no separator in OCSF" not env LC_ALL=C grep -q "$(printf '\342\200[\250\251]')" "$V/pm3.out.ocsf.jsonl"
+check "1.5 PM T10 no separator in CSV" not env LC_ALL=C grep -q "$(printf '\342\200[\250\251]')" "$V/pm3.out.csv"
+printf 'a\302\200b\302\237c\302\240d\n' | clean_tsv > "$V/pm3.edge"
+check "1.5 PM T10 the range ends at U+009F and keeps U+00A0" [ "$(cat "$V/pm3.edge")" = "$(printf 'a b c\302\240d')" ]
+
+# N2: a UUID split by a control or a backtick must not be rebuilt by clean_tsv.
+SPLIT1="ABCDEF01-2345-6789-abcd-ef01$(printf '\001')23456789"; SPLIT2='ABCDEF01-2345-6789-abcd-ef01`23456789'
+pmrow "$V/pm2" "x $SPLIT1 y $SPLIT2 z" "lab $SPLIT1 $SPLIT2"
+rfix "$V/pm2" "md html json csv ocsf"
+check "1.5 PM N2 the split-UUID finding survives" [ "$(jx "$V/pm2.out.json" 'd.findings.length')" = 1 ]
+check "1.5 PM N2 the skipped label survives" [ "$(jx "$V/pm2.out.json" 'd.skipped.length')" = 1 ]
+for f in "$V"/pm2.out.*; do check "1.5 PM N2 no whole UUID in ${f##*/}" not grep -qE "$UURE" "$f"; done
+check "1.5 PM N2 the limitations hold no whole UUID" not grep -qE "$UURE" "$V/pm2.tmp/render/limits.txt"
+
+# N3: a JSON escape in the --compare file must not carry a UUID into the Changes lists.
+cat > "$V/pm4old.json" <<'EOT'
+{"schema": "macassay-report/1", "host": "mini1111111\u0031-2222-3333-4444-555555555555", "date": "2026-11-30 09:00 PST", "options": {},
+ "findings": [{"id": "MA-BACKUPS-003", "severity": "MEDIUM", "section": "Backups", "text": "gone 1111111\u0031-2222-3333-4444-555555555555 and AAAAAAA\u0041-BBBB-CCCC-DDDD-EEEEEEEEEEEE end"}]}
+EOT
+mkfix "$V/pm4"; ( TMP="$V/pm4.tmp"; mkdir -p "$TMP"; compare_load "$V/pm4old.json"; FMTS="md html json"; OUT="$V/pm4base"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/pm4old.json"; render_all "$V/pm4" 2>/dev/null )
+check "1.5 PM N3 the resolved finding is listed" grep -q $'^resolved\tMA-BACKUPS-003\t' "$V/pm4.tmp/render/changes.tsv"
+check "1.5 PM N3 the escaped UUID becomes a marker" grep -q $'\tgone <UUID> and <UUID> end$' "$V/pm4.tmp/render/changes.tsv"
+for f in "$V"/pm4base.*; do check "1.5 PM N3 no whole UUID in ${f##*/}" not grep -qE "$UURE" "$f"; done
+check "1.5 PM N3 no whole UUID in compare.tsv" not grep -qE "$UURE" "$V/pm4.tmp/render/compare.tsv"
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

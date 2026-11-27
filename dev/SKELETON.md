@@ -12,15 +12,23 @@ This file holds the logic flow of `macassay` and the invariants that every chang
    - It checks that the remote Mac answers `uname -s` with `Darwin`.
    - It sends the script as base64 inside the SSH command, so nothing is copied to the remote disk.
    - It calls each remote program by its absolute path, because the remote `PATH` comes from files the user can write.
-   - For an audit, it runs the remote copy with `--stdout` and the same `--quick`, `--offline`, and `--skip-du` flags, and saves the report on this Mac.
+   - For an audit, it runs the remote copy with `--bundle` and the same `--quick`, `--offline`, and `--skip-du` flags. The remote run prints its data files as a bundle (`write_bundle`) and renders nothing.
+   - `read_bundle` decodes the bundle into the temporary folder, and `render_all` renders it on this Mac. The output options, `--compare`, `--accepted`, and `--fail-on` therefore act on this Mac.
 4. `--print-sudoers` prints the sudo rules from `gen_rules` and exits. `--install-sudoers` runs `install_mode` and exits.
 5. Otherwise the audit runs as the user:
-   1. Setup creates a temporary folder under `/tmp`, removed on exit by a `trap`. It holds `body.md` (the evidence), `findings.tsv`, and `skipped.tsv`.
+   1. Setup creates a temporary folder under `/tmp`, removed on exit by a `trap`. It holds the four data files: `meta.tsv` (run facts), `findings.tsv`, `skipped.tsv`, and `body.md` (the evidence). Before the audit starts, `load_accepted` and `compare_load` read the user's `--accepted` and `--compare` files, and a bad file exits 2 before any audit work.
    2. The privileged data that several sections share is collected first, through `priv`.
-   3. Sections 1 to 14 run in report order. Each starts with `h2`, writes evidence with `say`, `run`, `block`, and `default_line`, records findings with `finding`, and records skipped checks with `skip` or `priv`.
+   3. Sections 1 to 14 run in report order. Each starts with `h2`, writes evidence with `say`, `run`, `block`, and `default_line`, records findings with `finding`, and records skipped checks with `skip`, `priv`, or `readable`.
    4. After each section, `sect_end` prints a status line on stderr. `total_status` prints the total line at the end.
-   5. Assembly writes the header, the findings table from `findings.tsv`, the Limitations from `skipped.tsv`, and then `body.md`. `redact_ids` replaces dashed UUIDs in the whole report.
-   6. The report goes to `-o FILE`, to `./macassay-<host>-<date>.md`, or to stdout with `--stdout`.
+   5. `write_meta` writes `meta.tsv`. With `--bundle`, `write_bundle` prints the four files and the run ends here.
+   6. `render_all` renders every requested format from the data files, in this order:
+      1. `norm_all` makes each file valid UTF-8 (`strict_utf8`) and replaces dashed UUIDs (`redact_ids`). A failed step writes no report and exits 1.
+      2. `validate_all` drops each line that fails its shape check, and records the counts for Limitations.
+      3. `load_meta` and `accept_rows` read the validated data and split open from accepted findings.
+      4. With `--compare`, the JXA script `REPORT_JS` writes `changes.tsv`.
+      5. `render_one` builds each format into the temporary folder: `render_md`, `render_html`, `render_csv`, or `REPORT_JS` for JSON and OCSF.
+      6. Only when every format built, the files are copied to their paths (`out_paths`) or to stdout.
+      7. The exit status is 3 when `--fail-on` matches an open finding (`fail_hit`), otherwise 0.
 
 `dev/test.sh` sources the script with `MACASSAY_LIB=1`, which stops it after the function definitions. Every function that judges data is defined above that line, so the fixture tests can call it without root or network.
 
@@ -55,12 +63,12 @@ Rule: never execute text read from the audited Mac, or use it unquoted in a comm
 
 Reason: an attacker who can create a file or start a process on the audited Mac controls that text. The report is also read by LLMs, which must treat it as data. Every report opens with a notice that says so (`REPORT_NOTICE`), and states it nowhere else.
 
-Enforced by: `clean_field`, `block`, `mdesc`; `REPORT_NOTICE` (fixture N1); the JXA script `BREW_RECEIPTS_JS`, which parses with `JSON.parse` and strips tabs and newlines; `remote_installed_findings`, which takes severity from place labels only. Fixtures F10, R1, R3, R6, R8, and the hostile-name cases in F3 and Q2.
+Enforced by: `clean_field`, `block`, `mdesc`; one escaping function for each output format (`html_esc`, `md_html`, `csv_field`, and `JSON.stringify` in `REPORT_JS`; fixtures P3, P5, P6, P7); `REPORT_NOTICE` (fixture N1); the JXA script `BREW_RECEIPTS_JS`, which parses with `JSON.parse` and strips tabs and newlines; `remote_installed_findings`, which takes severity from place labels only. Fixtures F10, R1, R3, R6, R8, and the hostile-name cases in F3 and Q2.
 
 ### No secrets in the report
 
 Rule: the report never holds a secret or a hardware identifier.
-- Serial numbers and UUIDs are left out or replaced (`drop_ids`, `redact_ids`); long hex strings in certificate and drive names are masked (`mask_hex`).
+- Serial numbers and UUIDs are left out or replaced (`drop_ids`; `redact_ids`, which runs under `LC_ALL=C` after `iconv -c` through `strict_utf8`, because BSD `sed` stops at an invalid byte under a UTF-8 locale and the report must not be written then); long hex strings in certificate and drive names are masked (`mask_hex`).
 - `authorized_keys` shows key bits, fingerprint, type, and comment only.
 - Shell startup files are searched for patterns; their lines are never copied (`rc_hits`).
 - Credential files show presence, mode, owner, and whether a secret is inline, never the value (`cred_scan`).
@@ -70,7 +78,7 @@ Rule: the report never holds a secret or a hardware identifier.
 
 Reason: reports are shared with people and LLMs. `AGENTS.md` (No secrets in the report).
 
-Enforced by: fixtures F7, F8, F11, F12, G1, G3, G4, G6, and R7 (Homebrew settings).
+Enforced by: `normalize_file`, `norm_all`; fixtures F7, F8, F11, F12, G1, G3, G4, G6, and R7 (Homebrew settings); P1 (normalization under a UTF-8 locale).
 
 ### Least privilege
 
@@ -79,6 +87,14 @@ Rule: the audit never runs as root. Privileged checks run only through `priv`, w
 Reason: a rule that grants more than a read-only command gives root to anyone who can run as the user. `AGENTS.md` (Least privilege, Security Context).
 
 Enforced by: `gen_rules`, `priv`, `classify_refusal`; `install_mode`, which checks the rules with `visudo -c -f`, refuses when the user can write a folder on a rule path, and rolls back when `visudo -c` fails after the install. Fixtures F1 to F5, F14, and Q1.
+
+### Data files are untrusted until validated
+
+Rule: `render_all` trusts no data file. In remote mode all four come from the audited Mac. A value from `meta.tsv`, `findings.tsv`, or `skipped.tsv` reaches no shell arithmetic, `[[ ]]`, or path until `validate_all` has checked its shape. The output path never uses a value from the data files. The bundle is five fixed lines, and no file name or path comes from it.
+
+Reason: bash 3.2 runs a command substitution inside an array subscript in `$(( ))`, so a meta count such as `a[$(cmd)]` would run `cmd`. A remote shell startup file can control the whole remote stdout.
+
+Enforced by: `valid_meta`, `valid_findings`, `valid_skipped`, `validate_all`; `read_bundle`, which checks the first line, the line count, the base64 alphabet, and a NUL byte before decoding; fixtures P12 (bundle) and P12a (validation).
 
 ### Stock macOS only
 
@@ -92,7 +108,7 @@ Enforced by: review, and test runs under `/bin/bash`.
 
 Rule: each finding ID (`MA-<LABEL>-NNN`) names one risk, never changes, and is never reused. `docs/CHECKS.md` lists every ID.
 
-Reason: users track findings across runs and Macs, and 1.5 compares runs by ID.
+Reason: users track findings across runs and Macs, and `--compare` matches runs by ID.
 
 Enforced by: fixtures F15 and F16 (every `finding` call names a valid literal ID), and D1 (`docs/CHECKS.md` and the script list the same IDs).
 

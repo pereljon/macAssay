@@ -42,6 +42,10 @@ build/
 
 # Audit reports describe a real Mac
 macassay-*.md
+macassay-*.json
+macassay-*.ocsf.jsonl
+macassay-*.html
+macassay-*.csv
 mac-audit-*.md
 
 # Scratch that must outlive a session

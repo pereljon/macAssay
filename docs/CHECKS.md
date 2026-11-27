@@ -11,6 +11,10 @@ A check is a test that the script runs. A finding is a judged result of a check,
 | `--quick` | Skips the 7-day unified-log searches in section 14: XProtect messages (`MA-EVENTS-001`) and SSH failures (`MA-EVENTS-002`). |
 | `--offline` | Skips three checks that contact Apple or Homebrew: `softwareupdate -l` (`MA-UPDATES-001`), Homebrew outdated packages (`MA-UPDATES-002`), and the Gatekeeper assessment of apps (`MA-APPS-002`). |
 | `--skip-du` | Skips the disk usage scans in section 1: the home folder scan and the top-level usage scan. |
+| `--format LIST` | Changes the report's formats (`md`, `json`, `ocsf`, `html`, `csv`), not which checks run. See [FORMATS.md](FORMATS.md). |
+| `--compare OLD.json` | Adds a comparison with an earlier JSON report, by finding ID. It runs no check. |
+| `--accepted FILE` | Moves findings that the file accepts out of the findings table and the counts. It runs no check. |
+| `--fail-on LEVEL` | Sets exit status 3 when an open finding reaches LEVEL. It runs no check. |
 | sudo rules (privileged checks) | Enable the checks marked "sudo rules". Without `/etc/sudoers.d/macassay`, each of them records a skip. [SUDOERS.md](SUDOERS.md) lists each command the rules allow and the check that uses it. |
 
 Each skipped check is listed under Limitations in the report, with the reason. A sudo rule that sudo refuses counts as a skip too.
@@ -18,6 +22,8 @@ Each skipped check is listed under Limitations in the report, with the reason. A
 Other gates and notes:
 
 - Full Disk Access (a macOS privacy permission that the terminal app holds) gates the Time Machine settings file and the user TCC (Transparency, Consent, and Control, the macOS privacy permission) database. Each records a skip when unreadable. The sudo rules do not cover either one.
+- A setting that a configuration profile manages reads `VALUE (managed)` in the evidence, and a finding that judges it has the source `managed`. macAssay reads `/Library/Managed Preferences` for the settings in sections 2, 3, 4, 6, 8, 9, and 10. Effective-state commands such as `fdesetup`, `csrutil`, and `socketfilterfw` already show the real state, so they do not change.
+- A check that ran but could not read its evidence prints `unreadable (REASON)` and records a skip, never a clean value. These skips are: Time Machine settings (file unreadable or missing while a destination exists), the Jetsam and kernel panic folders, the 7-day log searches, Homebrew outdated packages, the XProtect version, the enrollment state, browser policy files, Remote Management settings, Find My, firewall stealth mode, and screen lock. Each skip lists the finding IDs that the check could have given, so `--compare` reports them as not checked.
 - `-o`, `--stdout`, and remote mode (`--host`, `--user`, `--key`, `--port`, `--known-hosts`) change where the report goes or which Mac is audited. They do not change which checks run. Remote mode passes `--quick`, `--offline`, and `--skip-du` to the remote run.
 - `--print-sudoers` and `--install-sudoers` do not run the audit.
 - While it runs, the script prints one status line per section on standard error: finding counts, skipped checks, and time.
@@ -176,7 +182,7 @@ This section gives evidence only; no finding uses its label yet.
 | Safari web extensions | `pluginkit -mAvvv -p com.apple.Safari.web-extension` | none | none |
 | Forced browser extensions | managed and local preferences for Chrome, Edge, Brave, and Firefox; Firefox `policies.json`; MDM enrollment from `profiles status -type enrollment` | none | `MA-APPS-005` HIGH: forced by managed preferences or `policies.json` on a Mac not enrolled in MDM; `MA-APPS-006` MEDIUM: forced by local preferences; `MA-APPS-007` INFO: forced by policy on an MDM-enrolled Mac |
 | Native-messaging hosts | `NativeMessagingHosts` folders under the user's and system `Application Support` and Chrome folders | none | `MA-APPS-010` INFO: at least one host; `MA-APPS-008` MEDIUM: a host runs a program from a temporary or shared folder; `MA-APPS-009` LOW: a host points to a missing program |
-| Programs with a debug port | `ps -axwwo pid=,command=` for `--remote-debugging-port` and `--inspect` flags; `lsof` for the bind address; launch item `ProgramArguments` | none (reuses the sudo-rule `lsof` listeners when installed) | `MA-APPS-003` HIGH: debug port on a non-loopback address; `MA-APPS-004` MEDIUM: on loopback or an unknown address |
+| Programs with a debug port | `ps -axwwo pid=,ppid=,command=` for `--remote-debugging-port` and `--inspect` flags, leaving out the audit's own processes; `lsof` for the bind address; launch item `ProgramArguments` | none (reuses the sudo-rule `lsof` listeners when installed) | `MA-APPS-003` HIGH: debug port on a non-loopback address; `MA-APPS-004` MEDIUM: on loopback or an unknown address |
 
 ## 10. Accounts and privileges (Accounts)
 
