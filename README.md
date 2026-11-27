@@ -116,7 +116,6 @@ The installer checks the file with `visudo` before and after it writes it. The f
   - With the sudoers file installed, sudo logs each privileged command.
 - Network: without `--offline`, the audit contacts only Apple's update and Gatekeeper services and Homebrew's update service. With `--offline`, no traffic leaves the Mac, because the audit skips the update catalog refresh, Homebrew's auto-update, and the Gatekeeper lookups. Remote mode adds the SSH connection to the remote Mac.
 - Privacy permissions (TCC) are listed only when the run has Full Disk Access: for the terminal app, or for remote users in the Remote Login settings. The list covers seven services, such as Full Disk Access, Accessibility, and Screen Recording, and gives no finding. On macOS 27 the per-user database, which holds the Camera and Microphone grants, sits in a protected location that Full Disk Access does not open.
-- Remote mode has not been tested against a second Mac.
 
 ## Development
 
