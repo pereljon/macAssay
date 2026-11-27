@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: building
-status: approved by the user 2026-11-27 after an independent plan review
+lifecycle: shipped
+status: shipped in v1.5.2 (2026-11-27)
 ---
 
 # Privacy permissions and iPhone apps (version 1.5.2)

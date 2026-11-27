@@ -15,7 +15,7 @@ This file holds the test cases, review findings, and results for `fixes-1.5.2.md
   - An unreadable system database (mode 000) records the skip with the Full Disk Access reason.
   - A system database without an `access` table records the same skip, not `none`.
   - A client name with a backtick and `$(touch PWNED)` prints inside the code block, and no `PWNED` file appears.
-- The existing cases still pass, and the skip labels keep their `SKIP_IDS` rows (P19).
+- The existing cases still pass. P19 checks only literal skip labels; `tcc_report` passes its two labels in variables, so W2 checks their exact text, and both match their `SKIP_IDS` rows (checked by the pre-merge review).
 
 ## Manual tests
 
@@ -40,6 +40,12 @@ Plan review, 2026-11-27, opus at high effort, independent of the author's conclu
 - F9. A `codesign` stub on `PATH` is not used, because the script resets `PATH`. Fixed: a shell function in W1.
 - F10. Missing cases (failed query, macOS 26.3 privacy section, report lines). Fixed in W2, M2, M3, and the design's Change steps.
 
+Pre-merge review, 2026-11-27, opus at high effort, against `89d229e`:
+
+- R1. `README.md` (Limits) still said the audit does not read TCC and that root is needed. Fixed: the line describes the current check (Change Checklist, README row).
+- R2. `readable()` built its own Full Disk Access reason instead of using `FDA_HINT`. Fixed (decision C4).
+- R3. The plan said P19 covers the TCC skip labels; P19 checks literal labels only. Fixed: the plan line names W2 instead.
+
 ## Results
 
 Run 2026-11-27 on the development Mac (macOS 27.2.1) and the second Mac (macOS 26.3).
@@ -48,3 +54,7 @@ Run 2026-11-27 on the development Mac (macOS 27.2.1) and the second Mac (macOS 2
 - M1: pass. Quick run over SSH to 127.0.0.1: the system database block lists 52 grants (12 Full Disk Access, 23 Accessibility, 13 Screen Recording, 3 Input Monitoring, 1 PostEvent); Limitations lists only the user database, with the protected location reason.
 - M2: pass. Quick run from the agent's tmux session: the system database skip gives the Full Disk Access reason, the user database skip gives the protected location reason, and neither names root.
 - M3: pass. Remote quick run against the second Mac: no MA-APPS-001; the program table lists the iPhone app's running extension with its signer. The system database was read (the remote Full Disk Access setting is on), and the user database exists there and was read, with no matching grants.
+- Release side-effect checks (2026-11-27, version 1.5.2, run over SSH to 127.0.0.1, a session with Full Disk Access, with the sudo rules installed; approved by the user in K1):
+  1. Login records: pass. Under `ssh -tt` (a pseudo-terminal, `/dev/ttys021`), `last | wc -l` read 149 before and after a `script -q /dev/null ./macassay --quick --offline --skip-du` run in which 15 privileged checks ran.
+  2. Network: pass. `nettop -P -x -L 330 -s 1` logged a full `--offline` run (3 min 37 s). The audit's processes with sockets were the `curl`, `nc`, and `ssh` probes of the Mac's own listeners. No `softwareupdate`, `brew`, `syspolicyd`, `mobileactivationd`, or `codesign` traffic; `trustd` showed its background heartbeat (555 bytes in, 790 out) and `nsurlsessiond` about 6 KB in, 2 KB out, as in the 1.5.1 iTerm run before the audit started.
+
