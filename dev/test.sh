@@ -848,13 +848,22 @@ if git rev-parse --git-dir >/dev/null 2>&1 && P16TAG=$(git describe --tags --abb
 else echo "skip P16 working-tree case: not a git checkout or no v* tag"; fi
 
 # P1: normalization keeps valid text, drops invalid bytes, redacts UUIDs (also one that an invalid byte split), and fails closed.
-printf 'caf\303\251 ok\nbad \377 byte 11111111-2222-3333-4444-555555555555\nsplit 12345678\377-1234-1234-1234-123456789012 end\n' > "$V/p1in"
+printf 'caf\303\251 ok\nbad \377 byte 11111111-2222-3333-4444-555555555555\nsplit 12345678\377-1234-1234-1234-123456789012 end\nover a\364\220\200\200b\nlead a\365\200\200\200b\nfive a\370\210\200\200\200b\nmax a\364\217\277\277b emoji \360\237\230\200 end\nsplit2 12345678\364\220\200\200-1234-1234-1234-123456789012 end\n' > "$V/p1in"
 ( export LC_ALL=C.UTF-8; normalize_file "$V/p1in" "$V/p1out" )
 check "1.5 P1 normalize succeeds" [ $? -eq 0 ]
 check "1.5 P1 output is valid UTF-8" sh -c 'iconv -f UTF-8 -t UTF-8 < "$1" > /dev/null 2>&1' _ "$V/p1out"
 check "1.5 P1 non-ASCII text kept" has "$V/p1out" "café ok"
 check "1.5 P1 line after an invalid byte kept and redacted" has "$V/p1out" "bad  byte <UUID>"
 check "1.5 P1 UUID split by an invalid byte redacted" has "$V/p1out" "split <UUID> end"
+check "1.5 P1 sequences iconv -c keeps are removed" not env LC_ALL=C grep -qE "$(printf '[\365-\377]|\364[\220-\277]')" "$V/p1out"
+check "1.5 P1 above-range and lead-byte sequences dropped" has "$V/p1out" "over ab"
+check "1.5 P1 lead F5 sequence dropped" has "$V/p1out" "lead ab"
+check "1.5 P1 lead F8 sequence dropped" has "$V/p1out" "five ab"
+check "1.5 P1 U+10FFFF and emoji kept" has "$V/p1out" "$(printf 'max a\364\217\277\277b emoji \360\237\230\200 end')"
+check "1.5 P1 UUID split by an F4 90 sequence redacted" has "$V/p1out" "split2 <UUID> end"
+if command -v python3 >/dev/null 2>&1; then
+  check "1.5 P1 output passes a strict UTF-8 decoder" python3 -I -c 'import sys; sys.stdin.buffer.read().decode("utf-8")' < "$V/p1out"
+else echo "skip P1 strict decoder case: python3 not installed"; fi
 check "1.5 P1 no dashed UUID left" not grep -qE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-' "$V/p1out"
 ( redact_ids() { return 1; }; normalize_file "$V/p1in" "$V/p1fail" )
 check "1.5 P1 failed redaction returns 1" [ $? -eq 1 ]

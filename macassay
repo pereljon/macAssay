@@ -248,10 +248,15 @@ trusted_certs() {
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
 redact_ids() { LC_ALL=C sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
+# strict_utf8: stdin to stdout as valid UTF-8. macOS iconv -c keeps F4 90..BF and lead bytes F5..FF with exit 0, so a tr and a sed
+# delete them and a second iconv -c drops the continuation bytes they leave. Fails when any step fails.
+strict_utf8() (
+  set -o pipefail
+  iconv -c -f UTF-8 -t UTF-8 | LC_ALL=C tr -d '\365-\377' | LC_ALL=C sed "s/$(printf '\364')[$(printf '\220')-$(printf '\277')]//g" | iconv -c -f UTF-8 -t UTF-8)
 # normalize_file IN OUT: OUT is IN as valid UTF-8 with dashed UUIDs replaced. Fails, and leaves no OUT, when a step fails.
-# iconv runs first: BSD sed stops at an invalid byte under a UTF-8 locale. Redaction runs second: iconv -c can join a split UUID.
+# strict_utf8 runs first: BSD sed stops at an invalid byte under a UTF-8 locale. Redaction runs second: dropping bytes can join a split UUID.
 normalize_file() {
-  if iconv -c -f UTF-8 -t UTF-8 < "$1" > "$2.u" 2>/dev/null && redact_ids < "$2.u" > "$2"; then rm -f "$2.u"; return 0; fi
+  if strict_utf8 < "$1" > "$2.u" 2>/dev/null && redact_ids < "$2.u" > "$2"; then rm -f "$2.u"; return 0; fi
   rm -f "$2" "$2.u"; return 1; }
 # Certificate labels can hold account identifiers as long hex strings.
 mask_hex() { sed -E 's/[0-9A-Fa-f]{32,}/<ID>/g'; }
