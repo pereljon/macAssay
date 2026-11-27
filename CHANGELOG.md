@@ -2,6 +2,19 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
+## Unreleased
+
+### Fixed
+
+- MA-PERSISTENCE-023 could never fire. The login items search stopped one level short of an app inside any folder, so it also missed apps in vendor folders. It now covers apps one folder below `/Applications` and `~/Applications`, including a hidden folder.
+- The background items block (`sfltool`) repeated items once per account and was cut off at 200 lines. It now prints one line per item, with the dispositions of all accounts, and leaves out Apple's items and developer group rows. On the development Mac it went from 792 lines to 109.
+- When `netstat` lists no TCP sockets for the account, the outbound connections list records a skip instead of disappearing. When no connection is outbound, it prints `none`.
+- Piping `dev/test.sh` no longer waits 60 seconds after the last case.
+
+### Added
+
+- A fixture test that `.gitignore` covers the file name of every report format.
+
 ## [1.5.0] - 2026-11-27
 
 The sudo rules are the same as in 1.4.0; an upgrade needs no new install of them.

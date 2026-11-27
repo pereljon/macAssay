@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.." || exit 1
 MACASSAY_LIB=1 . ./macassay
 T=$(mktemp -d /tmp/macassay-test.XXXXXX) || exit 1
 # A watchdog stops the suite after 60 seconds, so a hang fails instead of stalling.
-( sleep 60; echo "FAIL suite timed out after 60 seconds" >&2; kill -TERM $$ ) & WD=$!
+( sleep 60 >/dev/null 2>&1; echo "FAIL suite timed out after 60 seconds" >&2; kill -TERM $$ ) & WD=$!
 trap '{ kill "$WD"; wait "$WD"; } 2>/dev/null; rm -rf "$T"' EXIT
 
 FAILS=0
@@ -588,10 +588,6 @@ check "P2 empty display name falls back to the package ID" has "$T/p2.out" "2026
 
 printf '    XProtectPlistConfigData:\n\n      Version: 5370\n\n    XProtectPlistConfigData:\n\n      Version: 5377\n      Source: Apple\n\n    XProtectPayloads:\n\n      Version: 171\n' | xprotect_versions > "$T/p3"
 check "P3 latest version of each XProtect component" [ "$(paste -sd, - < "$T/p3")" = "XProtectPayloads 171,XProtectPlistConfigData 5377" ]
-
-printf '                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Zoom\n                 Type: app (0x2)\n                 Name: Other\n                 Type: app (0x2)\n' | btm_unique > "$T/p4"
-check "P4 repeated background items printed once" [ "$(grep -c 'Name: Zoom' "$T/p4")" -eq 1 ]
-check "P4 other items kept" has "$T/p4" "Name: Other"
 
 printf '  101 /Applications/Codex.app/Contents/Helpers/Codex (Aperitif).app/Contents/MacOS/Codex (Aperitif)\n  202 /usr/libexec/trustd\n' > "$T/psmap"
 cat > "$T/p5" <<'EOF'
@@ -1276,6 +1272,112 @@ check "1.5 PM N3 the resolved finding is listed" grep -q $'^resolved\tMA-BACKUPS
 check "1.5 PM N3 the escaped UUID becomes a marker" grep -q $'\tgone <UUID> and <UUID> end$' "$V/pm4.tmp/render/changes.tsv"
 for f in "$V"/pm4base.*; do check "1.5 PM N3 no whole UUID in ${f##*/}" not grep -qE "$UURE" "$f"; done
 check "1.5 PM N3 no whole UUID in compare.tsv" not grep -qE "$UURE" "$V/pm4.tmp/render/compare.tsv"
+
+# ---------- 1.5.1 ----------
+W="$T/v151"; mkdir -p "$W"
+# V1: login items one folder below the root, including a hidden folder; nested bundle plists are not launchd plists.
+A="$W/apps"
+# shellcheck disable=SC2016  # the literal $(...) is the hostile name under test
+H='$(touch PWNED)'
+mkdir -p "$A/Top.app/Contents/Library/LoginItems/H1.app" "$A/Vendor/V.app/Contents/Library/LoginItems/H2.app" \
+  "$A/.hide/X.app/Contents/Library/LoginItems/H3.app" "$A/Vendor/V.app/Contents/Library/LaunchAgents" \
+  "$A/Vendor/V.app/Contents/Library/LaunchDaemons" "$A/Z.app/Contents/Library/LaunchAgents/U.app/Contents" \
+  "$A/-o $H.app/Contents/Library/LoginItems/H4.app"
+touch "$A/Vendor/V.app/Contents/Library/LaunchAgents/a.plist" "$A/Vendor/V.app/Contents/Library/LaunchDaemons/d.plist" \
+  "$A/Z.app/Contents/Library/LaunchAgents/U.app/Contents/Info.plist"
+app_login_items "$A" > "$W/v1"
+check "1.5.1 V1 app directly under the root" grep -qxF "$A/Top.app/Contents/Library/LoginItems/H1.app" "$W/v1"
+check "1.5.1 V1 app in a vendor folder" grep -qxF "$A/Vendor/V.app/Contents/Library/LoginItems/H2.app" "$W/v1"
+check "1.5.1 V1 app in a hidden folder" grep -qxF "$A/.hide/X.app/Contents/Library/LoginItems/H3.app" "$W/v1"
+check "1.5.1 V1 hidden folder is an unusual path" unusual_path "$A/.hide/X.app"
+check "1.5.1 V1 launch agent plist" grep -qxF "$A/Vendor/V.app/Contents/Library/LaunchAgents/a.plist" "$W/v1"
+check "1.5.1 V1 launch daemon plist" grep -qxF "$A/Vendor/V.app/Contents/Library/LaunchDaemons/d.plist" "$W/v1"
+check "1.5.1 V1 nested bundle Info.plist skipped" not grep -qF "U.app/Contents/Info.plist" "$W/v1"
+check "1.5.1 V1 hostile app name listed unchanged" grep -qxF "$A/-o $H.app/Contents/Library/LoginItems/H4.app" "$W/v1"
+check "1.5.1 V1 hostile app name not run" not [ -e PWNED ]
+
+# V2: one line per background item, merged across accounts; Apple and developer rows left out.
+cat > "$W/btm" <<'EOT'
+========================
+ Records for UID 501 : 00000000-0000-0000-0000-000000000000
+========================
+
+ Items:
+
+ #1:
+                 UUID: 11111111-1111-1111-1111-111111111111
+                 Name: Helper
+       Developer Name: (null)
+                 Type: legacy daemon (0x10010)
+          Disposition: [enabled, allowed, notified] (0xb)
+           Identifier: 16.com.example.helper
+                  URL: /Library/LaunchDaemons/com.example.helper.plist
+      Executable Path: /Library/PrivilegedHelperTools/com.example.helper
+
+ #2:
+                 Name: tftpd
+                 Type: legacy daemon (0x10010)
+          Disposition: [enabled, allowed, notified] (0xb)
+           Identifier: 16.com.apple.tftpd
+                  URL: /Library/LaunchDaemons/tftp.plist
+      Executable Path: /usr/libexec/tftpd
+
+ #3:
+                 Name: Example Inc.
+                 Type: developer (0x20)
+          Disposition: [disabled, allowed, not notified] (0x2)
+           Identifier: Example Inc.
+                  URL: (null)
+
+ #4:
+                 Name: Viewer
+                 Type: app (0x2)
+          Disposition: [disabled, allowed, not notified] (0x2)
+           Identifier: 2.com.example.viewer
+                  URL: file:///Applications/Viewer.app/
+  Embedded Item Identifiers:
+    #1: 16.com.example.viewer.agent
+
+========================
+ Records for UID 502 : 00000000-0000-0000-0000-000000000001
+========================
+
+ Items:
+
+ #1:
+                 Name: Helper
+                 Type: legacy daemon (0x10010)
+          Disposition: [disabled, allowed, notified] (0xa)
+           Identifier: 16.com.example.helper
+                  URL: /Library/LaunchDaemons/com.example.helper.plist
+      Executable Path: /Library/PrivilegedHelperTools/com.example.helper
+
+ #2:
+                 Name: Viewer
+                 Type: app (0x2)
+          Disposition: [disabled, allowed, not notified] (0x2)
+           Identifier: 2.com.example.viewer
+                  URL: file:///Applications/Viewer.app/
+EOT
+btm_items < "$W/btm" > "$W/v2"
+check "1.5.1 V2 item in two accounts merges dispositions" grep -qxF "legacy daemon | Helper | /Library/PrivilegedHelperTools/com.example.helper | enabled/disabled" "$W/v2"
+check "1.5.1 V2 item with only a URL shows the URL" grep -qxF "app | Viewer | file:///Applications/Viewer.app/ | disabled" "$W/v2"
+check "1.5.1 V2 one line per item" [ "$(wc -l < "$W/v2" | tr -d ' ')" = 2 ]
+check "1.5.1 V2 Apple item left out" not grep -qF tftpd "$W/v2"
+check "1.5.1 V2 developer row left out" not grep -qF "Example Inc." "$W/v2"
+
+# V3: the outbound check tells hidden sockets from no outbound connection.
+printf 'Active Internet connections (including servers)\nProto Recv-Q Send-Q  Local Address          Foreign Address        (state)\n' > "$W/net0"
+printf 'Active Internet connections (including servers)\ntcp4       0      0  *.22                   *.*                    LISTEN\n' > "$W/net1"
+check "1.5.1 V3 no TCP line means hidden sockets" not tcp_listed < "$W/net0"
+check "1.5.1 V3 a listener counts as a listed socket" tcp_listed < "$W/net1"
+check "1.5.1 V3 the skip label has a row" quiet skip_row "Outbound connections"
+
+# V4: .gitignore covers every report format.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  for f in $(check_formats "md json ocsf html csv"); do
+    check "1.5.1 V4 .gitignore covers $f reports" git check-ignore -q "macassay-host-20261127-1200$(fmt_ext "$f")"; done
+else echo "skip V4: not in a git repo"; fi
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

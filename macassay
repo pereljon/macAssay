@@ -57,7 +57,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.5.0 (2026-11-27)"
+VERSION="1.5.0+dev"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay
@@ -646,6 +646,7 @@ SKIP_IDS=$(printf '%s\n' \
   $'profiles (device)\t' \
   $'Enrollment state\t' \
   $'sfltool dumpbtm\t' \
+  $'Outbound connections\t' \
   $'authorized_keys (*)\t' \
   $'LaunchAgents (*)\t' \
   $'shell startup files (*)\tMA-PERSISTENCE-009' \
@@ -1029,10 +1030,29 @@ xprotect_versions() {
   awk '/^    XProtect[^:]*:$/ { n = $1; sub(/:$/, "", n); next }
     n != "" && /^      Version:/ { v[n] = $2; n = "" }
     END { for (k in v) print k, v[k] }' | sort; }
-# btm_unique; stdin: Name, Type and similar lines from sfltool dumpbtm. Prints each item once; dumpbtm repeats items per account.
-btm_unique() {
-  awk 'function flush() { if (r != "" && !(r in s)) { s[r] = 1; printf "%s", r }; r = "" }
-    /^[[:space:]]+Name:/ { flush() } { r = r $0 "\n" } END { flush() }'; }
+# btm_items; stdin: sfltool dumpbtm. Prints "TYPE | NAME | PATH | DISPOSITIONS", one line per non-Apple item. dumpbtm
+# lists items once per account with differing dispositions, so items match on type, name and path, and the first word
+# of each distinct disposition is joined. Developer rows name a group and have no path, so they are left out.
+btm_items() {
+  awk 'function flush() {
+      if (inn && t != "" && t != "developer" && !apple) {
+        k = t " | " n " | " (x != "" ? x : u)
+        if (!(k in d)) { o[++c] = k; d[k] = q } else if (index("/" d[k] "/", "/" q "/") == 0) d[k] = d[k] "/" q }
+      inn = 0; t = n = x = u = q = ""; apple = 0 }
+    function val(s) { sub(/^[[:space:]]*[^:]+: /, "", s); return s }
+    /^ #[0-9]+:$/ { flush(); inn = 1; next }
+    /^=+$/ { flush(); next }
+    !inn { next }
+    /^[[:space:]]+Name:/ { n = val($0) }
+    /^[[:space:]]+Type:/ { t = val($0); sub(/ \(0x[0-9a-f]+\)$/, "", t) }
+    /^[[:space:]]+Disposition:/ { q = val($0); sub(/^\[ */, "", q); sub(/[ ,\]].*/, "", q) }
+    /^[[:space:]]+Identifier:/ { if (val($0) ~ /^[0-9]+\.com\.apple\./) apple = 1 }
+    /^[[:space:]]+URL:/ { u = val($0); if (u == "(null)") u = "" }
+    /^[[:space:]]+Executable Path:/ { x = val($0) }
+    END { flush(); for (i = 1; i <= c; i++) print o[i] " | " d[o[i]] }'; }
+# tcp_listed; stdin: netstat -anv -p tcp. Succeeds when it lists any TCP socket. A Mac always has some, so none means
+# that macOS hid the sockets from this account.
+tcp_listed() { grep -q '^tcp'; }
 # outbound_conns PSMAP; stdin: ESTABLISHED lines of netstat -anv. PSMAP holds "pid program" lines from ps.
 # Prints "process remote-address" for each non-local connection. The name comes from ps, because netstat
 # cuts long names and the field splits at spaces.
@@ -1223,6 +1243,12 @@ screen_lock_sev() {
   elif [ "$s" -gt 300 ]; then printf 'LOW\tset to %s seconds\n' "$s"; fi; }
 # unusual_path PATH: succeeds for a temporary, shared or hidden folder.
 unusual_path() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*|*/.[!.]*/*) return 0 ;; esac; return 1; }
+# app_login_items ROOT...: prints login items and launchd plists inside apps, with one folder allowed between a root
+# and the app. The launchd patterns skip files inside nested bundles, which are not launchd plists.
+app_login_items() {
+  find "$@" -maxdepth 6 \( -path '*.app/Contents/Library/LoginItems/*.app' -prune -print \) \
+    -o \( -path '*.app/Contents/Library/LaunchAgents/*.plist' ! -path '*/LaunchAgents/*/*' -print \) \
+    -o \( -path '*.app/Contents/Library/LaunchDaemons/*.plist' ! -path '*/LaunchDaemons/*/*' -print \) 2>/dev/null; }
 # pam_modules FILE DEPTH: prints each module given as an absolute path outside /usr/lib/pam. Follows include and
 # substack targets inside ${PAMD:-/etc/pam.d}; the PAM_SEEN list and a depth limit of 16 stop loops.
 pam_modules() {
@@ -1831,8 +1857,10 @@ HO=$(grep -vE '^\s*(#|$)' /etc/hosts | grep -vE '^(127\.0\.0\.1\s+localhost|255\
 if [ -n "$HO" ]; then echo "$HO" | block "Non-default /etc/hosts entries"; finding MA-NETWORK-005 LOW Network "/etc/hosts has $(echo "$HO" | wc -l | tr -d ' ') non-default entries."; else say "- /etc/hosts: default"; fi
 h3 "Outbound connections"
 ps -axo pid=,comm= > "$TMP/psmap" 2>/dev/null
-NETE=$(netstat -anv -p tcp 2>/dev/null | grep ESTABLISHED | outbound_conns "$TMP/psmap" | sort | uniq -c | sort -rn | head -30)
-[ -n "$NETE" ] && echo "$NETE" | block "Established outbound TCP connections (count, process, remote address; top 30)"
+netstat -anv -p tcp > "$TMP/nettcp" 2>/dev/null
+if tcp_listed < "$TMP/nettcp"; then
+  grep ESTABLISHED "$TMP/nettcp" | outbound_conns "$TMP/psmap" | sort | uniq -c | sort -rn | head -30 | block "Established outbound TCP connections (count, process, remote address; top 30)"
+else skip "Outbound connections" "netstat lists no TCP sockets for this account"; say "- Outbound connections: skipped ($(skip_reason "Outbound connections"))"; fi
 
 # ---------- 8. Startup and persistence ----------
 h2 "8. Startup and persistence"
@@ -1882,7 +1910,7 @@ else say "- Shell startup files: no download-and-run or decode patterns"; fi
 find /Users/Shared /private/tmp /private/var/tmp -maxdepth 3 -type f -perm -u+x 2>/dev/null | grep -v '/macassay\.' | head -20 > "$TMP/x"
 if [ -s "$TMP/x" ]; then block "Executables in shared or temporary folders" < "$TMP/x"; finding MA-PERSISTENCE-007 MEDIUM Persistence "Executable files found in /Users/Shared or /tmp (see section 8)."; else say "- Executables in /Users/Shared and /tmp: none"; fi
 if priv "sfltool dumpbtm" /usr/bin/sfltool dumpbtm > "$TMP/btm" 2>/dev/null; then
-  grep -E "^\s+(Name|Developer Name|Type|Disposition|URL|Executable Path):" "$TMP/btm" | grep -v "com.apple" | btm_unique | MAXL=200 block "Background items (sfltool, non-Apple)"
+  btm_items < "$TMP/btm" | MAXL=200 block "Background items (sfltool, non-Apple; type | name | path | dispositions)"
 else say "- Background items (sfltool): skipped ($(skip_reason "sfltool dumpbtm"))"; fi
 DY=$(launchctl getenv DYLD_INSERT_LIBRARIES 2>/dev/null)
 [ -n "$DY" ] && finding MA-PERSISTENCE-008 HIGH Persistence "launchd sets DYLD_INSERT_LIBRARIES=$DY (library injection)."
@@ -1921,7 +1949,7 @@ done
 say "- Audio plug-ins (HAL): $(mdesc "${AUDS:-none}")"
 [ "$NAUD" -gt 0 ] && finding MA-PERSISTENCE-020 INFO Persistence "$NAUD audio plug-ins (HAL drivers) not signed by Apple are installed: $AUD"
 h3 "Login items inside apps"
-find /Applications "$THOME/Applications" -maxdepth 5 \( -path '*.app/Contents/Library/LoginItems/*.app' -prune -print \) -o \( -path '*.app/Contents/Library/LaunchAgents/*.plist' -print \) -o \( -path '*.app/Contents/Library/LaunchDaemons/*.plist' -print \) 2>/dev/null > "$TMP/li"
+app_login_items /Applications "$THOME/Applications" > "$TMP/li"
 NLI=0; : > "$TMP/liu"; : > "$TMP/lix"
 while IFS= read -r p; do
   NLI=$((NLI+1)); app="${p%%.app/*}.app"; s=$(sig "$app")
