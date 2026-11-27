@@ -146,7 +146,7 @@ This section gives evidence only; no finding uses its label yet.
 | DNS servers in use | `scutil --dns` | none | none |
 | Proxy settings | `scutil --proxy` | none | `MA-NETWORK-004` MEDIUM: a system proxy or auto-config is on |
 | Non-default `/etc/hosts` entries | `/etc/hosts` | none | `MA-NETWORK-005` LOW: at least one non-default entry |
-| Established outbound TCP connections | `netstat -anv -p tcp`, `ps` | none | none |
+| Established outbound TCP connections | `netstat -anv -p tcp`, `ps`; skipped when `netstat` lists no TCP sockets for the account | none | none |
 
 ## 8. Startup and persistence (Persistence)
 
@@ -160,7 +160,7 @@ This section gives evidence only; no finding uses its label yet.
 | Non-standard periodic scripts | `/etc/periodic/daily`, `weekly`, `monthly` | none | none |
 | Shell startup files | the user's `.zshrc`, `.zprofile`, `.zshenv`, `.zlogin`, `.bashrc`, `.bash_profile`, `.profile`, and the system files in `/etc`; pattern matches only, no line text | none | `MA-PERSISTENCE-006` HIGH: download-and-run, `/dev/tcp`, or `nc -e` patterns; `MA-PERSISTENCE-011` MEDIUM: base64 decode or `osascript -e` |
 | Executables in shared or temporary folders | `find` in `/Users/Shared`, `/private/tmp`, `/private/var/tmp` | none | `MA-PERSISTENCE-007` MEDIUM: at least one executable |
-| Background items | `sfltool dumpbtm`, non-Apple items | sudo rules | none |
+| Background items | `sfltool dumpbtm`: one line per non-Apple item (type, name, path, and the dispositions across accounts); developer group rows left out | sudo rules | none |
 | launchd `DYLD_INSERT_LIBRARIES` | `launchctl getenv DYLD_INSERT_LIBRARIES` | none | `MA-PERSISTENCE-008` HIGH: set |
 | Authorization plugins | `/Library/Security/SecurityAgentPlugins/*.bundle`, signer, owner | none | `MA-PERSISTENCE-012` HIGH, or MEDIUM under the admin-group rule: a non-root account can change it; `MA-PERSISTENCE-013` MEDIUM: unsigned or ad hoc; `MA-PERSISTENCE-014` LOW: installed and signed by a third party |
 | PAM (pluggable authentication modules) | modules in `/etc/pam.d` given as absolute paths outside `/usr/lib/pam` | none | `MA-PERSISTENCE-015` HIGH, or MEDIUM under the admin-group rule: a non-root account can change it; `MA-PERSISTENCE-016` MEDIUM: module outside `/usr/lib/pam` |
@@ -168,7 +168,7 @@ This section gives evidence only; no finding uses its label yet.
 | Scripting additions | `/Library/ScriptingAdditions` and the user's folder | none | `MA-PERSISTENCE-018` MEDIUM: present |
 | Directory service plug-ins | `/Library/DirectoryServices/PlugIns` | none | `MA-PERSISTENCE-019` MEDIUM: present |
 | Audio plug-ins (HAL) | `/Library/Audio/Plug-Ins/HAL/*`, signer | none | `MA-PERSISTENCE-020` INFO: at least one not signed by Apple |
-| Login items inside apps | `LoginItems`, `LaunchAgents`, `LaunchDaemons` inside `.app` bundles in `/Applications` and the user's `Applications` | none | `MA-PERSISTENCE-021` INFO: at least one registered; `MA-PERSISTENCE-022` MEDIUM: unsigned or ad hoc app; `MA-PERSISTENCE-023` HIGH: app in an unusual path |
+| Login items inside apps | `LoginItems`, `LaunchAgents`, `LaunchDaemons` inside `.app` bundles in `/Applications` and the user's `Applications`, directly or one folder down | none | `MA-PERSISTENCE-021` INFO: at least one registered; `MA-PERSISTENCE-022` MEDIUM: unsigned or ad hoc app; `MA-PERSISTENCE-023` HIGH: app in an unusual path |
 | Other accounts: `authorized_keys` fingerprints, LaunchAgents, shell startup files | `ssh-keygen -l -f`, `ls -ln`, `ls -lnd` for each other account | sudo rules | `MA-PERSISTENCE-009` HIGH: another account can change a shell startup file |
 | Crontabs | `ls -ln /var/at/tabs` | sudo rules | `MA-PERSISTENCE-010` INFO: an account other than the user has a crontab |
 
