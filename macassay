@@ -424,15 +424,15 @@ compare_load() {
   osascript -l JavaScript -e "$REPORT_JS" check "$TMP/old.json" >/dev/null 2>&1 || { echo "$1 is not a macassay JSON report (schema macassay-report/1)." >&2; return 1; }; }
 # md_changes R: the Markdown Changes section from R/changes.tsv and R/compare.tsv.
 md_changes() { local h d o now g t
-  h=$(awk -F'\t' '$1 == "host" {print $2}' "$1/compare.tsv"); d=$(awk -F'\t' '$1 == "date" {print $2}' "$1/compare.tsv")
-  o=$(awk -F'\t' '$1 == "options" {print $2}' "$1/compare.tsv"); now="quick=$M_QUICK offline=$M_OFFLINE skip-du=$M_SKIPDU"
+  h=$(awk -F'\t' '$1 == "host" {print $2}' "$1/compare.tsv" | md_esc); d=$(awk -F'\t' '$1 == "date" {print $2}' "$1/compare.tsv" | md_esc)
+  o=$(awk -F'\t' '$1 == "options" {print $2}' "$1/compare.tsv" | md_esc); now="quick=$M_QUICK offline=$M_OFFLINE skip-du=$M_SKIPDU"
   echo ""; echo "## Changes since the previous run"; echo ""
   echo "Compared with the run on ${h:-unknown} at ${d:-unknown}."
   [ "$o" = "$now" ] || echo "Options differ: this run $now; previous run $o."
   for g in new resolved not_checked; do
     case "$g" in new) t="New" ;; resolved) t="Resolved" ;; *) t="Not checked in this run" ;; esac
     echo ""; echo "**$t ($(awk -F'\t' -v g="$g" '$1 == g' "$1/changes.tsv" | grep -c .))**"; echo ""
-    awk -F'\t' -v g="$g" '$1 == g {print "- " $3 " " $2 ": " $5}' "$1/changes.tsv"
+    awk -F'\t' -v g="$g" "$MD_LIB"'$1 == g {print "- " md_esc($3) " " md_esc($2) ": " md_esc($5)}' "$1/changes.tsv"
   done; }
 # html_changes R: the same section as HTML; every value from the old file passes through html_esc.
 html_changes() { local o now
@@ -467,7 +467,7 @@ render_md() {
   echo ""
   if awk -F'\t' '$7 == 0 {f = 1} END {exit !f}' "$1/rows.tsv"; then
     echo "| Severity | ID | Section | Finding | Source |"; echo "|---|---|---|---|---|"
-    awk -F'\t' '$7 == 0 {print "| " $1 " | " $2 " | " $3 " | " $4 " | " ($6 == "managed" ? "managed" : "") " |"}' "$1/rows.tsv"
+    awk -F'\t' "$MD_LIB"'$7 == 0 {print "| " $1 " | " $2 " | " $3 " | " md_esc($4) " | " ($6 == "managed" ? "managed" : "") " |"}' "$1/rows.tsv"
     echo ""; echo "### Guidance"; echo ""
     awk -F'\t' '$7 == 0 && !seen[$2]++ {print "- " $2 ": " $9}' "$1/rows.tsv"
   else echo "No automatic findings."; fi
@@ -475,12 +475,12 @@ render_md() {
   if awk -F'\t' '$7 == 1 {f = 1} END {exit !f}' "$1/rows.tsv"; then
     echo ""; echo "## Accepted risks"; echo ""
     echo "| Severity | ID | Section | Finding | Reason |"; echo "|---|---|---|---|---|"
-    awk -F'\t' '$7 == 1 {print "| " $1 " | " $2 " | " $3 " | " $4 " | " $8 " |"}' "$1/rows.tsv"
+    awk -F'\t' "$MD_LIB"'$7 == 1 {print "| " $1 " | " $2 " | " $3 " | " md_esc($4) " | " md_esc($8) " |"}' "$1/rows.tsv"
   fi
   echo ""
   echo "## Limitations"
   echo ""
-  sed 's/^/- /' "$1/limits.txt"
+  md_esc < "$1/limits.txt" | sed 's/^/- /'
   cat "$1/body.md"; }
 # check_formats LIST: prints the comma-separated LIST space-separated, without repeats. Fails on an unknown or empty name.
 check_formats() { local f out="" IFS=,
@@ -493,13 +493,21 @@ render_csv() { awk -F'\t' 'BEGIN { ORS = "\r\n"; print "\"severity\",\"id\",\"se
   { print csv_field($1) "," csv_field($2) "," csv_field($3) "," csv_field($4) "," csv_field($6) "," csv_field($7 == 1 ? "yes" : "no") "," csv_field($9) }' "$1/rows.tsv"; }
 # awk functions for the HTML format. html_esc is the one escaping function for text on the page; md_html applies it to
 # every evidence line before it converts markup, so text from the audited Mac cannot add a tag or an attribute.
-HTML_LIB='function html_esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); gsub(sprintf("%c", 39), "\\&#39;", s); return s }
+MD_LIB='function md_esc(s) { gsub(/[][\\<]/, "\\\\&", s); return s }
+'
+HTML_LIB='function md_unesc(s,   o, c, n) { o = ""
+  while ((n = index(s, "\\")) > 0) { o = o substr(s, 1, n - 1); c = substr(s, n + 1, 1)
+    if (c == "\\" || c == "[" || c == "]") { o = o c; s = substr(s, n + 2) }
+    else if (substr(s, n + 1, 4) == "&lt;") { o = o "&lt;"; s = substr(s, n + 5) }
+    else { o = o "\\"; s = substr(s, n + 1) } }
+  return o s }
+function html_esc(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); gsub(/"/, "\\&quot;", s); gsub(sprintf("%c", 39), "\\&#39;", s); return s }
 function md_bold(s,   o, a, b) { o = ""
   while ((a = index(s, "**")) > 0) { b = index(substr(s, a + 2), "**"); if (b == 0) break
     o = o substr(s, 1, a - 1) "<strong>" substr(s, a + 2, b - 1) "</strong>"; s = substr(s, a + b + 3) }
   return o s }
 function md_inline(s,   n, p, i, o) { n = split(s, p, "`"); o = ""
-  for (i = 1; i <= n; i++) { if (i % 2 == 0 && i < n) o = o "<code>" p[i] "</code>"; else if (i % 2 == 0) o = o "`" p[i]; else o = o md_bold(p[i]) }
+  for (i = 1; i <= n; i++) { if (i % 2 == 0 && i < n) o = o "<code>" p[i] "</code>"; else if (i % 2 == 0) o = o "`" p[i]; else o = o md_bold(md_unesc(p[i])) }
   return o }
 '
 # md_html; stdin: body.md. Converts only the Markdown that macAssay writes: ## and ### headings, bold, fenced blocks,
@@ -523,7 +531,7 @@ e ~ /^\|/ { if (inlist) { print "</ul>"; inlist = 0 }
   else { printf "<tr>"; for (i = 1; i <= n; i++) printf "<td>%s</td>", md_inline(c[i]); print "</tr>" }
   next }
 e ~ /^[ \t]*$/ { close_blocks(); next }
-{ close_blocks(); if (e ~ /^\*\*.*\*\*$/ && index(substr(e, 3, length(e) - 4), "**") == 0) print "<p><strong>" substr(e, 3, length(e) - 4) "</strong></p>"; else print "<p>" md_inline(e) "</p>" }
+{ close_blocks(); if (e ~ /^\*\*.*\*\*$/ && index(substr(e, 3, length(e) - 4), "**") == 0) print "<p><strong>" md_unesc(substr(e, 3, length(e) - 4)) "</strong></p>"; else print "<p>" md_inline(e) "</p>" }
 END { close_blocks(); if (infence) print "</code></pre>"; if (indet) print "</details>" }'; }
 HTML_CSS=':root { color-scheme: light dark; --fg: #1d1d1f; --bg: #fff; --muted: #6e6e73; --line: #d2d2d7; --code: rgba(127,127,127,.12);
   --high: #b3261e; --medium: #a14a00; --low: #7a6200; --info: #3a5f8f; }
@@ -579,7 +587,7 @@ render_html() { local r="$1"
     echo '</tbody></table></section>'
   fi
   echo '<section id="limitations"><h2>Limitations</h2><ul>'
-  awk "$HTML_LIB"'{ print "<li>" md_inline(html_esc($0)) "</li>" }' "$r/limits.txt"
+  md_esc < "$r/limits.txt" | awk "$HTML_LIB"'{ print "<li>" md_inline(html_esc($0)) "</li>" }'
   echo '</ul></section><section id="evidence">'
   md_html < "$r/body.md"
   printf '%s\n' '</section></main>' '</body>' '</html>'; }
@@ -612,7 +620,7 @@ render_all() { local R="$TMP/render" f p n
   n=$(awk -F'\t' '$7 == 0' "$R/rows.tsv" | grep -c .)
   while IFS=$'\t' read -r f p; do
     if [ "$STDOUT" -eq 1 ]; then cat "$R/out.$f"; echo "Report sent to stdout ($n findings)" >&2
-    else cp "$R/out.$f" "$p" || { echo "Could not write $p." >&2; return 1; }; echo "Report written to $p ($n findings)" >&2; fi
+    else { cp "$R/out.$f" "$p" && chmod 600 "$p"; } || { echo "Could not write $p." >&2; return 1; }; echo "Report written to $p ($n findings)" >&2; fi
   done < "$R/outs"
   if [ -n "$FAILON" ] && fail_hit "$FAILON" "$R/rows.tsv"; then return 3; fi
   return 0; }
@@ -634,7 +642,10 @@ block(){ local o; o=$(clean | trunc)
   say ""; say "**$1**"; say ""; say '```text'; printf '%s\n' "$o" >> "$BODY"; say '```'; say ""; }
 # finding ID SEVERITY LABEL TEXT [SOURCE]: SOURCE is managed when the finding judges a value that a profile set.
 finding() { printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$2" "$1" "$3" "$(printf '%s' "$4" | clean_field)" "${SECT_N:-0}" "${5:-local}" >> "$FIND"; }
-mdesc(){ printf '%s' "$1" | clean_field; }                  # safe for table cells
+# md_esc: puts a backslash before each \, [, ], and <, so that Markdown never makes a link, an image, or HTML from the text.
+md_esc(){ LC_ALL=C sed -e 's/[][\<]/\\&/g'; }
+mdesc(){ printf '%s' "$1" | clean_field | md_esc; }          # safe for table cells and plain Markdown text
+mdcode(){ printf '%s' "$1" | clean_field; }                 # inside a code span, where Markdown processes no escapes
 # default_line LABEL VALUE DEFAULT: a setting's value, or its macOS default when the setting is absent.
 default_line() { if [ -n "$2" ]; then say "- $1: $(mdesc "$2")"; else say "- $1: not set (macOS default: $3)"; fi; }
 # Skip label (a case pattern) and the finding IDs that the skipped check could have given. --compare uses the IDs
@@ -835,7 +846,7 @@ load_accepted() { local line id rest match reason n=0
   done < "$TMP/acc.in"; }
 # skip LABEL REASON: record a check that could not run.
 skip() { printf 'other\t%s\t%s\t%s\n' "$1" "$2" "$(skip_row "$1")" >> "$SKIPS"; }
-skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }
+skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS" | md_esc; }
 # readable PATH LABEL: succeeds when PATH is absent or can be read. Tries a real read: a privacy-protected file can pass -r.
 readable() {
   [ -e "$1" ] || return 0
@@ -1569,10 +1580,10 @@ fi
 NSD=$(plutil -extract Destinations.0.SnapshotDates raw -o - "$TMP_PL" 2>/dev/null)
 LASTBK=""; [ -n "$NSD" ] && [ "$NSD" -gt 0 ] 2>/dev/null && LASTBK=$(plutil -extract "Destinations.0.SnapshotDates.$((NSD-1))" raw -o - "$TMP_PL" 2>/dev/null)
 TMENC=$(plutil -extract Destinations.0.LastKnownEncryptionState raw -o - "$TMP_PL" 2>/dev/null)
-if [ "$TMRC" -eq 0 ]; then say "- Time Machine destinations: ${TMDEST:-none}"; else say "- Time Machine destinations: unreadable (tmutil destinationinfo failed)"; fi
+if [ "$TMRC" -eq 0 ]; then say "- Time Machine destinations: $(mdesc "${TMDEST:-none}")"; else say "- Time Machine destinations: unreadable (tmutil destinationinfo failed)"; fi
 say "- Local snapshots: $NSNAP"
-say "- Latest backup on first destination: ${LASTBK:-${TMU:-unknown}} (UTC); backups recorded: ${NSD:-${TMU:-unknown}}"
-say "- First destination encryption: ${TMENC:-${TMU:-unknown}}"
+say "- Latest backup on first destination: $(mdesc "${LASTBK:-${TMU:-unknown}}") (UTC); backups recorded: $(mdesc "${NSD:-${TMU:-unknown}}")"
+say "- First destination encryption: $(mdesc "${TMENC:-${TMU:-unknown}}")"
 [ "$TMRC" -eq 0 ] && [ -z "$TMDEST" ] && finding MA-BACKUPS-001 MEDIUM Backups "No Time Machine destination configured."
 [ "$TMENC" = "NotEncrypted" ] && finding MA-BACKUPS-002 MEDIUM Backups "Time Machine disk is not encrypted."
 if [ -n "$LASTBK" ]; then
@@ -1584,7 +1595,7 @@ if [ -n "$TMDEST" ]; then
   pref_line "Automatic backups (AutoBackup)" "1, on"
   [ "$AB" = 0 ] && finding MA-BACKUPS-004 MEDIUM Backups "Time Machine has a destination, but automatic backups are off." "$PSRC"
   EXC=$(tmutil isexcluded "$THOME" 2>/dev/null | awk '{print $1}')
-  say "- Home folder in Time Machine: ${EXC:-unknown}"
+  say "- Home folder in Time Machine: $(mdesc "${EXC:-unknown}")"
   [ "$EXC" = "[Excluded]" ] && finding MA-BACKUPS-005 MEDIUM Backups "The home folder is excluded from Time Machine."
 fi
 
@@ -1720,7 +1731,7 @@ say ""; say "| Rule | Path | Signer |"; say "|---|---|---|"
 $FW --listapps 2>/dev/null | awk '/^[0-9]+ :/{sub(/^[0-9]+ : /,""); sub(/ +$/,""); app=$0; next} /incoming/{r=($0 ~ /Allow/)?"Allow":"Block"; print r "|" app}' > "$TMP/fw"
 NALLOW=0
 while IFS='|' read -r r p; do
-  s=$(sig "$p"); say "| $r | \`$(mdesc "$p")\` | $(mdesc "$s") |"
+  s=$(sig "$p"); say "| $r | \`$(mdcode "$p")\` | $(mdesc "$s") |"
   if [ "$r" = Allow ]; then NALLOW=$((NALLOW+1)); case "$s" in
     "ad hoc"|unsigned) finding MA-PLATFORM-008 MEDIUM Platform "Allow rule for a program that is $s: $p" ;;
     missing) finding MA-PLATFORM-011 LOW Platform "Allow rule for a program that no longer exists: $p" ;; esac; fi
@@ -1776,12 +1787,12 @@ if listening 3283 || pgrep -x ARDAgent >/dev/null; then
 fi
 if listening 22; then
   AM=$(/usr/bin/ssh -F /dev/null -o PreferredAuthentications=none -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 nobody@127.0.0.1 true </dev/null 2>&1 | grep -o '([^)]*)' | tail -1)
-  say "- SSH offers: ${AM:-unknown}"
+  say "- SSH offers: $(mdesc "${AM:-unknown}")"
   if [ "$SSHDG" -eq 1 ]; then
     PWA=$(grep -Ei '^(passwordauthentication|kbdinteractiveauthentication) yes' "$TMP/sshdg" | paste -sd, -)
     [ -n "$PWA" ] && finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (sshd -G: $PWA)."
   elif ssh_accepts_password "$AM"; then finding MA-SHARING-007 MEDIUM Sharing "SSH accepts passwords (offers $AM; keyboard-interactive accepts passwords through PAM)."; fi
-  if dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then say "- SSH access group: $(dscl . -read /Groups/com.apple.access_ssh GroupMembership 2>/dev/null | cut -d: -f2)"
+  if dscl . -read /Groups/com.apple.access_ssh >/dev/null 2>&1; then say "- SSH access group: $(mdesc "$(dscl . -read /Groups/com.apple.access_ssh GroupMembership 2>/dev/null | cut -d: -f2)")"
   else say "- SSH access group: absent (every local user may sign in)"; finding MA-SHARING-008 LOW Sharing "SSH is not limited to specific users (com.apple.access_ssh group absent)."; fi
   cat /etc/ssh/sshd_config.d/* 2>/dev/null | grep -vE '^\s*(#|$)' | block "sshd_config.d (non-comment lines)"
   if [ "$SSHDG" -eq 1 ]; then
@@ -1855,7 +1866,7 @@ while read -r addr proc; do
   s=$(sig "$path")
   tgt="$host"; [ "$host" = "*" ] && tgt="$LANIP"; case "$tgt" in *:*) tgt="[$tgt]";; esac
   code=000; [ -n "$tgt" ] && code=$(/usr/bin/curl -q --noproxy '*' -s -o /dev/null -m 3 -w '%{http_code}' "http://$tgt:$port/" 2>/dev/null)
-  say "| \`$(mdesc "$addr")\` | \`$(mdesc "$path")\` | $(mdesc "$pid") | $(mdesc "$s") | $code |"
+  say "| \`$(mdcode "$addr")\` | \`$(mdcode "$path")\` | $(mdesc "$pid") | $(mdesc "$s") | $code |"
   case "$s" in Apple) ;; *)
     case "$code" in 200) finding MA-NETWORK-001 MEDIUM Network "Non-Apple listener answers HTTP 200 without a login on $addr ($path). Check whether it needs authentication.";;
                     *) [ "$host" = "*" ] && finding MA-NETWORK-002 INFO Network "Non-Apple listener on all interfaces: $addr ($(basename "$path"), HTTP $code)." ;; esac ;;
@@ -1887,7 +1898,7 @@ say "| Location | Label file | Program | Signer | Modified |"; say "|---|---|---
 for d in /Library/LaunchDaemons /Library/LaunchAgents "$THOME/Library/LaunchAgents"; do
   for f in "$d"/*.plist; do [ -e "$f" ] || continue
     prog=$(plistprog "$f"); m=$(stat -f %Sm -t %Y-%m-%d "$f")
-    if [ -n "$prog" ]; then s=$(sig "$prog"); pl="\`$(mdesc "$prog")\`"
+    if [ -n "$prog" ]; then s=$(sig "$prog"); pl="\`$(mdcode "$prog")\`"
     elif [ -r "$f" ]; then s="-"; pl="no program"
     else s="-"; pl="unreadable"; fi
     say "| \`$d\` | $(mdesc "$(basename "$f")") | $pl | $(mdesc "$s") | $m |"
@@ -1983,7 +1994,7 @@ say "- Login and launch items inside apps: $NLI"
 h3 "Other accounts and root"
 collect_accounts | other_accounts "$TUSER" 2>/dev/null > "$TMP/others"
 while read -r n u h; do
-  say ""; say "**Account $n** (\`$h\`)"; say ""
+  say ""; say "**Account $(mdesc "$n")** (\`$(mdcode "$h")\`)"; say ""
   privblk "SSH authorized_keys fingerprints ($n)" "authorized_keys ($n)" /usr/bin/ssh-keygen -l -f "$h/.ssh/authorized_keys"
   privblk "LaunchAgents ($n)" "LaunchAgents ($n)" /bin/ls -ln "$h/Library/LaunchAgents"
   RCF=(); for f in $RC_FILES; do RCF+=("$h/$f"); done
@@ -2005,13 +2016,13 @@ h2 "9. Apps and browsers"
 h3 "Running programs outside standard locations"
 say "| Program | Signer |"; say "|---|---|"
 ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
-  s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
+  s=$(sig "$p"); say "| \`$(mdcode "$p")\` | $(mdesc "$s") |"
   temp_program "$p" && ! ios_app "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
 done
 say ""; say "**Applications that Gatekeeper rejects**"; say ""
 if [ "$OFFLINE" -eq 0 ]; then
   for a in /Applications/*.app "$THOME"/Applications/*.app; do [ -d "$a" ] || continue
-    r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdesc "$a")\`: rejected"; finding MA-APPS-002 LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
+    r=$(spctl -a -t exec "$a" 2>&1); case "$r" in *rejected*) say "- \`$(mdcode "$a")\`: rejected"; finding MA-APPS-002 LOW Apps "Gatekeeper rejects $(basename "$a") (unsigned, ad hoc or not notarized).";; esac
   done
 else say "Skipped (--offline): Gatekeeper asks Apple's servers about each app."; skip "Gatekeeper assessment of apps" "--offline; it contacts Apple"; fi
 say ""
@@ -2088,7 +2099,7 @@ else say "- Debug ports: none found"; fi
 h2 "10. Accounts and privileges"
 dscl . -list /Users UniqueID | awk '$2>=500' | block "Local users (UID 500 and above)"
 ADM=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null | cut -d: -f2)
-say "- Admin group: $ADM"
+say "- Admin group: $(mdesc "$ADM")"
 for u in $ADM; do dscl . -read "/Users/$u" >/dev/null 2>&1 || finding MA-ACCOUNTS-002 LOW Accounts "Admin group lists a user that does not exist: $u"; done
 RAA=$(dscl . -read /Users/root AuthenticationAuthority 2>/dev/null | grep -v 'No such key')
 RPW=$(dscl . -read /Users/root Password 2>/dev/null | awk '{print $2}')
