@@ -1230,7 +1230,8 @@ forced_ext_ids() {
     /^  "/ { k = $0; sub(/^  "/, "", k); sub(/" => .*/, "", k); next }
     /"installation_mode" => "force_installed"/ { print k }'; }
 # forced_ext_finding ENROLLED; stdin: "source<TAB>browser<TAB>IDs" lines, source managed or local.
-# Prints "ID<TAB>SEVERITY<TAB>browsers" for the one finding they give.
+# Prints "ID<TAB>SEVERITY<TAB>browsers" for the one finding they give. Any ENROLLED other than 1, including unknown,
+# takes the unenrolled branch.
 forced_ext_finding() {
   awk -F'\t' -v e="$1" '{ b[$2] = 1; if ($1 == "managed") m[$2] = 1 }
     END { for (k in b) n++; if (!n) exit
@@ -1238,6 +1239,26 @@ forced_ext_finding() {
       else { for (k in m) l = l (l == "" ? "" : ",") k
         if (l != "") { id = "MA-APPS-005"; sv = "HIGH" } else { id = "MA-APPS-006"; sv = "MEDIUM"; for (k in b) l = l (l == "" ? "" : ",") k } }
       print id "\t" sv "\t" l }'; }
+# forced_ext_note ENROLLED: the enrollment part of the MA-APPS-005 text. Missing evidence must not lower the severity, so
+# an unknown state keeps MA-APPS-005 and says so.
+forced_ext_note() { if [ "$1" = unknown ]; then printf ' (enrollment state unknown)'; else printf ', and this Mac is not enrolled in MDM'; fi; }
+MANAGED_DIR="/Library/Managed Preferences"
+# managed_val DOMAIN KEY: prints the value that a profile sets for KEY, device level first, then user level. Reads the named
+# key only: managed files can hold device identifiers. plutil prints booleans as true or false; the checks compare 1 and 0.
+managed_val() { local f v
+  for f in "$MANAGED_DIR/$1.plist" "$MANAGED_DIR/$TUSER/$1.plist"; do
+    [ -f "$f" ] || continue
+    v=$(plutil -extract "$2" raw -o - "$f" 2>/dev/null) || continue
+    case "$v" in true) v=1 ;; false) v=0 ;; esac
+    printf '%s' "$v"; return 0
+  done; return 1; }
+# pref DOMAIN KEY LOCALVALUE: sets PV to the managed value or LOCALVALUE, and PSRC to managed or local. Call it directly,
+# never inside $( ), so the globals survive.
+pref() { local v; if v=$(managed_val "$1" "$2"); then PV="$v"; PSRC=managed; else PV="$3"; PSRC=local; fi; }
+# pref_line LABEL DEFAULT: the evidence line for the last pref call.
+pref_line() { if [ "$PSRC" = managed ]; then say "- $1: $(mdesc "$PV") (managed)"; else default_line "$1" "$PV" "$2"; fi; }
+# src_if VALUE SOURCE TRIGGER: prints managed when VALUE is TRIGGER and a profile set it.
+src_if() { [ "$1" = "$3" ] && [ "$2" = managed ] && printf managed; return 0; }
 # nmh_risk PATH: prints MEDIUM for a native-messaging host program in a temporary or shared folder, LOW for a missing one.
 nmh_risk() { case "$1" in /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) echo MEDIUM ;; /*) [ -e "$1" ] || echo LOW ;; esac; }
 # debug_pids; stdin: "PID command" lines from ps. Prints the PID of each process started with a debug port flag.
@@ -1479,9 +1500,9 @@ if [ -n "$LASTBK" ]; then
   say "- Hours since latest backup: $AGE"; [ "$AGE" -ge 48 ] && finding MA-BACKUPS-003 MEDIUM Backups "Latest Time Machine backup is $AGE hours old."
 fi
 if [ -n "$TMDEST" ]; then
-  AB=$(defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2>/dev/null)
-  default_line "Automatic backups (AutoBackup)" "$AB" "1, on"
-  [ "$AB" = 0 ] && finding MA-BACKUPS-004 MEDIUM Backups "Time Machine has a destination, but automatic backups are off."
+  pref com.apple.TimeMachine AutoBackup "$(defaults read /Library/Preferences/com.apple.TimeMachine AutoBackup 2>/dev/null)"; AB="$PV"
+  pref_line "Automatic backups (AutoBackup)" "1, on"
+  [ "$AB" = 0 ] && finding MA-BACKUPS-004 MEDIUM Backups "Time Machine has a destination, but automatic backups are off." "$PSRC"
   EXC=$(tmutil isexcluded "$THOME" 2>/dev/null | awk '{print $1}')
   say "- Home folder in Time Machine: ${EXC:-unknown}"
   [ "$EXC" = "[Excluded]" ] && finding MA-BACKUPS-005 MEDIUM Backups "The home folder is excluded from Time Machine."
@@ -1491,23 +1512,25 @@ fi
 h2 "3. Updates and installs"
 SUP=/Library/Preferences/com.apple.SoftwareUpdate
 supd() { defaults read "$SUP" "$1" 2>/dev/null; }
-ACE=$(supd AutomaticCheckEnabled); LFS=$(supd LastFullSuccessfulDate); ADL=$(supd AutomaticDownload)
-AIM=$(supd AutomaticallyInstallMacOSUpdates); CUI=$(supd CriticalUpdateInstall); CDI=$(supd ConfigDataInstall)
-ASU=$(defaults read /Library/Preferences/com.apple.commerce AutoUpdate 2>/dev/null)
+SUD=com.apple.SoftwareUpdate
 say "**Software Update settings**"; say ""
-default_line "Automatic checks (AutomaticCheckEnabled)" "$ACE" "1, on"
-default_line "Last full successful check (LastFullSuccessfulDate)" "$LFS" "unknown"
-default_line "Automatic download (AutomaticDownload)" "$ADL" "1, on"
-default_line "Install macOS updates automatically (AutomaticallyInstallMacOSUpdates)" "$AIM" "0, off"
-default_line "Security responses and system files (CriticalUpdateInstall)" "$CUI" "1, on"
-default_line "XProtect and other data updates (ConfigDataInstall)" "$CDI" "1, on"
-default_line "App Store app updates (com.apple.commerce AutoUpdate)" "$ASU" "1, on"
+pref $SUD AutomaticCheckEnabled "$(supd AutomaticCheckEnabled)"; ACE="$PV"; ACE_S="$PSRC"; pref_line "Automatic checks (AutomaticCheckEnabled)" "1, on"
+LFS=$(supd LastFullSuccessfulDate); default_line "Last full successful check (LastFullSuccessfulDate)" "$LFS" "unknown"
+pref $SUD AutomaticDownload "$(supd AutomaticDownload)"; ADL="$PV"; ADL_S="$PSRC"; pref_line "Automatic download (AutomaticDownload)" "1, on"
+pref $SUD AutomaticallyInstallMacOSUpdates "$(supd AutomaticallyInstallMacOSUpdates)"; AIM="$PV"; AIM_S="$PSRC"
+pref_line "Install macOS updates automatically (AutomaticallyInstallMacOSUpdates)" "0, off"
+pref $SUD CriticalUpdateInstall "$(supd CriticalUpdateInstall)"; CUI="$PV"; CUI_S="$PSRC"; pref_line "Security responses and system files (CriticalUpdateInstall)" "1, on"
+pref $SUD ConfigDataInstall "$(supd ConfigDataInstall)"; CDI="$PV"; CDI_S="$PSRC"; pref_line "XProtect and other data updates (ConfigDataInstall)" "1, on"
+pref com.apple.commerce AutoUpdate "$(defaults read /Library/Preferences/com.apple.commerce AutoUpdate 2>/dev/null)"; ASU="$PV"; ASU_S="$PSRC"
+pref_line "App Store app updates (com.apple.commerce AutoUpdate)" "1, on"
 LFSD=""; [ -n "$LFS" ] && LFSD=$(( ( $(date +%s) - $(date -j -u -f '%Y-%m-%d %H:%M:%S +0000' "$LFS" +%s 2>/dev/null || date +%s) ) / 86400 ))
-if [ "$ACE" = 0 ]; then finding MA-UPDATES-003 MEDIUM Updates "Automatic software update checks are off."
+if [ "$ACE" = 0 ]; then finding MA-UPDATES-003 MEDIUM Updates "Automatic software update checks are off." "$ACE_S"
 elif [ -n "$LFSD" ] && [ "$LFSD" -gt 30 ]; then finding MA-UPDATES-003 MEDIUM Updates "The last full software update check was $LFSD days ago."; fi
-{ [ "$CUI" = 0 ] || [ "$CDI" = 0 ]; } && finding MA-UPDATES-004 MEDIUM Updates "Security responses (CriticalUpdateInstall=${CUI:-default}) or XProtect data updates (ConfigDataInstall=${CDI:-default}) are off."
-{ [ "$ADL" = 0 ] || [ "$ASU" = 0 ]; } && finding MA-UPDATES-006 LOW Updates "Automatic download of macOS updates (${ADL:-default}) or App Store auto-update (${ASU:-default}) is off."
-[ "$AIM" = 1 ] || finding MA-UPDATES-007 INFO Updates "macOS updates are not installed automatically."
+S="$(src_if "$CUI" "$CUI_S" 0)$(src_if "$CDI" "$CDI_S" 0)"
+{ [ "$CUI" = 0 ] || [ "$CDI" = 0 ]; } && finding MA-UPDATES-004 MEDIUM Updates "Security responses (CriticalUpdateInstall=${CUI:-default}) or XProtect data updates (ConfigDataInstall=${CDI:-default}) are off." "${S:+managed}"
+S="$(src_if "$ADL" "$ADL_S" 0)$(src_if "$ASU" "$ASU_S" 0)"
+{ [ "$ADL" = 0 ] || [ "$ASU" = 0 ]; } && finding MA-UPDATES-006 LOW Updates "Automatic download of macOS updates (${ADL:-default}) or App Store auto-update (${ASU:-default}) is off." "${S:+managed}"
+[ "$AIM" = 1 ] || finding MA-UPDATES-007 INFO Updates "macOS updates are not installed automatically." "$AIM_S"
 BREW=""; for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$b" ] && { BREW="$b"; break; }; done
 if [ "$OFFLINE" -eq 0 ]; then
   SU=$(softwareupdate -l 2>&1); echo "$SU" | block "softwareupdate -l"
@@ -1552,14 +1575,17 @@ h2 "4. Platform security"
 SIP=$(csrutil status 2>&1); FV=$(fdesetup status 2>&1); GK=$(spctl --status 2>&1)
 FW=/usr/libexec/ApplicationFirewall/socketfilterfw
 FWS=$($FW --getglobalstate 2>&1); FWST=$($FW --getstealthmode 2>&1); FWSIG=$($FW --getallowsigned 2>&1)
-AUTOL=$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)
-printf '%s\n' "$SIP" "$FV" "Gatekeeper: $GK" "$FWS" "$FWST" "$FWSIG" "Auto-login user: ${AUTOL:-none}" | block "Baseline"
+pref com.apple.loginwindow autoLoginUser "$(defaults read /Library/Preferences/com.apple.loginwindow autoLoginUser 2>/dev/null)"; AUTOL="$PV"; AUTOL_S="$PSRC"
+FWM=""; { managed_val com.apple.security.firewall EnableFirewall >/dev/null || managed_val com.apple.security.firewall BlockAllIncoming >/dev/null; } && FWM=" (managed)"
+FWSTM=""; managed_val com.apple.security.firewall EnableStealthMode >/dev/null && FWSTM=" (managed)"
+ALM=""; [ "$AUTOL_S" = managed ] && ALM=" (managed)"
+printf '%s\n' "$SIP" "$FV" "Gatekeeper: $GK" "$FWS$FWM" "$FWST$FWSTM" "$FWSIG" "Auto-login user: ${AUTOL:-none}$ALM" | block "Baseline"
 echo "$SIP" | grep -q enabled || finding MA-PLATFORM-001 HIGH Platform "System Integrity Protection is not enabled."
 echo "$GK" | grep -q enabled || finding MA-PLATFORM-002 HIGH Platform "Gatekeeper is disabled."
-echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 MEDIUM Platform "Application firewall is off."
-echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)."
+echo "$FWS" | grep -q 'enabled' || finding MA-PLATFORM-003 MEDIUM Platform "Application firewall is off." "${FWM:+managed}"
+echo "$FWST" | grep -q 'on' || finding MA-PLATFORM-004 LOW Platform "Firewall stealth mode is off (the Mac answers probes such as ping)." "${FWSTM:+managed}"
 echo "$FV" | grep -q 'On' || finding MA-PLATFORM-005 MEDIUM Platform "FileVault is off${AUTOL:+ (auto-login as $AUTOL, which requires FileVault off)}."
-[ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL."
+[ -n "$AUTOL" ] && finding MA-PLATFORM-006 MEDIUM Platform "Automatic login is on for $AUTOL." "$AUTOL_S"
 SL=$(sysadminctl -screenLock status 2>&1 | sed 's/.*\] //'); say "- Screen lock: ${SL:-unknown}"
 SLR=$(screen_lock_sev "$SL")
 [ -n "$SLR" ] && finding MA-PLATFORM-010 "${SLR%%$'\t'*}" Platform "Screen lock is ${SLR#*$'\t'}."
@@ -1571,18 +1597,18 @@ case "$(boot_args_sev "$BA")" in
 esac
 AR=$(csrutil authenticated-root status 2>&1); say "- $(mdesc "$AR")"
 case "$AR" in *disabled*) finding MA-PLATFORM-012 HIGH Platform "The signed system volume (authenticated root) is off." ;; esac
-LV=$(defaults read /Library/Preferences/com.apple.security.libraryvalidation DisableLibraryValidation 2>/dev/null)
-default_line "Library validation disabled (DisableLibraryValidation)" "$LV" "0, library validation on"
-[ "$LV" = 1 ] && finding MA-PLATFORM-016 MEDIUM Platform "Library validation is off, so apps can load libraries signed by other developers."
-LQ=$(defaults read com.apple.LaunchServices LSQuarantine 2>/dev/null)
-default_line "Quarantine for downloads (LSQuarantine)" "$LQ" "1, on"
-[ "$LQ" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off (LSQuarantine=0), so Gatekeeper does not check downloaded files."
-FMM=$(defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled 2>/dev/null)
-say "- Find My Mac (FMMEnabled): $(mdesc "${FMM:-not set}")"
+pref com.apple.security.libraryvalidation DisableLibraryValidation "$(defaults read /Library/Preferences/com.apple.security.libraryvalidation DisableLibraryValidation 2>/dev/null)"; LV="$PV"
+pref_line "Library validation disabled (DisableLibraryValidation)" "0, library validation on"
+[ "$LV" = 1 ] && finding MA-PLATFORM-016 MEDIUM Platform "Library validation is off, so apps can load libraries signed by other developers." "$PSRC"
+pref com.apple.LaunchServices LSQuarantine "$(defaults read com.apple.LaunchServices LSQuarantine 2>/dev/null)"; LQ="$PV"
+pref_line "Quarantine for downloads (LSQuarantine)" "1, on"
+[ "$LQ" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off (LSQuarantine=0), so Gatekeeper does not check downloaded files." "$PSRC"
+pref com.apple.FindMyMac FMMEnabled "$(defaults read /Library/Preferences/com.apple.FindMyMac FMMEnabled 2>/dev/null)"; FMM="$PV"; FMM_S="$PSRC"
+if [ "$FMM_S" = managed ]; then say "- Find My Mac (FMMEnabled): $(mdesc "$FMM") (managed)"; else say "- Find My Mac (FMMEnabled): $(mdesc "${FMM:-not set}")"; fi
 AL=$(printf '%s\n' "$HW" | awk -F': ' '/Activation Lock Status/ {print $2; exit}')
 say "- Activation Lock: $(mdesc "${AL:-unknown}")"
 FMF=$(findmy_finding "$FMM" "$HASBAT")
-[ -n "$FMF" ] && finding MA-PLATFORM-019 "${FMF#*$'\t'}" Platform "Find My Mac is off. Confirm that this is intended; an MDM can turn it off on purpose."
+[ -n "$FMF" ] && finding MA-PLATFORM-019 "${FMF#*$'\t'}" Platform "Find My Mac is off. Confirm that this is intended; an MDM can turn it off on purpose." "$FMM_S"
 find /Applications -maxdepth 2 -name '*.app' -type d -perm -2 2>/dev/null > "$TMP/wwa"
 if [ -s "$TMP/wwa" ]; then block "Apps writable by everyone" < "$TMP/wwa"
   finding MA-PLATFORM-017 MEDIUM Platform "$(grep -c . "$TMP/wwa") app(s) in /Applications are writable by everyone: $(sed 's#.*/##' "$TMP/wwa" | paste -sd, -)"
@@ -1642,10 +1668,15 @@ launchctl print-disabled system 2>/dev/null | grep -q '"com.apple.tftpd" => enab
 listening 445 && finding MA-SHARING-003 LOW Sharing "SMB file sharing is on: $(sharing -l 2>/dev/null | awk -F'\t+' '/^name:/{print $2}' | paste -sd';' -)"
 RM=/Library/Preferences/com.apple.RemoteManagement.plist
 if listening 3283 || pgrep -x ARDAgent >/dev/null; then
-  say ""; defaults read "$RM" 2>/dev/null | grep -E 'ARD_AllLocalUsers|VNCLegacy|allowInsecureDH|ScreenSharingReqPerm' | block "Remote Management settings"
-  [ "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)" = 1 ] && finding MA-SHARING-004 MEDIUM Sharing "Remote Management (ARD) is on for all local users."
-  [ "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)" = 1 ] && finding MA-SHARING-005 MEDIUM Sharing "Remote Management allows legacy VNC password connections."
-  [ "$(defaults read "$RM" allowInsecureDH 2>/dev/null)" = 1 ] && finding MA-SHARING-006 MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)."
+  RMS=""; for k in ARD_AllLocalUsers VNCLegacyConnectionsEnabled allowInsecureDH ScreenSharingReqPerm; do
+    v=$(managed_val com.apple.RemoteManagement "$k") && RMS="$RMS$k = $v (managed)"$'\n'; done
+  say ""; { defaults read "$RM" 2>/dev/null | grep -E 'ARD_AllLocalUsers|VNCLegacy|allowInsecureDH|ScreenSharingReqPerm'; printf '%s' "$RMS"; } | block "Remote Management settings"
+  pref com.apple.RemoteManagement ARD_AllLocalUsers "$(defaults read "$RM" ARD_AllLocalUsers 2>/dev/null)"
+  [ "$PV" = 1 ] && finding MA-SHARING-004 MEDIUM Sharing "Remote Management (ARD) is on for all local users." "$PSRC"
+  pref com.apple.RemoteManagement VNCLegacyConnectionsEnabled "$(defaults read "$RM" VNCLegacyConnectionsEnabled 2>/dev/null)"
+  [ "$PV" = 1 ] && finding MA-SHARING-005 MEDIUM Sharing "Remote Management allows legacy VNC password connections." "$PSRC"
+  pref com.apple.RemoteManagement allowInsecureDH "$(defaults read "$RM" allowInsecureDH 2>/dev/null)"
+  [ "$PV" = 1 ] && finding MA-SHARING-006 MEDIUM Sharing "Remote Management allows insecure Diffie-Hellman key exchange (allowInsecureDH)." "$PSRC"
 fi
 if listening 22; then
   AM=$(/usr/bin/ssh -F /dev/null -o PreferredAuthentications=none -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 nobody@127.0.0.1 true </dev/null 2>&1 | grep -o '([^)]*)' | tail -1)
@@ -1682,16 +1713,16 @@ if launchctl print system/org.apache.httpd >/dev/null 2>&1; then say "- Apache w
 if [ -f /etc/exports ] && grep -qvE '^[[:space:]]*(#|$)' /etc/exports; then say "- NFS exports: present"; finding MA-SHARING-012 MEDIUM Sharing "NFS exports are configured in /etc/exports."; else say "- NFS exports: none"; fi
 if [ ! -r /etc/cups/cupsd.conf ]; then say "- Printer sharing: unknown (cupsd.conf not readable)"
 elif cups_shared /etc/cups/cupsd.conf; then say "- Printer sharing: on"; finding MA-SHARING-021 LOW Sharing "Printer sharing is on (cupsd listens beyond localhost)."; else say "- Printer sharing: off"; fi
-AD=$(defaults read com.apple.sharingd DiscoverableMode 2>/dev/null)
-default_line "AirDrop discoverable by (DiscoverableMode)" "$AD" "Contacts Only"
-[ "$AD" = Everyone ] && finding MA-SHARING-022 LOW Sharing "AirDrop is discoverable by everyone."
+pref com.apple.sharingd DiscoverableMode "$(defaults read com.apple.sharingd DiscoverableMode 2>/dev/null)"; AD="$PV"
+pref_line "AirDrop discoverable by (DiscoverableMode)" "Contacts Only"
+[ "$AD" = Everyone ] && finding MA-SHARING-022 LOW Sharing "AirDrop is discoverable by everyone." "$PSRC"
 if lsof -nP -a -c ControlCenter -iTCP -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $9}' | grep -qE ':(5000|7000)$'; then say "- AirPlay receiver: listening"; finding MA-SHARING-023 LOW Sharing "The AirPlay receiver is listening (TCP 5000 or 7000)."; else say "- AirPlay receiver: not listening"; fi
 MSH=$(defaults read com.apple.amp.mediasharingd home-sharing-enabled 2>/dev/null)
 default_line "Media sharing (home-sharing-enabled)" "$MSH" "0, off"
 [ "$MSH" = 1 ] && finding MA-SHARING-024 LOW Sharing "Media sharing (Home Sharing) is on."
-ACA=$(defaults read /Library/Preferences/com.apple.AssetCache Activated 2>/dev/null)
-default_line "Content caching (AssetCache Activated)" "$ACA" "0, off"
-[ "$ACA" = 1 ] && finding MA-SHARING-025 LOW Sharing "Content caching is on."
+pref com.apple.AssetCache Activated "$(defaults read /Library/Preferences/com.apple.AssetCache Activated 2>/dev/null)"; ACA="$PV"
+pref_line "Content caching (AssetCache Activated)" "0, off"
+[ "$ACA" = 1 ] && finding MA-SHARING-025 LOW Sharing "Content caching is on." "$PSRC"
 RST=$(ps -axo comm= | remote_support_names | paste -sd, -)
 say "- Remote-access tools running: $(mdesc "${RST:-none}")"
 [ -n "$RST" ] && finding MA-SHARING-013 MEDIUM Sharing "A remote-support tool is running: $RST"
@@ -1783,8 +1814,10 @@ for f in /Library/LaunchDaemons/*.plist; do [ -e "$f" ] || continue
 done
 say ""; say "- Root daemons with a program or folder that a non-root account can change: $NRW"
 ls -l /Library/PrivilegedHelperTools 2>/dev/null | tail -n +2 | while read -r l; do f="/Library/PrivilegedHelperTools/${l##* }"; echo "$l  [$(sig "$f")]"; done | block "Privileged helper tools"
-LH=$(defaults read com.apple.loginwindow LoginHook 2>/dev/null; defaults read /Library/Preferences/com.apple.loginwindow LoginHook 2>/dev/null)
-say "- Login hook: $(mdesc "${LH:-none}")"; [ -n "$LH" ] && finding MA-PERSISTENCE-005 HIGH Persistence "A login hook is set: $LH"
+LH=$(defaults read com.apple.loginwindow LoginHook 2>/dev/null; defaults read /Library/Preferences/com.apple.loginwindow LoginHook 2>/dev/null); LH_S=local
+if MLH=$(managed_val com.apple.loginwindow LoginHook); then LH="$MLH"; LH_S=managed; fi
+LHM=""; [ "$LH_S" = managed ] && LHM=" (managed)"
+say "- Login hook: $(mdesc "${LH:-none}")$LHM"; [ -n "$LH" ] && finding MA-PERSISTENCE-005 HIGH Persistence "A login hook is set: $LH" "$LH_S"
 CT=$(crontab -l 2>/dev/null | grep -vE '^\s*(#|$)')
 say "- User crontab entries: $(printf '%s' "$CT" | grep -c . )"; [ -n "$CT" ] && echo "$CT" | crontab_summary | block "crontab (schedule and command name; arguments hidden)"
 ls /etc/periodic/daily /etc/periodic/weekly /etc/periodic/monthly 2>/dev/null | grep -vE '^[0-9]{3}\.|^$|:$' | block "Non-standard periodic scripts"
@@ -1891,7 +1924,7 @@ for prof in "$THOME/Library/Application Support/Google/Chrome"/*/Extensions; do 
 done | sort -u | block "Chrome extensions (profile, ID, name; __MSG_ names are localized)"
 if command -v pluginkit >/dev/null; then pluginkit -mAvvv -p com.apple.Safari.web-extension 2>/dev/null | grep -E 'Path|Parent' | sed 's/^ *//' | block "Safari web extensions"; fi
 h3 "Browser policies and extensions"
-case "$MDM" in Yes) ENROLLED=1 ;; *) ENROLLED=0 ;; esac
+case "$MDM" in Yes) ENROLLED=1 ;; No) ENROLLED=0 ;; *) ENROLLED=unknown ;; esac
 : > "$TMP/fx"
 for dom in com.google.Chrome com.microsoft.Edge com.brave.Browser org.mozilla.firefox; do
   case "$dom" in org.mozilla.firefox) key=ExtensionSettings ;; *) key=ExtensionInstallForcelist ;; esac
@@ -1907,7 +1940,7 @@ if [ -s "$TMP/fx" ]; then
   awk -F'\t' '{print $2 " (" $1 "): " $3}' "$TMP/fx" | block "Forced browser extensions (browser, source, extension IDs)"
   IFS=$'\t' read -r fid _ fbr <<< "$(forced_ext_finding "$ENROLLED" < "$TMP/fx")"
   case "$fid" in
-    MA-APPS-005) finding MA-APPS-005 HIGH Apps "Browser extensions are force-installed by managed preferences or policies.json, and this Mac is not enrolled in MDM: $fbr" ;;
+    MA-APPS-005) finding MA-APPS-005 HIGH Apps "Browser extensions are force-installed by managed preferences or policies.json$(forced_ext_note "$ENROLLED"): $fbr" ;;
     MA-APPS-006) finding MA-APPS-006 MEDIUM Apps "Browser extensions are force-installed by local preferences: $fbr" ;;
     MA-APPS-007) finding MA-APPS-007 INFO Apps "Browser extensions are force-installed by policy on this MDM-enrolled Mac: $fbr" ;;
   esac
@@ -1983,8 +2016,9 @@ for d in /Users/*; do [ -d "$d" ] || continue; [ "${d##*/}" = Shared ] && contin
   r=$(home_write_risk "$perm" "$gid" "$own"); [ -n "$r" ] && finding MA-ACCOUNTS-015 HIGH Accounts "Home folder $d is $r."
 done
 run "Recent logins" sh -c 'last -25 | grep -v "^$"'
-GU=$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)
-say "- Guest account enabled: ${GU:-not set (off)}"; [ "$GU" = 1 ] && finding MA-ACCOUNTS-004 LOW Accounts "The guest account is enabled."
+pref com.apple.loginwindow GuestEnabled "$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)"; GU="$PV"
+if [ "$PSRC" = managed ]; then say "- Guest account enabled: $(mdesc "$GU") (managed)"; else say "- Guest account enabled: ${GU:-not set (off)}"; fi
+[ "$GU" = 1 ] && finding MA-ACCOUNTS-004 LOW Accounts "The guest account is enabled." "$PSRC"
 ls -l /etc/sudoers.d 2>&1 | block "/etc/sudoers.d"
 OTHERSD=$(for f in /etc/sudoers.d/*; do [ -e "$f" ] && [ "${f##*/}" != macassay ] && echo "${f##*/}"; done | paste -sd, -)
 [ -n "$OTHERSD" ] && finding MA-ACCOUNTS-001 INFO Accounts "Files present in /etc/sudoers.d: $OTHERSD"

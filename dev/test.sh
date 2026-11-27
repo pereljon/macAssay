@@ -1181,5 +1181,36 @@ check "1.5 P17 --bundle with --accepted" p17 --bundle --accepted "$V/p9.txt"
 check "1.5 P17 --bundle with --fail-on" p17 --bundle --fail-on high
 check "1.5 P17 --bundle with --host" p17 --bundle --host example.invalid
 
+# P13: managed settings from a fixture MANAGED_DIR.
+mkdir -p "$V/mp/alice"
+plist() { printf '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>%s</dict></plist>\n' "$2" > "$1"; }
+plist "$V/mp/com.apple.LaunchServices.plist" '<key>LSQuarantine</key><false/><key>DeviceID</key><string>SECRET_DEVICE_1234</string>'
+plist "$V/mp/alice/com.apple.sharingd.plist" '<key>DiscoverableMode</key><string>Everyone</string>'
+plist "$V/mp/com.apple.FindMyMac.plist" '<key>FMMEnabled</key><true/>'
+( MANAGED_DIR="$V/mp"; TUSER=alice; BODY="$V/p13.md"; : > "$BODY"
+  pref com.apple.LaunchServices LSQuarantine 1; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13a"; pref_line "Quarantine for downloads (LSQuarantine)" "1, on"
+  pref com.apple.sharingd DiscoverableMode "Contacts Only"; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13b"
+  pref com.apple.FindMyMac FMMEnabled ""; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13c"
+  pref com.apple.AssetCache Activated 0; printf '%s %s\n' "$PV" "$PSRC" > "$V/p13d"; pref_line "Content caching (AssetCache Activated)" "0, off"
+  pref com.apple.TimeMachine AutoBackup ""; pref_line "Automatic backups (AutoBackup)" "1, on"
+  FIND="$V/p13f"; : > "$FIND"; SECT_N=4
+  pref com.apple.LaunchServices LSQuarantine 1; [ "$PV" = 0 ] && finding MA-PLATFORM-015 HIGH Platform "Quarantine is off." "$PSRC" )
+check "1.5 P13 a forced false gives a finding with source managed" [ "$(cut -f2,6 "$V/p13f")" = $'MA-PLATFORM-015\tmanaged' ]
+check "1.5 P13 device-level false reads 0, managed" [ "$(cat "$V/p13a")" = "0 managed" ]
+check "1.5 P13 managed line" has "$V/p13.md" "- Quarantine for downloads (LSQuarantine): 0 (managed)"
+check "1.5 P13 user-level key" [ "$(cat "$V/p13b")" = "Everyone managed" ]
+check "1.5 P13 true reads 1" [ "$(cat "$V/p13c")" = "1 managed" ]
+check "1.5 P13 no managed file keeps the local value" [ "$(cat "$V/p13d")" = "0 local" ]
+check "1.5 P13 no managed file gives the 1.4 line" has "$V/p13.md" "- Content caching (AssetCache Activated): 0"
+check "1.5 P13 unset and unmanaged gives the default line" has "$V/p13.md" "- Automatic backups (AutoBackup): not set (macOS default: 1, on)"
+check "1.5 P13 an identifier key is never printed" hasnt "$V/p13.md" "SECRET_DEVICE"
+check "1.5 P13 src_if on a managed trigger" [ "$(src_if 0 managed 0)" = managed ]
+check "1.5 P13 src_if on another value" [ -z "$(src_if 1 managed 0)" ]
+check "1.5 P13 src_if on a local value" [ -z "$(src_if 0 local 0)" ]
+# P14 (rest): with unknown enrollment, a managed force-installed extension still gives MA-APPS-005 HIGH.
+check "1.5 P14 unknown enrollment gives MA-APPS-005" [ "$(printf 'managed\tcom.google.Chrome\tabc\n' | forced_ext_finding unknown | cut -f1,2)" = $'MA-APPS-005\tHIGH' ]
+check "1.5 P14 unknown enrollment text" [ "$(forced_ext_note unknown)" = " (enrollment state unknown)" ]
+check "1.5 P14 unenrolled text" [ "$(forced_ext_note 0)" = ", and this Mac is not enrolled in MDM" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
