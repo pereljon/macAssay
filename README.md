@@ -21,19 +21,39 @@ A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick
 
 ```sh
 ./macassay -o ~/Desktop/report.md                       # choose the report file
+./macassay --format md,json,html -o ~/Desktop/report    # write three formats: report.md, report.json, report.html
+./macassay --compare OLD.json                           # list new, resolved, and not-checked findings since OLD.json
+./macassay --accepted accepted.txt                      # move accepted findings out of the findings table
+./macassay --fail-on high                               # exit 3 when an open HIGH finding exists, for scheduled runs
 ./macassay --host HOST --user USER --key ~/.ssh/KEY     # audit another Mac over SSH
 ./macassay -h                                           # list every option
 ```
 
+[Report formats](#report-formats) explains `--format`, `--compare`, `--accepted`, and `--fail-on`.
+
 Remote mode sends the script inside the SSH command. Nothing is copied to the other Mac, and the report is saved on your Mac.
+
+## Report formats
+
+`--format LIST` writes one or more of these formats from the same run: `md` (the default), `json`, `ocsf`, `html`, and `csv`. Markdown suits a person or an LLM. JSON is for scripts and for `--compare`. OCSF (Open Cybersecurity Schema Framework) is for security tools that load findings. HTML is a single page with no JavaScript and a filter by severity. CSV is the findings table for a spreadsheet.
+
+- `--compare OLD.json` compares the run with an earlier JSON report by finding ID, and lists new, resolved, and not-checked findings. A finding is not-checked, not resolved, when a check that could have given it was skipped in this run.
+- `--accepted FILE` moves findings that you accept out of the findings table and the counts. Each line of the file holds a finding ID, an optional exact finding text, and a reason after `#`.
+- `--fail-on LEVEL` makes the run exit 3 when an open finding is at or above `high`, `medium`, `low`, or `info`. Exit 1 is an error, and exit 2 is a usage error.
+
+Each of these options works with `--host`: the Mac that runs macAssay builds the report from the data that the remote audit sends back. [docs/FORMATS.md](docs/FORMATS.md) lists the fields of each format, the accepted-risk file syntax, the comparison groups, and the exit statuses.
 
 ## What the report contains
 
-The report starts with a header: the host, the date, the user, the version and options, the privileged checks that ran, and the number of findings at each severity. Three parts follow, in this order:
+The report starts with a header: the host, the date, the user, the version and options, whether the Mac is enrolled in Apple Business Manager and in an MDM (mobile device management) service, the privileged checks that ran, and the number of findings at each severity. Three parts follow, in this order:
 
-1. Findings: a table of every finding, most severe first. Each row shows the severity, the finding ID, the section label, and what was found.
+1. Findings: a table of every open finding, most severe first. Each row shows the severity, the finding ID, the section label, what was found, and a Source column that reads `managed` when a configuration profile set the value. A guidance line for each finding ID follows the table. Sections for the changes since a previous run and for accepted risks follow when you use `--compare` or `--accepted`.
 2. Limitations: every check that could not run, and the reason.
 3. Evidence: what each check found, in 14 numbered sections.
+
+A setting that an MDM profile manages reads `VALUE (managed)`, and the finding that judges it is marked `managed`. macAssay reads managed values from `/Library/Managed Preferences`. It does not read settings that declarative device management applies elsewhere, and it does not report a Mac that is assigned in Apple Business Manager but not enrolled. Limitations says so.
+
+A check that ran but could not read its evidence, such as a file that needs Full Disk Access for the terminal app, prints `unreadable` with the reason and adds a line to Limitations. It never reads as a clean result.
 
 [docs/CHECKS.md](docs/CHECKS.md) lists every check by section, with what it reads, the option or sudo rule it depends on, and the findings it can give.
 
@@ -102,7 +122,7 @@ The installer checks the file with `visudo` before and after it writes it. The f
 
 - Check syntax with `bash -n macassay`, and lint with `shellcheck macassay` (ShellCheck from Homebrew, for development only).
 - Run the fixture tests with `dev/test.sh`. They need no root and no network. One test fails when a finding ID in `macassay` is missing from `docs/CHECKS.md`, or when `docs/CHECKS.md` names an ID that `macassay` lacks.
-- The design of the sudo rules is in `dev/features/sudo-rules.md`, the design of the report sections and the 1.3 checks is in `dev/features/checks-1.3.md`, and the 1.4 checks are in `dev/features/checks-1.4.md`. The logic flow and the invariants every change must keep are in `dev/SKELETON.md`. The project history and verified facts are in `dev/HANDOFF.md`.
+- The design of the sudo rules is in `dev/features/sudo-rules.md`, the design of the report sections and the 1.3 checks is in `dev/features/checks-1.3.md`, the 1.4 checks are in `dev/features/checks-1.4.md`, and the formats, comparison, and managed settings are in `dev/features/report-1.5.md`. The logic flow and the invariants every change must keep are in `dev/SKELETON.md`. The project history and verified facts are in `dev/HANDOFF.md`.
 - Release history is in `CHANGELOG.md`, and open work is in `docs/ISSUES.md`.
 
 ## License

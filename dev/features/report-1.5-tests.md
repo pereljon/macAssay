@@ -158,6 +158,67 @@ Review of `docs/superpowers/plans/2026-11-26-report-1.5.md`, 2026-11-26, by an O
 - PR17 Task 14 verifies only the success case. Fixed: failure cases for `log show` and `brew outdated`; the text-matched checks named as independent of exit status; a non-zero status is relied on only when the no-data case exits 0. Design requirement 9; M7a.
 - PR18 small items. Fixed: JXA constraint reworded (it writes fixed names), P23 mention dropped, `skip_row` output silenced in P19, the plan is committed before Task 0. Dropped: "Stealth mode enabled/disabled" text on older macOS (uncertain, training knowledge; an unknown text gives a skip, not a pass, so requirement 9 holds).
 
+## Task reviews
+
+Per-task reviews during the build, 2026-11-26, from the ledger `.superpowers/sdd/2026-11-26-report-1.5/progress.md`. Each line gives the finding, its outcome, and the reason. Lines marked "deferred to the pre-merge review" are re-judged in the pre-merge review.
+
+- T0-1 The `$V` fixture folder is unused until Task 2: dropped; the brief requires it and no requirement covers it.
+- T0-1 P16 uses the nearest reachable `v*` tag: dropped; the brief defines it and history is linear.
+- T2 `iconv -c` passes `F4 90..` and `F5..FF` sequences, so the output is not valid UTF-8: fixed (e916b0c, decision A4); trigger: text from the audited Mac; breaks design Rendering step 1.
+- T2 A truncated multibyte sequence at the end of a file aborts the run: dropped; it fails closed, every data file ends with a newline, and no requirement covers it.
+- T2 The fail-closed test does not stub `iconv` or check the `.u` removal: dropped; coverage depth, no trigger.
+- T2 `iconv -c` exits 1 when a truncated multibyte sequence ends a file; a sentinel line avoids it: deferred to the pre-merge review; no trigger today, because every data file ends with script-written text.
+- T2 The dev-only decoder check may fail without Command Line Tools python3: dropped; the development Mac has it, no trigger.
+- T3 MA-BACKUPS-004 missing from the unreadable Time Machine settings skip row: fixed (5cf6831); trigger: `--compare` after a run without Full Disk Access; breaks the `SKIP_IDS` purpose.
+- T3 P21 checks the key count, not each key and value: dropped; no trigger.
+- T3 The P19 scan does not read `privblk` labels: dropped; none are literal today.
+- T3 No test for `SECT_N` unset: dropped; no finding exists before the first `h2`.
+- T4 Guidance commands that were wrong or understated the change (MA-ACCOUNTS-013, MA-PERSISTENCE-005, MA-PLATFORM-016, MA-BACKUPS-005, MA-BACKUPS-002), uncertain labels (MA-BACKUPS-004, MA-SHARING-011, MA-UPDATES-004), repeats of finding text, and the P15 word and dash rule: fixed (c7dcf68); breaks design Guidance text and `../AGENTS.md` (cheap-check rule).
+- T4 Spelling "recognise": dropped; no rule, no trigger.
+- T4 `sshd_config.d` file order may override a new file: dropped; uncertain, no verified trigger.
+- T4 MA-UPDATES-011 guidance gives `brew reinstall --cask` without a cask name placeholder: deferred to the pre-merge review.
+- T4 MA-TRUST-002 guidance says "login keychain", but a user trust setting may name a certificate in another keychain: deferred to the pre-merge review.
+- T5 `valid_meta` counts accept leading zeros (`09`): deferred to the pre-merge review; harmless while no count reaches shell arithmetic.
+- T5 With several formats, a failed `cp` of a later format leaves the earlier files written, though a comment says no file is written unless every format rendered: deferred to the pre-merge review.
+- T5 P12a covers one injection payload: dropped; coverage, no trigger.
+- T5 A ShellCheck comment names `check_formats` before Task 6 adds it: dropped; plan text, no trigger.
+- T6 `check_formats` accepted a trailing empty name (`md,`), which starts a full audit: fixed (c987c17); trigger: a user typing the option; breaks design exit 2 on a bad format.
+- T6 Glob characters in `--format` expand against the working directory: dropped; the result is a valid name or a rejection.
+- T6 P7 does not test `+` and `@` formula starts: dropped; checked by hand.
+- T7 OCSF lines keep raw U+2028, U+2029, and U+0085 from the audited Mac: deferred to the pre-merge review; the lines are valid JSONL, but a consumer that splits on Unicode line breaks loses the event.
+- T7 OCSF output with no findings and no skips is one blank line: deferred to the pre-merge review.
+- T7 `REPORT_JS` `read()` treats an unreadable `rows.tsv` as empty: dropped; `render_all` just wrote it, no trigger.
+- T7 P3 and P4 coverage gaps, and a P18 comment that says four uids while it asserts five: dropped; no trigger.
+- T8 `render_html` returns its last `printf` status, so a failed `awk` stage mid-page counts as rendered: deferred to the pre-merge review.
+- T8 HTML hostile-input coverage gaps: dropped; the reviewer checked by hand, no trigger.
+- T8 `md_html` table edge cases: dropped; unreachable, because `clean_field` removes pipes.
+- T9 `load_accepted` used plain `iconv -c`, so an invalid byte made `sed` fail and the match empty, which accepts every finding with the ID; a directory as the file loaded as empty: fixed (95402b3); trigger: an accepted-risk file with an invalid byte; breaks design Accepted risks ("fails loudly").
+- T9 `--accepted ""` is ignored: dropped; the safe direction, findings stay open.
+- T9 A finding text that contains `#` cannot be matched, because `#` starts the reason: documented in `docs/FORMATS.md`; ID-only acceptance is the way around it.
+- T9 P9 parsing coverage: dropped; verified by hand.
+- T10 `c()` left C1 controls and U+2028 and U+2029 in values from the old file: fixed (a517612); trigger: a hand-edited or hostile old file; breaks design Comparison (strip control characters).
+- T10 `clean_field` and `clean_tsv` strip only ASCII controls, so C1 controls and U+2028 and U+2029 from the audited Mac pass into every format: deferred to the pre-merge review; 1.4 behavior.
+- T10 `--compare` with only `csv` or `ocsf` output shows no changes and no notice: deferred to the pre-merge review; the design is silent.
+- T10 An ID repeated in the old file lists once per finding: dropped; it matches listing each finding.
+- T10 The HTML Changes heading shows an empty host or date where Markdown says `unknown`: dropped; no requirement.
+- T10 P10 coverage gaps: dropped; verified by hand.
+- T11 `--fail-on ""` silently turned the gate off: fixed (51b3272); trigger: a scheduled job with an unset variable; breaks design Exit status (LEVEL is one of four words).
+- T11 `--fail-on` is case-sensitive: dropped; the design names lowercase words.
+- T11 P11 coverage gaps: dropped; verified by hand.
+- T12 A NUL byte passed the bundle reader's trailing-data check: fixed (d338b1c); trigger: remote shell startup files; breaks design Remote mode step 3.
+- T12 The P12 rejection input fails both the length and alphabet checks, so neither is tested alone: dropped; no trigger.
+- T12 An empty `meta.tsv` or `body.md` is accepted: dropped; no requirement, and a hostile remote controls the content anyway.
+- T12 No permanent `remote_mode` test, because `/usr/bin/ssh` cannot be stubbed: dropped; the reviewer's stub run covered it once (M5).
+- T12 An unreadable file prints "integer expression expected" before `read_bundle` rejects it: dropped; the caller passes its own temporary file.
+- T13 An empty managed string prints a blank `(managed)` value and hides a local login hook: dropped; no requirement, and the managed value wins by design.
+- T13 The `(managed)` branches of sections 4, 6, 8, 9, and 10 have no end-to-end test: dropped; the brief's test list matched.
+- T13 `plutil` raw output for a dict or array under a boolean key gives a nonsense value: dropped; a wrong-type profile, no requirement.
+- T13 The browser-policy loop hardcodes `/Library/Managed Preferences` instead of `MANAGED_DIR`: dropped; no trigger.
+- T14 P22 "unreadable 1" also matches status 127: dropped; the one-skip and IDs checks still pin the case.
+- T14 The browser policies line shows found extensions when other policy files are unreadable: dropped; the skip is in Limitations, so it is not a clean value.
+- T14 The screen lock pattern `*[Oo]ff*` could match an error text with "off": dropped; no trigger seen, same patterns as `screen_lock_sev`.
+- T14 The `TMRC` constant 0 leaves the `tmutil` failed branch dead, and `(UTC)` follows `unreadable`: dropped; Time Machine variant B is a decision, and the suffix is cosmetic.
+
 ## Sources
 
 - OCSF current version: https://schema.ocsf.io/api/version (1.10.0).
@@ -169,6 +230,8 @@ Review of `docs/superpowers/plans/2026-11-26-report-1.5.md`, 2026-11-26, by an O
 
 ## Results
 
-- B1 (2026-11-26, `master` at `7ab6930`): `bash -n` passes; `dev/test.sh` 339 cases pass; ShellCheck baseline 2 SC2010 and 3 SC2012.
+- B1 (2026-11-26, `master` at `7ab6930`): `bash -n` passes; `dev/test.sh` 339 cases pass; ShellCheck baseline 1 SC2010 and 2 SC2012 (3 findings). An earlier record of 2 and 3 counted the wiki-link lines too; the controller verified 3 findings on `master` and on the branch, 2026-11-26.
 - M7a (Task 14, 2026-11-26, development Mac, `/bin/bash`): `tmutil destinationinfo`, `xprotect version`, `sysadminctl -screenLock status`, and `socketfilterfw --getstealthmode` each exit 0; one destination is listed, stealth mode prints `Firewall stealth mode is off`, the screen lock prints `screenLock delay is 900 seconds`. `brew outdated --quiet --formula` exits 0; with `--no-such-flag` it exits 1. `log show` with a no-match predicate exits 0; with a bad predicate it exits 64, also through `exit "${PIPESTATUS[0]}"` in a command substitution. All values match the earlier record. `tmutil destinationinfo` on a Mac with no destination was not run (variant B keeps the 1.4 behavior). Note: in zsh `log` is a shell built-in, so run these under `/bin/bash` or as `/usr/bin/log`; zsh gives a false exit status 1.
 - M7 (Task 14, 2026-11-26, `--quick --offline --skip-du`, agent session in tmux without Full Disk Access): Time Machine backup age and encryption showed `unreadable (needs Full Disk Access for the terminal app)` on the backup age, count, and encryption lines, with a skip record and no MA-BACKUPS-001 to 004 finding. The other cases did not apply on this Mac: the DiagnosticReports folders (Jetsam, kernel panics) and `com.apple.FindMyMac.plist` are readable here; Remote Management is not listening; no browser policy file exists; `xprotect version`, `sysadminctl`, and `socketfilterfw` gave a known state; `--offline` and `--quick` skip the Homebrew and log checks under their own labels. The no-answer paths for those cases have no live M7 evidence.
+- M5 (2026-11-26): skipped. `ssh localhost` fails host key verification, and the SSH settings were left alone (same cause as X1 in `docs/ISSUES.md`). The Task 12 reviewer ran `remote_mode` against a stub `ssh`. A good bundle wrote one report with exit 0. `--fail-on medium` with an open MEDIUM finding exited 3. An ssh exit of 255 gave exit 1 with no report. A banner line, an empty result, and trailing data each gave exit 1, "Remote audit returned a malformed result.", and no report.
+- M8: on hold until an enrolled Mac is available.

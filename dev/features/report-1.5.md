@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: ready
-status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5)
+lifecycle: building
+status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5); built on feature/report-1.5 (Tasks 0 to 14), docs and review pending
 ---
 
 # Report formats, run comparison, and managed Macs (version 1.5)
@@ -48,6 +48,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.5), a user decisio
 - 2026-11-26 (plan review A1): the `--compare` file passes through `normalize_file`, so UUID redaction covers it too (Comparison step 1). Rejected: `iconv -c` alone, as first designed, which let a UUID from the old file reach every format. Conviction: `firm` (the user: "yes").
 - 2026-11-26 (A4): normalization removes the invalid sequences that macOS `iconv -c` keeps (lead bytes `F5` to `FF`, and `F4` followed by `90` to `BF`), then runs `iconv -c` again (Rendering, Steps 1.1). Verified on the development Mac: those sequences pass `iconv -c` unchanged, and the added steps keep every valid character up to U+10FFFF and still join a split UUID. Rejected: `iconv -c` alone, which lets text from the audited Mac make the report invalid UTF-8; a UTF-16 round trip, which turns each bad sequence into `?` and so can split a UUID that redaction then misses. Conviction: `firm` (the user: "A4 approved").
 - 2026-11-26: Time Machine destinations keep the 1.4 behavior, as Unreadable evidence says for an unverified command. Neither available Mac lacks a destination, so the exit status of `tmutil destinationinfo` with no destination is unverified. `brew outdated` exits 0 with packages outdated (verified), so its failure is detected from the exit status.
+- 2026-11-26: `Time Machine settings` (the settings file is missing while a destination exists) records a skip that lists MA-BACKUPS-002, 003, and 004, and the report prints `unreadable (settings file missing)`. MA-BACKUPS-004 is listed because `AutoBackup` is read from the same file; this matches the Task 3 fix to the `Time Machine backup age and encryption` row. Rejected: the 1.4 value `unknown` with no skip, which reads as a clean result (requirement 9).
 - 2026-11-26 (A4): `--fail-on LEVEL` is opt-in and exits 3. Rejected: exit 2 for a HIGH finding, as `docs/ISSUES.md` suggested, because exit 2 already means a usage error. Conviction: `ok`.
 
 ## Verified facts
@@ -73,11 +74,20 @@ OCSF facts (schema.ocsf.io, read 2026-11-26):
 - `severity_id`: 1 Informational, 2 Low, 3 Medium, 4 High. `compliance.status_id`: 1 Pass, 2 Warning ("did not yield a result due to missing information"), 3 Fail.
 - `remediation.desc` holds remediation text. `device` takes `type_id` (2 Desktop, 3 Laptop) and `hostname`.
 
+OCSF object facts (`https://schema.ocsf.io/api/1.10.0/objects/<name>`, read 2026-11-26 while writing the plan; not re-read during the build):
+
+- `compliance` has no required attribute, and `status_details` is an array of strings.
+- `finding_info` requires `uid`.
+- `metadata` requires `product` and `version`, and `product` needs `name` or `uid`.
+- `device` requires `type_id` and one of `hostname`, `ip`, `name`, or the other identifiers.
+- `remediation` requires `desc`.
+
 ## Assumptions to verify during the build
 
+- Verified during the build: `plutil -extract KEY raw` prints a boolean as `true` or `false`, and `managed_val` maps it to `1` or `0` (fixture P13). Each `valid_*` function drops the hostile values of fixture P12a, and `read_bundle` rejects every malformed bundle of P12, including a NUL byte (Task 12 review). Unverified: the CSS `:has()` filter in Safari (test M6) and `ssh` remote mode against a second Mac (test M5, skipped).
 - An MDM profile writes device-level settings to `/Library/Managed Preferences/DOMAIN.plist` and user-level settings to `/Library/Managed Preferences/USER/DOMAIN.plist` (training knowledge; one user-level file seen). Verify on an enrolled Mac (test M8, on hold).
 - Declarative device management (DDM) may set some settings outside these files. The report's Limitations say so.
-- Each command in the Unreadable evidence table exits non-zero on failure and zero when there is simply no data. Unverified for every command; see Unreadable evidence.
+- Each command in the Unreadable evidence table exits non-zero on failure and zero when there is simply no data. Verified on 2026-11-26 (test M7a, development Mac) for the success and failure cases of `brew outdated` (0, and 1 with a bad flag) and `log show` (0 for no match, 64 for a bad predicate), and for the success case of `tmutil destinationinfo`, `xprotect version`, `sysadminctl -screenLock status`, and `socketfilterfw --getstealthmode` (each exit 0). Not verified: `tmutil destinationinfo` on a Mac with no destination (on hold in `docs/ISSUES.md`), and the failure case of the four state commands. The `log` command must run as `/usr/bin/log` or under `/bin/bash`: zsh's `log` built-in gives a false status.
 - The firewall payload keys are `EnableFirewall`, `EnableStealthMode`, and `BlockAllIncoming` in domain `com.apple.security.firewall` (training knowledge).
 - The CSS `:has()` selector, used by the HTML severity filter, works in current Safari, Chrome, and Firefox (training knowledge). A browser without it shows every finding.
 - No OCSF source states whether a file holds a JSON array or one event per line. Newline-delimited JSON is the convention of log shippers (training knowledge).
