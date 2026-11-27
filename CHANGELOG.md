@@ -10,12 +10,14 @@ Version 1.5. The sudo rules are unchanged; an upgrade needs no new install of th
 
 - The 1.4.0 report could contain UUIDs. `redact_ids` ran under the user's locale, and under a UTF-8 locale BSD `sed` stopped at the first invalid byte, so the unredacted report was written. Each data file now passes through `iconv -c` and a removal of the invalid sequences that macOS `iconv -c` keeps, then `LC_ALL=C redact_ids`. When a step fails, no report is written and the exit status is 1.
 - A check that cannot read its evidence no longer reports a clean value. It prints `unreadable (REASON)` and records a skip with the finding IDs it could have given. This covers Time Machine settings, the Jetsam and kernel panic folders, the 7-day log searches, Homebrew outdated packages, the XProtect version, the enrollment state, browser policies, Remote Management settings, Find My, firewall stealth mode, and screen lock. A failed `profiles status` no longer turns MA-APPS-007 INFO into MA-APPS-005 HIGH, and a `socketfilterfw` error text no longer suppresses MA-PLATFORM-004.
+- A finding whose text held an invalid UTF-8 byte, such as one from a file name, lost its whole text under a UTF-8 locale. The text is now kept.
+- C1 control characters and the Unicode line and paragraph separators in text from the audited Mac are replaced with spaces in every format, as other control characters already were.
 
 ### Added
 
 - `--format LIST` writes `md` (the default), `json`, `ocsf`, `html`, and `csv` from one run. `-o` is a base path when there are several formats. `docs/FORMATS.md` documents each format.
 - JSON: the schema `macassay-report/1`. OCSF: one Compliance Finding event (class 2003, schema 1.10.0) per finding and per skipped check, as `.ocsf.jsonl`. HTML: one page with no JavaScript, a blocking Content-Security-Policy, and a severity filter. CSV: the findings table, with formula starts quoted.
-- `--compare OLD.json` lists new, resolved, and not-checked findings by ID. A finding that a skipped check could have given is not-checked, not resolved.
+- `--compare OLD.json` lists new, resolved, and not-checked findings by ID. A finding that a skipped check could have given is not-checked, not resolved. `--format` must include `md`, `html`, or `json`, which show the comparison.
 - `--accepted FILE` moves accepted findings to an Accepted risks section and out of the counts. A line holds an ID, an optional exact finding text, and a reason after `#`.
 - `--fail-on LEVEL` exits 3 when an open finding is at or above LEVEL.
 - Remote mode renders on the local Mac from a data bundle, so every output option works with `--host`, and `--stdout` now works in remote mode. The local Mac validates each value from the bundle before it uses it.
