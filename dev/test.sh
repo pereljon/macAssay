@@ -1119,6 +1119,8 @@ cat > "$V/p10old.json" <<'EOF'
               {"id": "bad id", "severity": "HIGH", "section": "x", "text": "dropped"}]}
 EOF
 printf '\377' >> "$V/p10old.json"
+for f in csv ocsf csv,ocsf; do check "1.5 P17 --compare with only $f" p17 --compare "$V/p10old.json" --format "$f"; done
+check "1.5 P17 the --compare format error names the formats" has "$V/p17.out" "--compare needs md, html, or json"
 ( TMP="$V/p10t"; mkdir -p "$TMP"; compare_load "$V/p10old.json" )
 check "1.5 P10 old file loads" [ $? -eq 0 ]
 mkfix "$V/p10"; ( TMP="$V/p10.tmp"; mkdir -p "$TMP"; compare_load "$V/p10old.json"; FMTS="md html json"; OUT="$V/p10base"; DEFBASE=x

@@ -1409,6 +1409,7 @@ FMTS=$(check_formats "$FORMATS") || die "Unknown format in --format: $FORMATS (u
 case " $OUTOPTS " in *" --fail-on "*) case "$FAILON" in high|medium|low|info) ;; *) die "--fail-on takes high, medium, low, or info." 2 ;; esac ;; esac
 if [ -n "$MODE" ] && [ -n "$OUTOPTS" ]; then die "--$MODE cannot be combined with$OUTOPTS." 2; fi
 case "$FMTS" in *" "*) [ "$STDOUT" -eq 0 ] || die "--stdout works with one format only." 2 ;; esac
+case " $FMTS " in *" md "*|*" html "*|*" json "*) ;; *) [ -z "$COMPARE" ] || die "--compare needs md, html, or json in --format." 2 ;; esac
 if [ "$BUNDLE" -eq 1 ]; then
   [ -z "$OUTOPTS" ] || die "--bundle cannot be combined with$OUTOPTS." 2
   [ -z "$RHOST" ] || die "--bundle and --host cannot be combined." 2

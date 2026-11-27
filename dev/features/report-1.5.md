@@ -49,6 +49,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.5), a user decisio
 - 2026-11-26 (A4): normalization removes the invalid sequences that macOS `iconv -c` keeps (lead bytes `F5` to `FF`, and `F4` followed by `90` to `BF`), then runs `iconv -c` again (Rendering, Steps 1.1). Verified on the development Mac: those sequences pass `iconv -c` unchanged, and the added steps keep every valid character up to U+10FFFF and still join a split UUID. Rejected: `iconv -c` alone, which lets text from the audited Mac make the report invalid UTF-8; a UTF-16 round trip, which turns each bad sequence into `?` and so can split a UUID that redaction then misses. Conviction: `firm` (the user: "A4 approved").
 - 2026-11-26: Time Machine destinations keep the 1.4 behavior, as Unreadable evidence says for an unverified command. Neither available Mac lacks a destination, so the exit status of `tmutil destinationinfo` with no destination is unverified. `brew outdated` exits 0 with packages outdated (verified), so its failure is detected from the exit status.
 - 2026-11-26: `Time Machine settings` (the settings file is missing while a destination exists) records a skip that lists MA-BACKUPS-002, 003, and 004, and the report prints `unreadable (settings file missing)`. MA-BACKUPS-004 is listed because `AutoBackup` is read from the same file; this matches the Task 3 fix to the `Time Machine backup age and encryption` row. Rejected: the 1.4 value `unknown` with no skip, which reads as a clean result (requirement 9).
+- 2026-11-26 (A5): `--compare` with only `csv` or `ocsf` output is a usage error (exit 2) before the audit starts. Found by the pre-merge review: the run gave no comparison and no notice. Rejected: a notice on stderr while the run goes on, because the user asked for a comparison that the run cannot give. Conviction: `firm` (the user approved the recommendation).
 - 2026-11-26 (A4): `--fail-on LEVEL` is opt-in and exits 3. Rejected: exit 2 for a HIGH finding, as `docs/ISSUES.md` suggested, because exit 2 already means a usage error. Conviction: `ok`.
 
 ## Verified facts
@@ -402,6 +403,7 @@ These combinations stop with a usage error, exit 2, before any other work:
 - `--bundle` with any output option: `--format`, `-o`, `--stdout`, `--compare`, `--accepted`, or `--fail-on`.
 - `--bundle` with `--host`.
 - `--stdout` with more than one format.
+- `--compare` when `--format` names none of `md`, `html`, or `json`. Only those formats show the comparison. (Added 2026-11-26 after the pre-merge review, decision A5.)
 
 Other combinations:
 - `-o` with several formats: a trailing `.md`, `.json`, `.jsonl`, `.html`, or `.csv` is removed from the path, which is then the base path. So `-o report.md --format md,json` writes `report.md` and `report.json`.

@@ -219,6 +219,24 @@ Per-task reviews during the build, 2026-11-26, from the ledger `.superpowers/sdd
 - T14 The screen lock pattern `*[Oo]ff*` could match an error text with "off": dropped; no trigger seen, same patterns as `screen_lock_sev`.
 - T14 The `TMRC` constant 0 leaves the `tmutil` failed branch dead, and `(UTC)` follows `unreadable`: dropped; Time Machine variant B is a decision, and the suffix is cosmetic.
 
+## Pre-merge review
+
+Whole-branch review on 2026-11-26 by an Opus subagent, at `d29589e`. Verdict: ready after fixes. Fixes in `feb8165` (fixtures "1.5 PM") and the A5 commit after it; a scoped re-review found every fix in `feb8165` holds and no new defect.
+
+- N1 Under a UTF-8 locale, `clean_field`'s `sed` printed nothing for text with an invalid byte, so `valid_findings` dropped the finding from every format and from `--fail-on`: fixed; Critical; trigger: a file name on the audited Mac; breaks the SKELETON invariant that a name on disk never decides a severity. The controller reproduced it on the old code.
+- N2 `clean_tsv` deleted controls and backticks after redaction, so a UUID split by one was rejoined: fixed by replacing with a space; trigger: a hostile remote bundle; breaks the `AGENTS.md` No secrets rule.
+- N3 A `\u` escape in the `--compare` file decoded to a UUID after redaction: fixed by redacting in `c()`; trigger: a hand-edited old file; breaks the `AGENTS.md` No secrets rule and decision A1.
+- T10 (with T7's Unicode case) C1 controls and U+2028/2029 passed `clean_field` and `clean_tsv` into every format: fixed by replacing them with a space under `LC_ALL=C`; trigger: a file name on the audited Mac; breaks the design's `findings.tsv` field 4.
+- T10 `--compare` with only `csv` or `ocsf` gave no comparison and no notice: fixed as a usage error (decision A5, approved by the user); breaks requirement 5.
+- T4 MA-UPDATES-011 guidance gave `brew reinstall --cask` with no name: fixed (`NAME`); a reader running it gets a usage error.
+- T4 MA-TRUST-002 guidance said "login keychain", but user trust settings can name a certificate in any keychain: fixed ("in Keychain Access").
+- `docs/FORMATS.md` said a failed format leaves no report, but a failed copy of a later format leaves earlier ones, and `render_html` returns only its last write's status: fixed in the doc; `../AGENTS.md` requires docs to describe current behavior.
+- T2 `iconv -c` exits 1 on a truncated sequence at the end of a file: dropped; the run then writes no report, and only a hostile remote or the user's own file can trigger it.
+- T5 `valid_meta` counts accept leading zeros: dropped; no count reaches shell arithmetic, and JXA and `[ -eq ]` read them as decimal.
+- T5 A failed copy of a later format leaves earlier format files written: dropped; no requirement (the doc now states it).
+- T7 OCSF output with no findings and no skips is one blank line: dropped; documented, no requirement.
+- T8 `render_html` returns its last `printf` status: dropped; no known way for awk to fail mid-page on normalized input (the doc now states it).
+
 ## Sources
 
 - OCSF current version: https://schema.ocsf.io/api/version (1.10.0).

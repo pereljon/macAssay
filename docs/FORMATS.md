@@ -19,6 +19,7 @@ Output paths follow these rules:
 - With several formats, `-o PATH` is a base path. A trailing `.md`, `.json`, `.jsonl`, `.html`, `.csv`, or `.ocsf.jsonl` is removed, and each format adds its own extension. So `-o report.md --format md,json` writes `report.md` and `report.json`.
 - Without `-o`, the base path is `./macassay-<host>-<date>`. In remote mode `<host>` is the `--host` value.
 - `--stdout` works with one format only. With several formats it is a usage error (exit 2).
+- `--compare` needs `md`, `html`, or `json` in `--format`; otherwise it is a usage error (exit 2).
 - The run builds every format before it writes any. A builder that returns a failure status stops the run with exit 1, and no report is written. The HTML builder returns the status of its last write, so an earlier failure in the page goes unnoticed.
 - A failed copy of one format stops the run with exit 1. Formats copied before it stay written.
 
@@ -166,7 +167,7 @@ Details:
 - An entry in the old file whose ID does not have the form `MA-<LABEL>-NNN` is ignored. An unknown severity reads as INFO.
 - The old file passes through UTF-8 normalization and UUID redaction, and each value from it is stripped of control characters, tabs, and newlines. It is untrusted text, and each format escapes it like this run's values.
 - The section heading names the old run's host and date. It adds a line when the collection options of the two runs differ. A different host is allowed.
-- `md` and `html` hold a `Changes since the previous run` section after Findings, with each group's count and one line per ID (severity, ID, text). `json` holds a `changes` object: `compared_with` (`host`, `date`), and the arrays `new`, `resolved`, and `not_checked`, each element `{id, severity, section, text}`. `ocsf` and `csv` show no changes.
+- `md` and `html` hold a `Changes since the previous run` section after Findings, with each group's count and one line per ID (severity, ID, text). `json` holds a `changes` object: `compared_with` (`host`, `date`), and the arrays `new`, `resolved`, and `not_checked`, each element `{id, severity, section, text}`. `ocsf` and `csv` show no changes, so `--compare` when `--format` names none of `md`, `html`, or `json` is a usage error (exit 2).
 
 ## Exit statuses
 
