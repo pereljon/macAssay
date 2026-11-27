@@ -1110,5 +1110,36 @@ check "1.5 P9 a directory fails" not la "$V/p9dir"
 check "1.5 P9 bad ID exits 2 before any audit work" p17 --accepted "$V/p9bad.txt"
 for m in --print-sudoers --install-sudoers; do check "1.5 P17 --accepted with $m" p17 "$m" --accepted "$V/p9.txt"; done
 
+# P10: comparison groups, schema check, untrusted old text.
+cat > "$V/p10old.json" <<'EOF'
+{"schema": "macassay-report/1", "host": "mini", "date": "2026-11-30 09:00 PST", "options": {"quick": false, "offline": false, "skip_du": false},
+ "findings": [{"id": "MA-SHARING-026", "severity": "LOW", "section": "Sharing", "text": "old"},
+              {"id": "MA-BACKUPS-001", "severity": "MEDIUM", "section": "Backups", "text": "gone\tnow\n<script>x</script>"},
+              {"id": "MA-EVENTS-002", "severity": "MEDIUM", "section": "Events", "text": "not run 11111111-2222-3333-4444-555555555555"},
+              {"id": "bad id", "severity": "HIGH", "section": "x", "text": "dropped"}]}
+EOF
+printf '\377' >> "$V/p10old.json"
+( TMP="$V/p10t"; mkdir -p "$TMP"; compare_load "$V/p10old.json" )
+check "1.5 P10 old file loads" [ $? -eq 0 ]
+mkfix "$V/p10"; ( TMP="$V/p10.tmp"; mkdir -p "$TMP"; compare_load "$V/p10old.json"; FMTS="md html json"; OUT="$V/p10base"; DEFBASE=x
+  STDOUT=0; FAILON=""; COMPARE="$V/p10old.json"; render_all "$V/p10" 2>/dev/null )
+C=$V/p10.tmp/render/changes.tsv
+check "1.5 P10 new: ID only in this run" grep -q $'^new\tMA-PLATFORM-015\t' "$C"
+check "1.5 P10 resolved: ID only in the old run" grep -q $'^resolved\tMA-BACKUPS-001\tMEDIUM\tBackups\tgone now <script>x</script>$' "$C"
+check "1.5 P10 not checked: ID listed by this run's skipped check" grep -q $'^not_checked\tMA-EVENTS-002\t' "$C"
+check "1.5 P10 UUID in the old file redacted" grep -q $'^not_checked\tMA-EVENTS-002\tMEDIUM\tEvents\tnot run <UUID>$' "$C"
+check "1.5 P10 kept ID is not a change" not grep -q 'MA-SHARING-026' "$C"
+check "1.5 P10 malformed old ID left out" not grep -q 'dropped' "$C"
+check "1.5 P10 one line per change" [ "$(grep -c . "$C")" -eq 3 ]
+check "1.5 P10 Markdown section" has "$V/p10base.md" "## Changes since the previous run"
+check "1.5 P10 heading names the old run" has "$V/p10base.md" "Compared with the run on mini at 2026-11-30 09:00 PST."
+check "1.5 P10 hostile old text escaped in HTML" has "$V/p10base.html" 'gone now &lt;script&gt;x&lt;/script&gt;'
+check "1.5 P10 JSON changes" [ "$(jx "$V/p10base.json" '[d.changes.new.length, d.changes.resolved.length, d.changes.not_checked.length].join()')" = "1,1,1" ]
+printf '{"schema": "other/1", "findings": []}\n' > "$V/p10bad.json"
+( TMP="$V/p10b"; mkdir -p "$TMP"; compare_load "$V/p10bad.json" 2>/dev/null )
+check "1.5 P10 wrong schema fails" [ $? -ne 0 ]
+check "1.5 P10 wrong schema exits 2 before any audit work" p17 --compare "$V/p10bad.json"
+for m in --print-sudoers --install-sudoers; do check "1.5 P17 --compare with $m" p17 "$m" --compare "$V/p10old.json"; done
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

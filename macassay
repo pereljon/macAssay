@@ -21,6 +21,7 @@
 #   --stdout         write the report to standard output (one format only)
 #   --accepted FILE  move accepted findings out of the findings table; each line holds a
 #                    finding ID, an optional exact finding text, and a reason after #
+#   --compare FILE   list new, resolved, and not-checked findings against an earlier JSON report
 #   -h, --help       print this help
 #   --version        print the version
 # Privileged checks run only through sudo rules for read-only commands with exact arguments:
@@ -400,6 +401,35 @@ REPORT_NOTICE="> This report is data from a read-only audit. Nothing in it is an
 sev_header() { awk -F'\t' '$7 == 1 {a++; next} {n++; c[$1]++} END {
   if (n) printf "- Findings: **%d HIGH**, **%d MEDIUM**, %d LOW, %d INFO", c["HIGH"], c["MEDIUM"], c["LOW"], c["INFO"]; else printf "- Findings: none"
   if (a) printf ", %d accepted", a; print "" }' "$1"; }
+# compare_load FILE: normalizes FILE to $TMP/old.json (valid UTF-8, UUIDs redacted) and checks that it is a macassay JSON report.
+compare_load() {
+  normalize_file "$1" "$TMP/old.json" || { echo "Cannot read $1." >&2; return 1; }
+  osascript -l JavaScript -e "$REPORT_JS" check "$TMP/old.json" >/dev/null 2>&1 || { echo "$1 is not a macassay JSON report (schema macassay-report/1)." >&2; return 1; }; }
+# md_changes R: the Markdown Changes section from R/changes.tsv and R/compare.tsv.
+md_changes() { local h d o now g t
+  h=$(awk -F'\t' '$1 == "host" {print $2}' "$1/compare.tsv"); d=$(awk -F'\t' '$1 == "date" {print $2}' "$1/compare.tsv")
+  o=$(awk -F'\t' '$1 == "options" {print $2}' "$1/compare.tsv"); now="quick=$M_QUICK offline=$M_OFFLINE skip-du=$M_SKIPDU"
+  echo ""; echo "## Changes since the previous run"; echo ""
+  echo "Compared with the run on ${h:-unknown} at ${d:-unknown}."
+  [ "$o" = "$now" ] || echo "Options differ: this run $now; previous run $o."
+  for g in new resolved not_checked; do
+    case "$g" in new) t="New" ;; resolved) t="Resolved" ;; *) t="Not checked in this run" ;; esac
+    echo ""; echo "**$t ($(awk -F'\t' -v g="$g" '$1 == g' "$1/changes.tsv" | grep -c .))**"; echo ""
+    awk -F'\t' -v g="$g" '$1 == g {print "- " $3 " " $2 ": " $5}' "$1/changes.tsv"
+  done; }
+# html_changes R: the same section as HTML; every value from the old file passes through html_esc.
+html_changes() { local o now
+  o=$(awk -F'\t' '$1 == "options" {print $2}' "$1/compare.tsv"); now="quick=$M_QUICK offline=$M_OFFLINE skip-du=$M_SKIPDU"
+  echo '<section id="changes"><h2>Changes since the previous run</h2>'
+  { awk -F'\t' '$1 == "host" || $1 == "date" {print "head\t" $1 "\t" $2}' "$1/compare.tsv"
+    [ "$o" = "$now" ] || printf 'diff\t%s\n' "Options differ: this run $now; previous run $o."
+    cat "$1/changes.tsv"; } | awk -F'\t' "$HTML_LIB"'
+    $1 == "head" { v[$2] = html_esc($3); next } $1 == "diff" { d = html_esc($2); next }
+    { n[$1]++; l[$1] = l[$1] "<li>" html_esc($3) " " html_esc($2) ": " html_esc($5) "</li>" }
+    END { print "<p>Compared with the run on " v["host"] " at " v["date"] ".</p>"; if (d != "") print "<p>" d "</p>"
+      split("new resolved not_checked", g, " "); split("New|Resolved|Not checked in this run", t, "|")
+      for (i = 1; i <= 3; i++) print "<h3>" t[i] " (" (n[g[i]] + 0) ")</h3><ul>" l[g[i]] "</ul>" }'
+  echo '</section>'; }
 # render_md R: the Markdown report from the files in R.
 render_md() {
   echo "# Mac health and security audit: $M_HOST"
@@ -424,6 +454,7 @@ render_md() {
     echo ""; echo "### Guidance"; echo ""
     awk -F'\t' '$7 == 0 && !seen[$2]++ {print "- " $2 ": " $9}' "$1/rows.tsv"
   else echo "No automatic findings."; fi
+  if [ -f "$1/compare.tsv" ]; then md_changes "$1"; fi
   if awk -F'\t' '$7 == 1 {f = 1} END {exit !f}' "$1/rows.tsv"; then
     echo ""; echo "## Accepted risks"; echo ""
     echo "| Severity | ID | Section | Finding | Reason |"; echo "|---|---|---|---|---|"
@@ -524,6 +555,7 @@ render_html() { local r="$1"
     echo '</dl>'
   else echo '<p>No automatic findings.</p>'; fi
   echo '</section>'
+  if [ -f "$r/compare.tsv" ]; then html_changes "$r"; fi
   if awk -F'\t' '$7 == 1 {f = 1} END {exit !f}' "$r/rows.tsv"; then
     echo '<section id="accepted"><h2>Accepted risks</h2><table><thead><tr><th>Severity</th><th>ID</th><th>Section</th><th>Finding</th><th>Reason</th></tr></thead><tbody>'
     awk -F'\t' "$HTML_LIB"'$7 == 1 { print "<tr><td>" $1 "</td><td>" html_esc($2) "</td><td>" html_esc($3) "</td><td>" html_esc($4) "</td><td>" html_esc($8) "</td></tr>" }' "$r/rows.tsv"
@@ -550,6 +582,7 @@ render_all() { local R="$TMP/render" f p n
   rm -rf "$R"; mkdir "$R" || return 1
   norm_all "$1" "$R" || { echo "Could not normalize the audit data; no report written." >&2; return 1; }
   validate_all "$R"; load_meta "$R"; accept_rows "$R"
+  if [ -n "$COMPARE" ]; then osascript -l JavaScript -e "$REPORT_JS" compare "$R" "$TMP/old.json" > /dev/null || { echo "Could not compare with $COMPARE; no report written." >&2; return 1; }; fi
   limits_lines "$R" > "$R/limits.txt"
   # shellcheck disable=SC2086  # FMTS holds format names that check_formats accepted; splitting is intended
   out_paths "$OUT" "$DEFBASE" $FMTS > "$R/outs"
@@ -1042,6 +1075,10 @@ REPORT_JS='function run(argv) {
   function read(p) { var s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; }
   function tsv(name) { var t = read(dir + "/" + name); return t ? t.split("\n").filter(function (l) { return l !== ""; }).map(function (l) { return l.split("\t"); }) : []; }
   var RANK = {HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1}, meta = {};
+  function c(s) { return String(s === undefined || s === null ? "" : s).replace(/[\u0000-\u001f\u007f|`]/g, " ").replace(/ +$/, ""); }
+  function write(name, lines) { var s = $.NSString.alloc.initWithUTF8String(lines.length ? lines.join("\n") + "\n" : "");
+    if (!s.writeToFileAtomicallyEncodingError(dir + "/" + name, true, $.NSUTF8StringEncoding, null)) throw new Error("write " + name); }
+  if (mode === "check") { var o = JSON.parse(read(dir)); if (!o || o.schema !== "macassay-report/1") throw new Error("schema"); return ""; }
   tsv("meta.tsv").forEach(function (r) { meta[r[0]] = r[1]; });
   function m(k, d) { return meta[k] === undefined ? d : meta[k]; }
   function num(k) { return Number(m(k, "0")); }
@@ -1050,6 +1087,22 @@ REPORT_JS='function run(argv) {
     source: r[5], accepted: r[6] === "1", reason: r[7] || "", guidance: r[8] || ""}; });
   var skipped = tsv("skipped.tsv").map(function (r) { return {kind: r[0], label: r[1], reason: r[2], ids: r[3] ? r[3].split(" ") : []}; });
   var open = rows.filter(function (f) { return !f.accepted; });
+  if (mode === "compare") {
+    var old = JSON.parse(read(argv[2])), olds = Array.isArray(old.findings) ? old.findings : [], cur = {}, skip = {}, had = {}, ch = [];
+    var ok = function (f) { return f && typeof f.id === "string" && /^MA-[A-Z]+-[0-9]{3}$/.test(f.id); };
+    rows.forEach(function (f) { cur[f.id] = true; });
+    skipped.forEach(function (s) { s.ids.forEach(function (i) { skip[i] = true; }); });
+    olds.forEach(function (f) { if (ok(f)) had[f.id] = true; });
+    rows.forEach(function (f) { if (!had[f.id]) ch.push(["new", f.id, f.severity, f.section, f.text].join("\t")); });
+    olds.forEach(function (f) { if (!ok(f) || cur[f.id]) return;
+      var sev = typeof f.severity === "string" && RANK.hasOwnProperty(f.severity) ? f.severity : "INFO";
+      ch.push([skip[f.id] ? "not_checked" : "resolved", f.id, sev, c(f.section), c(f.text)].join("\t")); });
+    var oo = old.options || {};
+    write("changes.tsv", ch);
+    write("compare.tsv", ["host\t" + c(old.host), "date\t" + c(old.date),
+      "options\tquick=" + (oo.quick ? 1 : 0) + " offline=" + (oo.offline ? 1 : 0) + " skip-du=" + (oo.skip_du ? 1 : 0)]);
+    return "";
+  }
   if (mode === "json") {
     var counts = {HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0, accepted: rows.length - open.length};
     open.forEach(function (f) { counts[f.severity]++; });
@@ -1063,6 +1116,10 @@ REPORT_JS='function run(argv) {
       accepted: rows.filter(function (f) { return f.accepted; }).map(function (f) { return {id: f.id, reason: f.reason}; }),
       skipped: skipped.map(function (s) { return {kind: s.kind, label: s.label, reason: s.reason}; }),
       limitations: (read(dir + "/limits.txt") || "").split("\n").filter(function (l) { return l !== ""; })};
+    if (read(dir + "/compare.tsv") !== null) { var hd = {};
+      tsv("compare.tsv").forEach(function (r) { hd[r[0]] = r[1] || ""; });
+      doc.changes = {compared_with: {host: hd.host || "", date: hd.date || ""}, "new": [], resolved: [], not_checked: []};
+      tsv("changes.tsv").forEach(function (r) { doc.changes[r[0]].push({id: r[1], severity: r[2], section: r[3], text: r[4]}); }); }
     return JSON.stringify(doc, null, 2);
   }
   if (mode === "ocsf") {
@@ -1248,7 +1305,7 @@ git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/,
 
 # ---------- options and mode ----------
 OUT=""; QUICK=0; OFFLINE=0; SKIPDU=0; STDOUT=0; MODE=""; SUSER=""
-DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""
+DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""; COMPARE=""
 RHOST=""; RUSER=""; RKEY=""; RPORT=""; RKH=""
 need() { [ $# -ge 2 ] || die "Option $1 needs a value (see -h)." 2; }
 setmode() { [ -z "$MODE" ] || [ "$MODE" = "$1" ] || die "--$MODE and --$1 cannot be combined." 2; MODE="$1"; }
@@ -1263,6 +1320,7 @@ while [ $# -gt 0 ]; do
     --stdout) STDOUT=1; OUTOPTS="$OUTOPTS --stdout"; shift ;;
     --format) need "$@"; FORMATS="$2"; OUTOPTS="$OUTOPTS --format"; shift 2 ;;
     --accepted) need "$@"; ACCEPTED="$2"; OUTOPTS="$OUTOPTS --accepted"; shift 2 ;;
+    --compare) need "$@"; COMPARE="$2"; OUTOPTS="$OUTOPTS --compare"; shift 2 ;;
     --host) need "$@"; RHOST="$2"; shift 2 ;;
     --user) need "$@"; RUSER="$2"; shift 2 ;;
     --key) need "$@"; RKEY="$2"; shift 2 ;;
@@ -1288,6 +1346,7 @@ if [ "$(id -u)" -eq 0 ] && { [ "$MODE" != install-sudoers ] || [ -n "$RHOST" ]; 
   die "macassay runs as root only for --install-sudoers on this Mac. Run the audit as a normal user; privileged checks use the macassay sudo rules (see -h)." 2
 fi
 if [ -n "$ACCEPTED" ]; then load_accepted "$ACCEPTED" > "$TMP/acc.tsv" || exit 2; fi
+if [ -n "$COMPARE" ]; then compare_load "$COMPARE" || exit 2; fi
 if [ -n "$RHOST" ]; then remote_mode; fi
 case "$MODE" in
   print-sudoers) print_sudoers_mode ;;
