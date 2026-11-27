@@ -46,6 +46,7 @@ Each requirement traces to a `docs/ISSUES.md` item (Version 1.5), a user decisio
 - 2026-11-26 (A2): no 1.4.1 release for the redaction bug that the review found (AR1). The fix ships in 1.5. Reason, from the user: nobody uses macAssay yet. Conviction: `firm`.
 - 2026-11-26 (A3): unreadable evidence records a skip under Limitations, not an INFO finding. Findings are judged risks with stable IDs; an unreadable file is a limit of the audit. Rejected: an INFO finding, as register I079 words it. Conviction: `ok`.
 - 2026-11-26 (plan review A1): the `--compare` file passes through `normalize_file`, so UUID redaction covers it too (Comparison step 1). Rejected: `iconv -c` alone, as first designed, which let a UUID from the old file reach every format. Conviction: `firm` (the user: "yes").
+- 2026-11-26 (A4): normalization removes the invalid sequences that macOS `iconv -c` keeps (lead bytes `F5` to `FF`, and `F4` followed by `90` to `BF`), then runs `iconv -c` again (Rendering, Steps 1.1). Verified on the development Mac: those sequences pass `iconv -c` unchanged, and the added steps keep every valid character up to U+10FFFF and still join a split UUID. Rejected: `iconv -c` alone, which lets text from the audited Mac make the report invalid UTF-8; a UTF-16 round trip, which turns each bad sequence into `?` and so can split a UUID that redaction then misses. Conviction: `firm` (the user: "A4 approved").
 - 2026-11-26: Time Machine destinations keep the 1.4 behavior, as Unreadable evidence says for an unverified command. Neither available Mac lacks a destination, so the exit status of `tmutil destinationinfo` with no destination is unverified. `brew outdated` exits 0 with packages outdated (verified), so its failure is detected from the exit status.
 - 2026-11-26 (A4): `--fail-on LEVEL` is opt-in and exits 3. Rejected: exit 2 for a HIGH finding, as `docs/ISSUES.md` suggested, because exit 2 already means a usage error. Conviction: `ok`.
 
@@ -130,7 +131,7 @@ Fields 1 to 3 keep their 1.4 order. `skip` and `priv` fill field 4 from `SKIP_ID
 After the last section, `render_all` runs these steps in order:
 
 1. Normalize:
-   1. Pass each data file through `iconv -c`, then through `LC_ALL=C redact_ids`, in that order.
+   1. Pass each data file through `iconv -c`, then remove the byte sequences that macOS `iconv -c` keeps although they are not valid UTF-8 (lead bytes `F5` to `FF`, and `F4` followed by `90` to `BF`), then pass it through `iconv -c` again, which drops the orphaned continuation bytes. Then pass it through `LC_ALL=C redact_ids`. (Added 2026-11-26 after the Task 2 review, decision A4.)
    2. Stop with exit 1 when either command fails, and write no report.
    3. Every format then starts from valid UTF-8 with no dashed UUID.
 2. Validate: check every field against its shape (see Validation). In remote mode, this is where untrusted bundle data is checked.
