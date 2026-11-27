@@ -10,12 +10,15 @@
 # logs each privileged command.
 #
 # Usage: macassay [options]
-#   -o FILE          write the report to FILE (default: ./macassay-<host>-<date>.md)
+#   --format LIST    report formats, comma-separated: md (default), json, ocsf, html, csv
+#   -o PATH          with one format, the report file; with several, a base path that each
+#                    format extends (.md, .json, .ocsf.jsonl, .html, .csv)
+#                    (default: ./macassay-<host>-<date> plus the format's extension)
 #   --quick          skip the slow unified-log searches (XProtect, SSH failures)
 #   --offline        skip the checks that contact Apple or Homebrew: softwareupdate,
 #                    Homebrew outdated packages, and Gatekeeper assessment of apps
 #   --skip-du        skip the disk usage scans
-#   --stdout         write the report to standard output instead of a file
+#   --stdout         write the report to standard output (one format only)
 #   -h, --help       print this help
 #   --version        print the version
 # Privileged checks run only through sudo rules for read-only commands with exact arguments:
@@ -429,6 +432,14 @@ render_md() {
   echo ""
   sed 's/^/- /' "$1/limits.txt"
   cat "$1/body.md"; }
+# check_formats LIST: prints the comma-separated LIST space-separated, without repeats. Fails on an unknown or empty name.
+check_formats() { local f out="" IFS=,
+  for f in $1""; do case "$f" in md|json|ocsf|html|csv) case " $out " in *" $f "*) ;; *) out="${out:+$out }$f" ;; esac ;; *) return 1 ;; esac; done
+  [ -n "$out" ] && printf '%s\n' "$out"; }
+# render_csv R: the findings table as RFC 4180 CSV. csv_field quotes every field and puts a ' before a formula start.
+render_csv() { awk -F'\t' 'BEGIN { ORS = "\r\n"; print "\"severity\",\"id\",\"section\",\"finding\",\"source\",\"accepted\",\"guidance\"" }
+  function csv_field(s) { if (s ~ /^[=+@\t-]/) s = "\047" s; gsub(/"/, "\"\"", s); return "\"" s "\"" }
+  { print csv_field($1) "," csv_field($2) "," csv_field($3) "," csv_field($4) "," csv_field($6) "," csv_field($7 == 1 ? "yes" : "no") "," csv_field($9) }' "$1/rows.tsv"; }
 fmt_ext() { case "$1" in md) echo .md ;; json) echo .json ;; ocsf) echo .ocsf.jsonl ;; html) echo .html ;; csv) echo .csv ;; esac; }
 # out_paths OUT DEFBASE FORMAT...: prints FORMAT<TAB>PATH. One format with -o writes to OUT as given; otherwise OUT, or
 # DEFBASE without OUT, is a base path, with a trailing report extension removed, and each format adds its own extension.
@@ -438,7 +449,7 @@ out_paths() { local out="$1" base="$2" f; shift 2
     case "$base" in *.ocsf.jsonl) base="${base%.ocsf.jsonl}" ;; *.md|*.json|*.jsonl|*.html|*.csv) base="${base%.*}" ;; esac; fi
   for f; do printf '%s\t%s%s\n' "$f" "$base" "$(fmt_ext "$f")"; done; }
 # render_one FORMAT R: prints one format on stdout.
-render_one() { case "$1" in md) render_md "$2" ;; *) return 1 ;; esac; }
+render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; *) return 1 ;; esac; }
 # render_all SRC: normalizes, validates, and renders the data files in SRC into every format in FMTS.
 # Writes no file unless every format rendered. Returns 0, 1, or 3 (--fail-on).
 render_all() { local R="$TMP/render" f p n
@@ -1082,7 +1093,7 @@ git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/,
 
 # ---------- options and mode ----------
 OUT=""; QUICK=0; OFFLINE=0; SKIPDU=0; STDOUT=0; MODE=""; SUSER=""
-FMTS=md; DEFBASE=""
+DEFBASE=""; FORMATS=md; OUTOPTS=""
 RHOST=""; RUSER=""; RKEY=""; RPORT=""; RKH=""
 need() { [ $# -ge 2 ] || die "Option $1 needs a value (see -h)." 2; }
 setmode() { [ -z "$MODE" ] || [ "$MODE" = "$1" ] || die "--$MODE and --$1 cannot be combined." 2; MODE="$1"; }
@@ -1090,11 +1101,12 @@ optuser() { case "$1" in *=*) SUSER="${1#*=}" ;; esac
   [ -z "$SUSER" ] || valid_name "$SUSER" || die "Not a valid user name: $SUSER" 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    -o) need "$@"; OUT="$2"; shift 2 ;;
+    -o) need "$@"; OUT="$2"; OUTOPTS="$OUTOPTS -o"; shift 2 ;;
     --quick) QUICK=1; shift ;;
     --offline) OFFLINE=1; shift ;;
     --skip-du) SKIPDU=1; shift ;;
-    --stdout) STDOUT=1; shift ;;
+    --stdout) STDOUT=1; OUTOPTS="$OUTOPTS --stdout"; shift ;;
+    --format) need "$@"; FORMATS="$2"; OUTOPTS="$OUTOPTS --format"; shift 2 ;;
     --host) need "$@"; RHOST="$2"; shift 2 ;;
     --user) need "$@"; RUSER="$2"; shift 2 ;;
     --key) need "$@"; RKEY="$2"; shift 2 ;;
@@ -1108,6 +1120,10 @@ while [ $# -gt 0 ]; do
     *) die "Unknown option: $1 (see -h)" 2 ;;
   esac
 done
+
+FMTS=$(check_formats "$FORMATS") || die "Unknown format in --format: $FORMATS (use md, json, ocsf, html, or csv)." 2
+if [ -n "$MODE" ] && [ -n "$OUTOPTS" ]; then die "--$MODE cannot be combined with$OUTOPTS." 2; fi
+case "$FMTS" in *" "*) [ "$STDOUT" -eq 0 ] || die "--stdout works with one format only." 2 ;; esac
 
 TMP=$(mktemp -d /tmp/macassay.XXXXXX) || exit 1
 trap 'rm -rf "$TMP"' EXIT

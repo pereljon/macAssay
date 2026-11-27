@@ -977,5 +977,36 @@ check "1.5 P12a valid skip kept" has "$V/p12a.out.md" "- Skipped: 7-day log sear
 check "1.5 P12a out_paths, one format with -o" [ "$(out_paths r.txt base md)" = $'md\tr.txt' ]
 check "1.5 P12a out_paths, default" [ "$(out_paths "" base md)" = $'md\tbase.md' ]
 
+# P7: CSV quotes every field, doubles inner quotes, defuses formula starts, and keeps one field count.
+mkfix "$V/p7"; rfix "$V/p7" csv
+P7=$V/p7.out.csv
+check "1.5 P7 render succeeds" [ -s "$P7" ]
+check "1.5 P7 header" [ "$(head -1 "$P7" | tr -d '\r')" = '"severity","id","section","finding","source","accepted","guidance"' ]
+check "1.5 P7 inner quotes doubled" has "$P7" '""q""'
+check "1.5 P7 formula start defused" has "$P7" "\"'=HYPERLINK(\"\"http://x\"\")\""
+check "1.5 P7 leading dash defused" has "$P7" "\"'-dash <UUID>"
+check "1.5 P7 one field count" [ "$(tr -d '\r' < "$P7" | awk -F'","' '{print NF}' | sort -u | grep -c .)" -eq 1 ]
+check "1.5 P7 CRLF line ends" [ "$(grep -c $'\r$' "$P7")" -eq "$(grep -c . "$P7")" ]
+# P8: formats and paths.
+check "1.5 P8 check_formats" [ "$(check_formats md,csv,md)" = "md csv" ]
+check "1.5 P8 unknown format" not check_formats md,pdf
+check "1.5 P8 empty format name" not check_formats md,,csv
+check "1.5 P8 base path with several formats" [ "$(out_paths base "" md csv | cut -f2 | paste -sd, -)" = "base.md,base.csv" ]
+check "1.5 P8 one format keeps -o as given" [ "$(out_paths file.txt "" csv | cut -f2)" = "file.txt" ]
+check "1.5 P8 trailing extension removed" [ "$(out_paths report.md "" md json | cut -f2 | paste -sd, -)" = "report.md,report.json" ]
+mkfix "$V/p8"; rfix "$V/p8" "md csv" "$V/p8base"
+check "1.5 P8 md written" [ -s "$V/p8base.md" ]
+check "1.5 P8 csv written" [ -s "$V/p8base.csv" ]
+# P17 (part): usage errors exit 2 before any audit work.
+# p17 ARGS: the run exits 2 with a usage error that names no unknown option, before any audit work.
+p17() { ./macassay "$@" > "$V/p17.out" 2>&1; P17RC=$?; [ "$P17RC" -eq 2 ] && hasnt "$V/p17.out" "== 1." && hasnt "$V/p17.out" "Unknown option"; }
+check "1.5 P17 --stdout with two formats" p17 --stdout --format md,csv
+check "1.5 P17 unknown format" p17 --format pdf
+for m in --print-sudoers --install-sudoers; do
+  check "1.5 P17 --format with $m" p17 "$m" --format md
+  check "1.5 P17 -o with $m" p17 "$m" -o x.md
+  check "1.5 P17 --stdout with $m" p17 "$m" --stdout
+done
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
