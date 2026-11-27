@@ -19,6 +19,8 @@
 #                    Homebrew outdated packages, and Gatekeeper assessment of apps
 #   --skip-du        skip the disk usage scans
 #   --stdout         write the report to standard output (one format only)
+#   --accepted FILE  move accepted findings out of the findings table; each line holds a
+#                    finding ID, an optional exact finding text, and a reason after #
 #   -h, --help       print this help
 #   --version        print the version
 # Privileged checks run only through sudo rules for read-only commands with exact arguments:
@@ -752,6 +754,18 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-UPDATES-011\tCheck that each listed app matches its official download, and reinstall it with brew reinstall --cask, which downloads the app again.')
 guidance() { printf '%s\n' "$GUIDANCE" | awk -F'\t' -v i="$1" '$1 == i {print $2; exit}'; }
 known_id() { printf '%s\n' "$GUIDANCE" | cut -f1 | grep -qxF -- "$1"; }
+# load_accepted FILE: prints ID<TAB>MATCH<TAB>REASON for each entry in an accepted-risk file. The file is read as text,
+# never run. A first word that GUIDANCE does not list fails the load, so a typo cannot accept nothing in silence.
+load_accepted() { local line id rest match reason n=0
+  [ -r "$1" ] || { echo "Cannot read the accepted-risk file: $1" >&2; return 1; }
+  while IFS= read -r line || [ -n "$line" ]; do n=$((n + 1))
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|'#'*) continue ;; esac
+    id="${line%%[[:space:]#]*}"; rest="${line#"$id"}"
+    case "$rest" in *'#'*) reason="${rest#*#}"; match="${rest%%#*}" ;; *) reason=""; match="$rest" ;; esac
+    known_id "$id" || { echo "Line $n of $1: $id is not an ID that macassay gives to a finding." >&2; return 1; }
+    printf '%s\t%s\t%s\n' "$id" "$(printf '%s' "$match" | sed 's/^[[:space:]]*//' | clean_field)" "$(printf '%s' "$reason" | sed 's/^[[:space:]]*//' | clean_field)"
+  done < <(iconv -c -f UTF-8 -t UTF-8 < "$1" | redact_ids); }
 # skip LABEL REASON: record a check that could not run.
 skip() { printf 'other\t%s\t%s\t%s\n' "$1" "$2" "$(skip_row "$1")" >> "$SKIPS"; }
 skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }
@@ -1234,7 +1248,7 @@ git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/,
 
 # ---------- options and mode ----------
 OUT=""; QUICK=0; OFFLINE=0; SKIPDU=0; STDOUT=0; MODE=""; SUSER=""
-DEFBASE=""; FORMATS=md; OUTOPTS=""
+DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""
 RHOST=""; RUSER=""; RKEY=""; RPORT=""; RKH=""
 need() { [ $# -ge 2 ] || die "Option $1 needs a value (see -h)." 2; }
 setmode() { [ -z "$MODE" ] || [ "$MODE" = "$1" ] || die "--$MODE and --$1 cannot be combined." 2; MODE="$1"; }
@@ -1248,6 +1262,7 @@ while [ $# -gt 0 ]; do
     --skip-du) SKIPDU=1; shift ;;
     --stdout) STDOUT=1; OUTOPTS="$OUTOPTS --stdout"; shift ;;
     --format) need "$@"; FORMATS="$2"; OUTOPTS="$OUTOPTS --format"; shift 2 ;;
+    --accepted) need "$@"; ACCEPTED="$2"; OUTOPTS="$OUTOPTS --accepted"; shift 2 ;;
     --host) need "$@"; RHOST="$2"; shift 2 ;;
     --user) need "$@"; RUSER="$2"; shift 2 ;;
     --key) need "$@"; RKEY="$2"; shift 2 ;;
@@ -1272,6 +1287,7 @@ trap 'rm -rf "$TMP"' EXIT
 if [ "$(id -u)" -eq 0 ] && { [ "$MODE" != install-sudoers ] || [ -n "$RHOST" ]; }; then
   die "macassay runs as root only for --install-sudoers on this Mac. Run the audit as a normal user; privileged checks use the macassay sudo rules (see -h)." 2
 fi
+if [ -n "$ACCEPTED" ]; then load_accepted "$ACCEPTED" > "$TMP/acc.tsv" || exit 2; fi
 if [ -n "$RHOST" ]; then remote_mode; fi
 case "$MODE" in
   print-sudoers) print_sudoers_mode ;;
