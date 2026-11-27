@@ -21,7 +21,7 @@ Each skipped check is listed under Limitations in the report, with the reason. A
 
 Other gates and notes:
 
-- Full Disk Access (a macOS privacy permission that the terminal app holds) gates the Time Machine settings file and the user TCC (Transparency, Consent, and Control, the macOS privacy permission) database. Each records a skip when unreadable. The sudo rules do not cover either one.
+- Full Disk Access (a macOS privacy permission that the terminal app holds, or, over SSH, the Remote Login setting for remote users) gates the Time Machine settings file and both TCC (Transparency, Consent, and Control, the macOS privacy permission) databases. Each records a skip when unreadable. The sudo rules do not cover them.
 - A setting that a configuration profile manages reads `VALUE (managed)` in the evidence, and a finding that judges it has the source `managed`. macAssay reads `/Library/Managed Preferences` for the settings in sections 2, 3, 4, 6, 8, 9, and 10. Effective-state commands such as `fdesetup`, `csrutil`, and `socketfilterfw` already show the real state, so they do not change.
 - A check that ran but could not read its evidence prints `unreadable (REASON)` and records a skip, never a clean value. These skips are: Time Machine settings (file unreadable or missing while a destination exists), the Jetsam and kernel panic folders, the 7-day log searches, Homebrew outdated packages, the XProtect version, the enrollment state, browser policy files, Remote Management settings, Find My, firewall stealth mode, and screen lock. Each skip lists the finding IDs that the check could have given, so `--compare` reports them as not checked.
 - `-o`, `--stdout`, and remote mode (`--host`, `--user`, `--key`, `--port`, `--known-hosts`) change where the report goes or which Mac is audited. They do not change which checks run. Remote mode passes `--quick`, `--offline`, and `--skip-du` to the remote run.
@@ -176,7 +176,7 @@ This section gives evidence only; no finding uses its label yet.
 
 | Check | What it reads | Needs or skipped by | Findings |
 |---|---|---|---|
-| Running programs outside standard locations | `ps -axo comm=`, signer from `codesign` | none | `MA-APPS-001` HIGH: a program runs from a temporary or shared folder |
+| Running programs outside standard locations | `ps -axo comm=`, signer from `codesign` | none | `MA-APPS-001` HIGH: a program runs from a temporary or shared folder; an App Store iPhone or iPad app (verified against Apple's iPhone app signature) does not count |
 | Applications that Gatekeeper rejects | `spctl -a -t exec` on each app in `/Applications` and the user's `Applications` (contacts Apple) | `--offline` skips | `MA-APPS-002` LOW: Gatekeeper rejects an app |
 | Chrome extensions | `manifest.json` files under the Chrome profile folders | none | none |
 | Safari web extensions | `pluginkit -mAvvv -p com.apple.Safari.web-extension` | none | none |
@@ -225,8 +225,8 @@ This section gives evidence only; no finding uses its label yet.
 | Certificates in the System keychain | `security find-certificate -a /Library/Keychains/System.keychain` | none | none |
 | Admin trust settings | `security dump-trust-settings -d` | none | `MA-TRUST-001` MEDIUM: an administrator trusts a certificate |
 | User trust settings | `security dump-trust-settings` | none | `MA-TRUST-002` MEDIUM: the user trusts a certificate |
-| Privacy permissions, user database | `sqlite3` on the user `TCC.db`, read-only: accessibility, screen capture, full disk access, input monitoring, microphone, camera | Full Disk Access; records a skip when unreadable | none |
-| Privacy permissions, system database | not read | always skipped; needs root and Full Disk Access, and the sudo rules do not cover it | none |
+| Privacy permissions, user database | `sqlite3` on the user `TCC.db`, read-only: grants of accessibility, screen capture, full disk access, input monitoring, synthetic input, microphone, camera | Full Disk Access; records a skip when the query fails, or when the file is absent, as on macOS 27, which keeps it in a protected location | none |
+| Privacy permissions, system database | `sqlite3` on `/Library/Application Support/com.apple.TCC/TCC.db` as the user, read-only, same services | Full Disk Access; records a skip when the query fails | none |
 
 ## 14. Security events from the logs (Events)
 
