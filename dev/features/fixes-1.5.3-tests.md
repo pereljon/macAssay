@@ -20,20 +20,39 @@ Fixture cases run in `dev/test.sh`, with no root and no network. The hostile str
 - E6. A `--compare` change line whose finding text is H is escaped.
 - E7. The HTML report from the same data shows H's text exactly once per place, html-escaped, with no backslash added by `md_esc`, and still no `<a` or `<img` element from H.
 - E8. The JSON, CSV, and OCSF reports carry H's finding text with no backslash added.
-- E9. Plain text with none of the four characters renders the same as in 1.5.2 (a real 1.5.2 report body as the fixture, compared line by line).
-- E10. Each of the twelve raw `say` lines is classified in this file: untrusted values go through `mdesc`, the others are listed with their source.
+- E9. Data with none of the four characters renders the same Markdown and HTML as release 1.5.2. The fixture is synthetic, because a real report describes a real Mac; the 1.5.2 script comes from the `v1.5.2` tag. M1 covers a real report.
+- E10. Each raw `say` value and `block` title is classified below: untrusted values go through `mdesc`, the others are listed with their source.
+- E11. A skip label with `[`, `<`, and `\` is escaped in the Markdown Limitations list, shows the original text in HTML, and is unchanged in JSON.
+- E12. `skip_reason` escapes a reason with H.
 
 ### Fix 2: report permissions
 
 - W1. A report written to a new path has mode 0600.
 - W2. A report written over an existing 0644 file has mode 0600 and the new content.
 - W3. With `--format md,json`, both files have mode 0600.
-- W4. `-o -` writes to standard output and creates no file.
+- W4. `--stdout` writes to standard output and creates no file.
 
 ### Manual checks
 
 - M1. A full local run in iTerm (`./macassay -o <temp path>`): the report reads as before, and the listener table and code spans show no stray backslashes.
 - M2. Open the M1 report and an E1 fixture report in a Markdown viewer that loads remote images (Obsidian or VS Code preview): no image, link, or HTML element comes from H.
+
+## E10 classification
+
+Raw values written to the Markdown body before 1.5.3, found with `grep` over `say` lines and `block` titles.
+
+Now through `mdesc` (from the audited Mac):
+- Time Machine destinations (`TMDEST`, volume names), latest backup and count (`LASTBK`, `NSD`), encryption (`TMENC`), home folder exclusion (`EXC`).
+- SSH offers (`AM`, parsed from the SSH client), SSH access group members, admin group members (`ADM`).
+- Account name in each account heading; the home path in that heading uses `mdcode`, inside a code span.
+- Guest account value (`GU`) in the unmanaged branch.
+- Block title "Largest items in" (`THOME`, from `dscl`); sudoers file blocks and their skip lines (file names in `/etc/sudoers.d`).
+- Every `skip_reason` output, through `md_esc`.
+
+Left raw (set by the script):
+- Counts: memory, Jetsam reports, panics, snapshots, backup age, packages, firewall entries, writable folders, root daemons, login items, crontab entries, SSH log counts, XProtect results, SSH client blocks.
+- `XPI` (a date that a `sed` pattern extracts), `LANIP` (an address), `sc` (fixed text), `SW` (inside a code span), block titles and `h2`/`h3` headings with fixed text.
+- `M_HOST` and `M_USER` in the header, which `valid_meta` limits to `[A-Za-z0-9_.-]`.
 
 ## Review findings
 
@@ -53,3 +72,19 @@ Triage per `../AGENTS.md` (Review findings). C is the first review (Codex, 2026-
 - G6 No DDM coverage: dropped. Documented in `README.md:54` and in each report's Limitations.
 - G7 EDR alerts, enterprise data handling, maintainer maturity: dropped. Outside the Security Context (one user, own Macs).
 - G8 No advice to turn off Full Disk Access after an audit: dropped; no requirement. Offered to the user as an optional README line.
+
+Pre-merge review of `fix/1.5.3` at `b5d8695` (R, 2026-11-27, opus, high):
+
+- R1 Limitations and `skip_reason` escaping had no test (three mutations passed): fixed with E11 and E12; each mutation now fails a case.
+- R2 E9 not built as planned, E10 and results missing: fixed. E9 compares with the `v1.5.2` script; E10 and Results below.
+- R3 Raw values from the audited Mac still in Markdown (`GU`, the `THOME` block title, sudoers file names): fixed. They break the "Text from the audited Mac is data" invariant as written; only root or an admin can set them.
+- R4 The docs named an `-o -` mode that does not exist: fixed; the docs name `--stdout`.
+- R5 `-o /dev/null` now fails because `chmod` is refused: dropped. No requirement; `--stdout >/dev/null` works. Recorded in the design doc.
+- R6 E2's regex accepts `\\[`: dropped. E1's exact match covers that case.
+
+## Results
+
+- Fixtures (2026-11-27, development Mac, `/bin/bash` 3.2): all cases pass, including E1 to E12 and W1 to W4. `bash -n` passes; ShellCheck shows the 3 historical findings in `macassay` and no new finding in `dev/test.sh`.
+- Mutations (2026-11-27): removing the `chmod`, the `\` from either `md_esc`, `md_unesc` on bold lines, its `\\` handling, or the escaping of change lines, accepted-risk reasons, Markdown limitations, HTML limitations, or `skip_reason` each makes a 1.5.3 case fail.
+- M1 (2026-11-27, agent session without Full Disk Access, `--quick --offline --skip-du --format md,html`): both files are mode 0600. The only escaped value was `tmutil`'s `[Included]`, which shows as `[Included]` in HTML. No backslash appears in a code span. A full run in iTerm is still to do.
+- M2: not run; it needs the user to open a fixture report in a viewer that loads remote images.

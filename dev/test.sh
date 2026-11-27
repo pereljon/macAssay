@@ -1455,8 +1455,25 @@ check "1.5.3 E8 JSON finding text unchanged" has "$X3/e.out.json" '![x](http://h
 check "1.5.3 E8 CSV finding text unchanged" has "$X3/e.out.csv" "\"$H\""
 check "1.5.3 E8 OCSF finding text unchanged" has "$X3/e.out.ocsf.jsonl" '![x](http://host.invalid/a.png) <img'
 check "1.5.3 E8 no Markdown escape in JSON" hasnt "$X3/e.out.json" '!\\['
-P3T='Quarantine: on (managed); 3 items, 0 of them HTTP 200'
-check "1.5.3 E9 text without the four characters is unchanged" [ "$(mdesc "$P3T")" = "$(printf '%s' "$P3T" | clean_field)" ]
+# E9: data without the four characters renders the same Markdown and HTML as release 1.5.2.
+if git rev-parse -q --verify 'refs/tags/v1.5.2' >/dev/null 2>&1 && git show v1.5.2:macassay > "$X3/old.sh" 2>/dev/null; then
+  mkfix "$X3/n"; printf '%s\n' $'MEDIUM\tMA-SHARING-026\tSharing\tRemote tool "q" (x) & y: caf\303\251\t6\tlocal' > "$X3/n/findings.tsv"
+  # shellcheck disable=SC2016  # literal Markdown code spans, not command substitutions
+  printf '%s\n' '' '## 6. Sharing and remote access' '' '- AirDrop: off (managed)' '**Account alice** (`/Users/alice`)' \
+    '| `*.22` | `/sbin/launchd` | 1 | Apple | 000 |' '' '```text' 'plain block' '```' > "$X3/n/body.md"
+  cp -R "$X3/n" "$X3/n2"; rfix "$X3/n" "md html"
+  # shellcheck disable=SC1091,SC2034  # the 1.5.2 script reads MACASSAY_LIB; it is extracted at run time
+  ( MACASSAY_LIB=1; . "$X3/old.sh"; rfix "$X3/n2" "md html" )
+  check "1.5.3 E9 Markdown matches 1.5.2" cmp -s "$X3/n.out.md" "$X3/n2.out.md"
+  check "1.5.3 E9 HTML matches 1.5.2" cmp -s "$X3/n.out.html" "$X3/n2.out.html"
+else echo "skip 1.5.3 E9: no v1.5.2 tag"; fi
+# E11: the limitations list escapes in Markdown and shows the original text in HTML. E12: skip_reason escapes.
+mkfix "$X3/l"; printf 'other\tlabel [x](http://host.invalid/l) <b> \\[\treason\t\n' > "$X3/l/skipped.tsv"; rfix "$X3/l" "md html json"
+check "1.5.3 E11 limitations escaped in Markdown" has "$X3/l.out.md" '- Skipped: label \[x\](http://host.invalid/l) \<b> \\\[ (reason)'
+check "1.5.3 E11 limitations show the original text in HTML" has "$X3/l.out.html" '<li>Skipped: label [x](http://host.invalid/l) &lt;b&gt; \[ (reason)</li>'
+check "1.5.3 E11 limitations unchanged in JSON" has "$X3/l.out.json" 'Skipped: label [x](http://host.invalid/l) <b> \\[ (reason)'
+printf 'other\tE12 label\t%s\t\n' "$H" > "$X3/e12.tsv"
+check "1.5.3 E12 skip_reason escapes" [ "$(SKIPS="$X3/e12.tsv" skip_reason "E12 label")" = "$HM" ]
 # W: report permissions. A new file and an overwritten 0644 file both end up 0600; standard output writes no file.
 mkfix "$X3/w"; rfix "$X3/w" md "$X3/w-new.md"
 check "1.5.3 W1 new report is 0600" [ "$(stat -f %Lp "$X3/w-new.md")" = 600 ]

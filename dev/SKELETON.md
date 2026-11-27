@@ -63,11 +63,11 @@ Enforced by: the `OFFLINE` tests around `softwareupdate -l`, `brew outdated`, an
 
 ### Text from the audited Mac is data
 
-Rule: never execute text read from the audited Mac, or use it unquoted in a command. This covers file names, process names, plist and JSON values, listener answers, and log lines. Such text reaches the report only through `block` and `clean`, or `finding`, `mdesc`, and `clean_field`, which keep it inside one code block or one table cell. A name on disk never decides a severity.
+Rule: never execute text read from the audited Mac, or use it unquoted in a command. This covers file names, process names, plist and JSON values, listener answers, and log lines. Such text reaches the report only through `block` and `clean`, or `finding`, `mdesc`, `mdcode`, and `clean_field`, which keep it inside one code block or one table cell. In the Markdown report, text outside a code span or code block is also escaped (`md_esc`), so it never renders as a link, an image, or HTML. A name on disk never decides a severity.
 
 Reason: an attacker who can create a file or start a process on the audited Mac controls that text. The report is also read by LLMs, which must treat it as data. Every report opens with a notice that says so (`REPORT_NOTICE`), and states it nowhere else.
 
-Enforced by: `clean_field`, `block`, `mdesc`; one escaping function for each output format (`html_esc`, `md_html`, `csv_field`, and `JSON.stringify` in `REPORT_JS`; fixtures P3, P5, P6, P7); `REPORT_NOTICE` (fixture N1); the JXA script `BREW_RECEIPTS_JS`, which parses with `JSON.parse` and strips tabs and newlines; `remote_installed_findings`, which takes severity from place labels only. Fixtures F10, R1, R3, R6, R8, and the hostile-name cases in F3 and Q2.
+Enforced by: `clean_field`, `block`, `mdesc`, `mdcode`; one escaping function for each output format (`md_esc` in the shell and in `MD_LIB`, `html_esc`, `md_html` with `md_unesc`, `csv_field`, and `JSON.stringify` in `REPORT_JS`; fixtures P3, P5, P6, P7, and E1 to E12 in the 1.5.3 cases); `REPORT_NOTICE` (fixture N1); the JXA script `BREW_RECEIPTS_JS`, which parses with `JSON.parse` and strips tabs and newlines; `remote_installed_findings`, which takes severity from place labels only. Fixtures F10, R1, R3, R6, R8, and the hostile-name cases in F3 and Q2.
 
 ### No secrets in the report
 

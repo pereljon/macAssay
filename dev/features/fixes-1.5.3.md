@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: designing
-status: drafted 2026-11-27 from two outside reviews of 1.5.2
+lifecycle: building
+status: drafted 2026-11-27 from two outside reviews of 1.5.2; built on fix/1.5.3 2026-11-27
 ---
 
 # Markdown escaping and report permissions (version 1.5.3)
@@ -25,17 +25,17 @@ Text read from the audited Mac stays inert text in every Markdown viewer, and a 
 
 ### Cause
 
-`clean_field` (`macassay:88`) removes tabs, newlines, pipes, backticks, and control characters. It keeps `[`, `]`, `!`, `(`, and `<`. A finding's text goes into the Markdown findings table outside a code span, so `![x](http://host/a.png)` renders as a remote image, and `<img src=...>` renders as HTML in viewers that allow it. MA-PERSISTENCE-001 copies a program path under `/tmp` into its text, and anyone who can create that file chooses the path. The same holds for every `mdesc` value outside a code span in the report body. Twelve `say` lines also write a variable without `mdesc` (count from `grep`, not yet classified).
+`clean_field` (`macassay:88`) removes tabs, newlines, pipes, backticks, and control characters. It keeps `[`, `]`, `!`, `(`, and `<`. A finding's text goes into the Markdown findings table outside a code span, so `![x](http://host/a.png)` renders as a remote image, and `<img src=...>` renders as HTML in viewers that allow it. MA-PERSISTENCE-001 copies a program path under `/tmp` into its text, and anyone who can create that file chooses the path. The same holds for every `mdesc` value outside a code span in the report body. Some `say` lines and `block` titles also write a value from the audited Mac without `mdesc`; `fixes-1.5.3-tests.md` (E10) lists them.
 
 The HTML report escapes with `html_esc` and never makes a link, so it is not affected. `clean_field` also feeds the JSON, CSV, and OCSF formats, so the fix cannot go there.
 
 ### Change
 
 1. Add `md_esc`, which puts a backslash before each `\`, `[`, `]`, and `<`. Backslash escapes of these characters are standard Markdown (CommonMark 6.1). Escaping `[` breaks links, images, and reference links; escaping `<` breaks raw HTML and `<URL>` autolinks; escaping `\` stops input from cancelling an escape.
-2. `mdesc` becomes `clean_field` followed by `md_esc`. Add `mdcode`, which is `clean_field` alone, for the six call sites inside a code span. Markdown does not process escapes in a code span, and a code span renders nothing active.
-3. In `render_md` and `md_changes`, escape the finding text (field 4) and the accepted-risk reason (field 8) with the same rule, as an awk function in the Markdown path only.
-4. Classify the twelve `say` lines that write a raw variable. Route each value that comes from the audited Mac through `mdesc`. Leave counts and values the script sets itself.
-5. In `md_html`, `md_inline` removes the backslash from `\\`, `\[`, `\]`, and `\<` outside code spans, so the HTML report shows the original text. It still escapes the text with `html_esc`.
+2. `mdesc` becomes `clean_field` followed by `md_esc`. Add `mdcode`, which is `clean_field` alone, for the call sites inside a code span (seven calls on six lines). Markdown does not process escapes in a code span, and a code span renders nothing active.
+3. In the Markdown path only, escape with the same rule: the finding text (field 4) and the accepted-risk reason (field 8) in `render_md` (awk `md_esc` in `MD_LIB`); the old host, date, options, and change lines in `md_changes`; the Limitations list; and `skip_reason`, whose output goes only into `say` lines.
+4. Classify each `say` line and `block` title that writes a raw value. Route each value that comes from the audited Mac through `mdesc`. Leave counts and values the script sets itself.
+5. In `md_html`, `md_unesc` removes the backslash from `\\`, `\[`, `\]`, and `\<` outside code spans and on bold lines, so the HTML report shows the original text. It runs after `html_esc`, so it matches `\&lt;` for `\<`. The HTML Limitations list escapes with `md_esc` before `md_inline`, so that a backslash in a skip reason survives.
 
 Bare URLs stay as text. Some viewers (GitHub Flavored Markdown) show them as links, but a viewer never fetches a link without a click, and macAssay already prints URLs that a person may want to open.
 
@@ -49,7 +49,9 @@ Remote mode needs no change: the remote side writes `body.md` with the same scri
 
 ### Change
 
-After each `cp`, run `chmod 600` on the report. A failed `chmod` reports `Could not write PATH.` and returns 1, as a failed `cp` does. Standard output mode (`-o -`) writes no file and is unchanged.
+After each `cp`, run `chmod 600` on the report. A failed `chmod` reports `Could not write PATH.` and returns 1, as a failed `cp` does. `--stdout` writes no file and is unchanged.
+
+A target the user cannot `chmod`, such as `-o /dev/null`, now fails with `Could not write /dev/null.` (review finding R5, dropped). `--stdout >/dev/null` gives the same result as before.
 
 A symbolic link at the target path keeps working as today: the run writes as the user, to a path the user chose, so no other account can plant the link (review finding C3, symlink half, dropped).
 

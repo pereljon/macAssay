@@ -1545,7 +1545,7 @@ else say "- Kernel panics in 30 days: unreadable (DiagnosticReports folder not r
 h3 "Disk usage"
 if [ "$SKIPDU" -eq 0 ]; then
   echo "Measuring home folder usage..." >&2
-  ( cd "$THOME" && du -sh -x -- .[!.]* * Library/* 2>/dev/null | sort -rh | head -25 ) | block "Largest items in $THOME (top 25)"
+  ( cd "$THOME" && du -sh -x -- .[!.]* * Library/* 2>/dev/null | sort -rh | head -25 ) | block "Largest items in $(mdesc "$THOME") (top 25)"
   : > "$TMP/du"
   priv "du /Users" /usr/bin/du -h -d 1 -x /Users >> "$TMP/du" 2>/dev/null
   priv "du system folders" /usr/bin/du -sh -x /Library /Applications /opt /private/var >> "$TMP/du" 2>/dev/null
@@ -2129,7 +2129,7 @@ for d in /Users/*; do [ -d "$d" ] || continue; [ "${d##*/}" = Shared ] && contin
 done
 run "Recent logins" sh -c 'last -25 | grep -v "^$"'
 pref com.apple.loginwindow GuestEnabled "$(defaults read /Library/Preferences/com.apple.loginwindow GuestEnabled 2>/dev/null)"; GU="$PV"
-if [ "$PSRC" = managed ]; then say "- Guest account enabled: $(mdesc "$GU") (managed)"; else say "- Guest account enabled: ${GU:-not set (off)}"; fi
+if [ "$PSRC" = managed ]; then say "- Guest account enabled: $(mdesc "$GU") (managed)"; else say "- Guest account enabled: $(mdesc "${GU:-not set (off)}")"; fi
 [ "$GU" = 1 ] && finding MA-ACCOUNTS-004 LOW Accounts "The guest account is enabled." "$PSRC"
 ls -l /etc/sudoers.d 2>&1 | block "/etc/sudoers.d"
 OTHERSD=$(for f in /etc/sudoers.d/*; do [ -e "$f" ] && [ "${f##*/}" != macassay ] && echo "${f##*/}"; done | paste -sd, -)
@@ -2138,11 +2138,11 @@ h3 "Sudo configuration"
 noncomment(){ awk '/^[[:space:]]*$/ {next} /^[[:space:]]*#/ && !/^[[:space:]]*#(include|[0-9])/ {next} {print}'; }
 sudo_file(){ # LABEL PATH
   if priv "$1" /bin/cat "$2" > "$TMP/sud" 2>/dev/null; then
-    noncomment < "$TMP/sud" | block "$2 (non-comment lines)"
+    noncomment < "$TMP/sud" | block "$(mdesc "$2") (non-comment lines)"
     sudoers_findings "$2" < "$TMP/sud" | while IFS=$'\t' read -r id sev text; do finding "$id" "$sev" Accounts "$text"; done
     return 0
   fi
-  say "- $2: skipped ($(skip_reason "$1"))"; return 1; }
+  say "- $(mdesc "$2"): skipped ($(skip_reason "$1"))"; return 1; }
 : > "$TMP/sown"
 for p in /etc/sudoers /etc/sudoers.d /etc/sudoers.d/* /usr/bin/sudo; do [ -e "$p" ] || continue
   o=$(stat -f '%Su:%Sg %Sp' "$p" 2>/dev/null); echo "$o $p"
