@@ -247,7 +247,12 @@ trusted_certs() {
 
 # Allow-lists for output whose format may hold identifiers. Lines with a UUID or a long hex string are dropped.
 drop_ids() { grep -vE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32}'; }
-redact_ids() { sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
+redact_ids() { LC_ALL=C sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g'; }
+# normalize_file IN OUT: OUT is IN as valid UTF-8 with dashed UUIDs replaced. Fails, and leaves no OUT, when a step fails.
+# iconv runs first: BSD sed stops at an invalid byte under a UTF-8 locale. Redaction runs second: iconv -c can join a split UUID.
+normalize_file() {
+  if iconv -c -f UTF-8 -t UTF-8 < "$1" > "$2.u" 2>/dev/null && redact_ids < "$2.u" > "$2"; then rm -f "$2.u"; return 0; fi
+  rm -f "$2" "$2.u"; return 1; }
 # Certificate labels can hold account identifiers as long hex strings.
 mask_hex() { sed -E 's/[0-9A-Fa-f]{32,}/<ID>/g'; }
 filter_bputil() { grep -iE 'security mode|system integrity|sip|kext|kernel extension|mdm|user-approved' | drop_ids; }
@@ -1535,7 +1540,8 @@ NPR=$(grep -c . "$TMP/privran"); NPS=$(grep -c '^priv' "$SKIPS"); NOS=$(grep -c 
   [ -n "$BREW" ] && echo "- Homebrew settings come from the environment that started the audit and from Homebrew's brew.env files. A remote run sees the SSH session's environment, which can differ from the user's terminal."
   cat "$BODY"
 } > "$TMP/report.md"
-redact_ids < "$TMP/report.md" > "$TMP/report.out" && mv "$TMP/report.out" "$TMP/report.md"
+normalize_file "$TMP/report.md" "$TMP/report.out" || die "Could not normalize the report; no report written."
+mv "$TMP/report.out" "$TMP/report.md"
 total_status
 if [ "$STDOUT" -eq 1 ]; then cat "$TMP/report.md"; echo "Report sent to stdout ($(grep -c . "$FIND") findings)" >&2
 else cp "$TMP/report.md" "$OUT" && echo "Report written to $OUT ($(grep -c . "$FIND") findings)" >&2; fi
