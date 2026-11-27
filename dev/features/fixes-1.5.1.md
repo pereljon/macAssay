@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: building
-status: approved by the user 2026-11-27
+lifecycle: shipped
+status: shipped in v1.5.1 (2026-11-27)
 ---
 
 # Fixes from the post-release decision review (version 1.5.1)
