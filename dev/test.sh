@@ -991,6 +991,8 @@ check "1.5 P7 CRLF line ends" [ "$(grep -c $'\r$' "$P7")" -eq "$(grep -c . "$P7"
 check "1.5 P8 check_formats" [ "$(check_formats md,csv,md)" = "md csv" ]
 check "1.5 P8 unknown format" not check_formats md,pdf
 check "1.5 P8 empty format name" not check_formats md,,csv
+check "1.5 P8 trailing empty name" not check_formats md,
+check "1.5 P8 trailing empty name after two" not check_formats md,csv,
 check "1.5 P8 base path with several formats" [ "$(out_paths base "" md csv | cut -f2 | paste -sd, -)" = "base.md,base.csv" ]
 check "1.5 P8 one format keeps -o as given" [ "$(out_paths file.txt "" csv | cut -f2)" = "file.txt" ]
 check "1.5 P8 trailing extension removed" [ "$(out_paths report.md "" md json | cut -f2 | paste -sd, -)" = "report.md,report.json" ]

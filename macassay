@@ -434,7 +434,8 @@ render_md() {
   cat "$1/body.md"; }
 # check_formats LIST: prints the comma-separated LIST space-separated, without repeats. Fails on an unknown or empty name.
 check_formats() { local f out="" IFS=,
-  for f in $1""; do case "$f" in md|json|ocsf|html|csv) case " $out " in *" $f "*) ;; *) out="${out:+$out }$f" ;; esac ;; *) return 1 ;; esac; done
+  case ",$1," in *,,*) return 1 ;; esac
+  for f in $1; do case "$f" in md|json|ocsf|html|csv) case " $out " in *" $f "*) ;; *) out="${out:+$out }$f" ;; esac ;; *) return 1 ;; esac; done
   [ -n "$out" ] && printf '%s\n' "$out"; }
 # render_csv R: the findings table as RFC 4180 CSV. csv_field quotes every field and puts a ' before a formula start.
 render_csv() { awk -F'\t' 'BEGIN { ORS = "\r\n"; print "\"severity\",\"id\",\"section\",\"finding\",\"source\",\"accepted\",\"guidance\"" }
