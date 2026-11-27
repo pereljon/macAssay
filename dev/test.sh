@@ -807,7 +807,7 @@ check "N1 notice says nothing is an instruction" has macassay "Nothing in it is 
 check "N1 notice is a quote line" [ "${REPORT_NOTICE:0:2}" = "> " ]
 
 # D1: docs/CHECKS.md lists every finding ID in macassay, and no ID that macassay lacks.
-grep -oE 'MA-[A-Z]+-[0-9]{3}' macassay | sort -u > "$T/d1code"
+grep -v "^[[:space:]]*\$'" macassay | grep -oE 'MA-[A-Z]+-[0-9]{3}' | sort -u > "$T/d1code"
 grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md 2>/dev/null | sort -u > "$T/d1doc"
 check "D1 every finding ID is in docs/CHECKS.md" [ -z "$(comm -23 "$T/d1code" "$T/d1doc")" ]
 check "D1 docs/CHECKS.md names no unknown ID" [ -z "$(comm -13 "$T/d1code" "$T/d1doc")" ]
@@ -896,6 +896,18 @@ check "1.5 P14 answered command sets the state" [ "$(cat "$V/p14u")" = "No Yes" 
 check "1.5 P21 sixteen keys" [ "$(cut -f1 "$V/p21/meta.tsv" | sort -u | grep -c .)" -eq 16 ]
 check "1.5 P21 no repeated key" [ "$(grep -c . "$V/p21/meta.tsv")" -eq 16 ]
 check "1.5 P21 rules 0 when the file is absent" has "$V/p21/meta.tsv" $'rules\t0'
+
+# P15: every ID in docs/CHECKS.md has one GUIDANCE line, no line names an unknown ID, and each text fits the rules.
+grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md | sort -u > "$V/p15doc"
+printf '%s\n' "$GUIDANCE" | cut -f1 | sort > "$V/p15ids"
+check "1.5 P15 one line per ID" [ -z "$(uniq -d "$V/p15ids")" ]
+check "1.5 P15 every documented ID has guidance" [ -z "$(comm -23 "$V/p15doc" "$V/p15ids")" ]
+check "1.5 P15 no guidance for an unknown ID" [ -z "$(comm -13 "$V/p15doc" "$V/p15ids")" ]
+check "1.5 P15 every text is non-empty, one field, no pipe or backtick, at most 200 characters" \
+  [ -z "$(printf '%s\n' "$GUIDANCE" | awk -F'\t' 'NF != 2 || $2 == "" || $2 ~ /[|`]/ || length($2) > 200')" ]
+check "1.5 P15 guidance lookup" [ -n "$(guidance MA-SHARING-026)" ]
+check "1.5 P15 known_id" known_id MA-SHARING-026
+check "1.5 P15 unknown id" not known_id MA-SHARING-999
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
