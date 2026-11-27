@@ -22,8 +22,10 @@
 #   --accepted FILE  move accepted findings out of the findings table; each line holds a
 #                    finding ID, an optional exact finding text, and a reason after #
 #   --compare FILE   list new, resolved, and not-checked findings against an earlier JSON report
+#   --fail-on LEVEL  exit 3 when an open finding is at or above LEVEL: high, medium, low, info
 #   -h, --help       print this help
 #   --version        print the version
+# Exit status: 0 finished, 1 error, 2 usage error, 3 a finding reached --fail-on.
 # Privileged checks run only through sudo rules for read-only commands with exact arguments:
 #   --print-sudoers[=USER]    print the rules for USER (default: you); needs no root
 #   --install-sudoers[=USER]  run with sudo; write /etc/sudoers.d/macassay for USER
@@ -576,6 +578,9 @@ out_paths() { local out="$1" base="$2" f; shift 2
   for f; do printf '%s\t%s%s\n' "$f" "$base" "$(fmt_ext "$f")"; done; }
 # render_one FORMAT R: prints one format on stdout.
 render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; json|ocsf) osascript -l JavaScript -e "$REPORT_JS" "$1" "$2" ;; html) render_html "$2" ;; *) return 1 ;; esac; }
+# fail_hit LEVEL ROWS: succeeds when an open finding in ROWS is at or above LEVEL (high, medium, low, or info).
+fail_hit() { awk -F'\t' -v l="$1" 'BEGIN { r["HIGH"] = 4; r["MEDIUM"] = 3; r["LOW"] = 2; r["INFO"] = 1; t = r[toupper(l)] }
+  t && $7 == 0 && r[$1] >= t {f = 1} END {exit !f}' "$2"; }
 # render_all SRC: normalizes, validates, and renders the data files in SRC into every format in FMTS.
 # Writes no file unless every format rendered. Returns 0, 1, or 3 (--fail-on).
 render_all() { local R="$TMP/render" f p n
@@ -594,6 +599,7 @@ render_all() { local R="$TMP/render" f p n
     if [ "$STDOUT" -eq 1 ]; then cat "$R/out.$f"; echo "Report sent to stdout ($n findings)" >&2
     else cp "$R/out.$f" "$p" || { echo "Could not write $p." >&2; return 1; }; echo "Report written to $p ($n findings)" >&2; fi
   done < "$R/outs"
+  if [ -n "$FAILON" ] && fail_hit "$FAILON" "$R/rows.tsv"; then return 3; fi
   return 0; }
 h3()   { say ""; say "### $*"; say ""; }
 clean(){ sed -e 's/```/'"'''"'/g'; }                       # keep code fences intact
@@ -1305,7 +1311,7 @@ git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/,
 
 # ---------- options and mode ----------
 OUT=""; QUICK=0; OFFLINE=0; SKIPDU=0; STDOUT=0; MODE=""; SUSER=""
-DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""; COMPARE=""
+DEFBASE=""; FORMATS=md; OUTOPTS=""; ACCEPTED=""; COMPARE=""; FAILON=""
 RHOST=""; RUSER=""; RKEY=""; RPORT=""; RKH=""
 need() { [ $# -ge 2 ] || die "Option $1 needs a value (see -h)." 2; }
 setmode() { [ -z "$MODE" ] || [ "$MODE" = "$1" ] || die "--$MODE and --$1 cannot be combined." 2; MODE="$1"; }
@@ -1321,6 +1327,7 @@ while [ $# -gt 0 ]; do
     --format) need "$@"; FORMATS="$2"; OUTOPTS="$OUTOPTS --format"; shift 2 ;;
     --accepted) need "$@"; ACCEPTED="$2"; OUTOPTS="$OUTOPTS --accepted"; shift 2 ;;
     --compare) need "$@"; COMPARE="$2"; OUTOPTS="$OUTOPTS --compare"; shift 2 ;;
+    --fail-on) need "$@"; FAILON="$2"; OUTOPTS="$OUTOPTS --fail-on"; shift 2 ;;
     --host) need "$@"; RHOST="$2"; shift 2 ;;
     --user) need "$@"; RUSER="$2"; shift 2 ;;
     --key) need "$@"; RKEY="$2"; shift 2 ;;
@@ -1336,6 +1343,7 @@ while [ $# -gt 0 ]; do
 done
 
 FMTS=$(check_formats "$FORMATS") || die "Unknown format in --format: $FORMATS (use md, json, ocsf, html, or csv)." 2
+case "$FAILON" in ''|high|medium|low|info) ;; *) die "--fail-on takes high, medium, low, or info." 2 ;; esac
 if [ -n "$MODE" ] && [ -n "$OUTOPTS" ]; then die "--$MODE cannot be combined with$OUTOPTS." 2; fi
 case "$FMTS" in *" "*) [ "$STDOUT" -eq 0 ] || die "--stdout works with one format only." 2 ;; esac
 

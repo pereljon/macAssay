@@ -1148,5 +1148,14 @@ check "1.5 P10 wrong schema fails" [ $? -ne 0 ]
 check "1.5 P10 wrong schema exits 2 before any audit work" p17 --compare "$V/p10bad.json"
 for m in --print-sudoers --install-sudoers; do check "1.5 P17 --compare with $m" p17 "$m" --compare "$V/p10old.json"; done
 
+# P11: --fail-on. The fixture has one MEDIUM and two LOW findings.
+mkfix "$V/p11"
+( FAILON=medium; rfix "$V/p11" md ); check "1.5 P11 --fail-on medium exits 3" [ $? -eq 3 ]
+( FAILON=high; rfix "$V/p11" md ); check "1.5 P11 --fail-on high exits 0" [ $? -eq 0 ]
+printf 'MA-SHARING-026\t\tok\n' > "$V/p11.acc"
+( FAILON=medium; rfix "$V/p11" md ); check "1.5 P11 accepted MEDIUM with --fail-on medium exits 0" [ $? -eq 0 ]
+check "1.5 P11 bad level exits 2" p17 --fail-on severe
+for m in --print-sudoers --install-sudoers; do check "1.5 P17 --fail-on with $m" p17 "$m" --fail-on high; done
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
