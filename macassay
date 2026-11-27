@@ -383,13 +383,13 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-ACCOUNTS-004\tTurn off the guest account in System Settings, Users & Groups, unless people need to use this Mac as a guest.' \
   $'MA-ACCOUNTS-005\tReplace the NOPASSWD rule for ALL with rules for exact commands, and edit the file with visudo so a syntax error cannot lock sudo.' \
   $'MA-ACCOUNTS-006\tCheck that each NOPASSWD rule names only commands that cannot change the system, and edit the file with visudo.' \
-  $'MA-ACCOUNTS-007\tRead docs/SUDOERS.md, then rerun sudo ./macassay --install-sudoers if you want these files covered; it rewrites the macassay file in /etc/sudoers.d.' \
+  $'MA-ACCOUNTS-007\tRun ./macassay --print-sudoers to review the rules, then rerun sudo ./macassay --install-sudoers to cover these files; it rewrites the macassay file in /etc/sudoers.d.' \
   $'MA-ACCOUNTS-008\tMake the program in the NOPASSWD rule writable by root only, or point the rule at a root-owned copy of it.' \
   $'MA-ACCOUNTS-009\tReplace the NOPASSWD rule for the program that can run other code with a rule for one exact command, and edit the file with visudo.' \
   $'MA-ACCOUNTS-010\tRemove Defaults !authenticate with visudo unless every rule that it covers should run without a password.' \
   $'MA-ACCOUNTS-011\tRemove the weak Defaults line with visudo unless you need it; it changes how sudo handles the environment or terminal sessions.' \
   $'MA-ACCOUNTS-012\tFind the extra account with dscl . -list /Users UniqueID and remove it or give it its own UID, because UID 0 carries root rights.' \
-  $'MA-ACCOUNTS-013\tCheck whether you created the hidden administrator account, and remove it with sudo sysadminctl -deleteUser if you did not; that deletes the account.' \
+  $'MA-ACCOUNTS-013\tCheck whether you created the hidden administrator account; if not, remove it with sudo sysadminctl -deleteUser NAME, which deletes its home folder too.' \
   $'MA-ACCOUNTS-014\tCheck which software created the hidden account, and keep it only if a service that you use needs it.' \
   $'MA-ACCOUNTS-015\tRemove write access for other accounts from the home folder with chmod, for example chmod go-w, which changes its permissions.' \
   $'MA-ACCOUNTS-016\tRestore root ownership and the standard mode on each listed sudo file with chown and chmod, and check the result with ls -l.' \
@@ -402,12 +402,12 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-APPS-007\tAsk your MDM administrator to confirm that the policy force-installing these browser extensions is expected.' \
   $'MA-APPS-008\tRead the native-messaging host file and the program in the temporary or shared folder, and remove the host if you did not install it.' \
   $'MA-APPS-009\tRemove the native-messaging host file that points to a missing program, or reinstall the extension that owns it.' \
-  $'MA-APPS-010\tReview the native-messaging host files and keep only those of browser extensions that you use, because each one lets an extension start a local program.' \
+  $'MA-APPS-010\tRead each host file to see which program it starts and which extension may call it, and delete files of extensions you no longer use.' \
   $'MA-BACKUPS-001\tSet up Time Machine or another backup in System Settings, General, Time Machine.' \
-  $'MA-BACKUPS-002\tDecide whether the backup disk needs encryption, and if so add the destination again with the Encrypt Backup option in the Time Machine settings.' \
+  $'MA-BACKUPS-002\tDecide whether the backup disk needs encryption; adding it again with Encrypt Backup in the Time Machine settings may erase the existing backups.' \
   $'MA-BACKUPS-003\tConnect the backup disk or check the network destination, start a backup from the Time Machine settings, and confirm that a new one finishes.' \
-  $'MA-BACKUPS-004\tTurn on the Back Up Automatically setting in the Time Machine settings, or run backups by hand on a schedule.' \
-  $'MA-BACKUPS-005\tRemove the home folder from the Time Machine exclusion list in the Time Machine options unless you excluded it on purpose.' \
+  $'MA-BACKUPS-004\tTurn on automatic backups for the backup disk in the Time Machine settings, or run sudo tmutil enable, which turns automatic backups on.' \
+  $'MA-BACKUPS-005\tRemove the home folder exclusion in Time Machine Options, or run tmutil removeexclusion ~, which clears its exclusion mark, unless you excluded it on purpose.' \
   $'MA-CREDENTIALS-001\tRemove read access for other accounts with chmod 600 on the listed files, then rotate the secrets that they hold.' \
   $'MA-CREDENTIALS-002\tSet each listed key file to mode 600 with chmod, then treat the key as exposed and replace it.' \
   $'MA-CREDENTIALS-003\tMove the inline secrets into a credential helper or the Keychain, and rotate them if the file was ever shared.' \
@@ -428,24 +428,24 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-HEALTH-006\tCheck battery health in System Settings, Battery, and plan a battery service if the condition or capacity stays low.' \
   $'MA-NETWORK-001\tIdentify the program that owns the listener with lsof, then require a login, bind it to localhost, or stop it.' \
   $'MA-NETWORK-002\tConfirm that this program should be reachable from other devices, and limit it to localhost or turn on the firewall if not.' \
-  $'MA-NETWORK-003\tCheck what the tunnel program publishes to the internet, and stop it if you did not start it.' \
-  $'MA-NETWORK-004\tOpen System Settings, Network, your connection, Details, Proxies, and confirm that you set each proxy or auto-config address.' \
+  $'MA-NETWORK-003\tCheck which services the tunnel forwards in its configuration or dashboard, and stop the process by its PID if you did not start it.' \
+  $'MA-NETWORK-004\tCompare the proxy address with the one that your workplace or VPN provider gives you, and clear it in Network, Details, Proxies if unknown.' \
   $'MA-NETWORK-005\tRead the listed /etc/hosts entries and remove any that you did not add, because they send a name to another address.' \
   $'MA-PERSISTENCE-001\tFind out which software installed the launch item, and remove the item and its program if you do not recognise them.' \
   $'MA-PERSISTENCE-002\tFind out which software installed the launch item, then reinstall that software or remove the item whose program is gone.' \
   $'MA-PERSISTENCE-003\tConfirm that you installed the software that added or changed this startup item, and check that its program comes from a developer you know.' \
-  $'MA-PERSISTENCE-004\tMake the root daemon, its program, its scripts, and their folders writable by root only, so no other account can change them.' \
-  $'MA-PERSISTENCE-005\tRead the script that the login hook names, then remove the hook with sudo defaults delete com.apple.loginwindow LoginHook, which deletes that setting.' \
+  $'MA-PERSISTENCE-004\tMake the root daemon, its program, its scripts, and their folders writable by root only with chown and chmod, which change owner and permissions.' \
+  $'MA-PERSISTENCE-005\tRead the script that the login hook names, then delete the LoginHook key from the loginwindow preferences with defaults delete (use sudo for /Library/Preferences/com.apple.loginwindow).' \
   $'MA-PERSISTENCE-006\tRead the shell startup files in your home folder and /etc for the matching lines, and remove any that you did not write.' \
   $'MA-PERSISTENCE-007\tCheck what created each executable in /Users/Shared and the temporary folders, and delete the ones that you do not recognise.' \
   $'MA-PERSISTENCE-008\tFind which launchd job or profile sets DYLD_INSERT_LIBRARIES and remove it unless a tool that you trust needs it.' \
   $'MA-PERSISTENCE-009\tRemove write access for other accounts from the shell startup file, and read the file for lines that you did not write.' \
   $'MA-PERSISTENCE-010\tConfirm that the other account owns the crontab on purpose, and read it with sudo crontab -u NAME -l, which only lists it.' \
   $'MA-PERSISTENCE-011\tRead the shell startup lines that decode base64 or run osascript -e, and remove any that you did not write.' \
-  $'MA-PERSISTENCE-012\tMake the authorization plugin writable by root only, or remove it, so that no other account can change code that runs at login.' \
+  $'MA-PERSISTENCE-012\tMake the authorization plugin writable by root only with chown and chmod, which change owner and permissions, or remove the plugin.' \
   $'MA-PERSISTENCE-013\tConfirm who installed the unsigned authorization plugin, and remove it from /Library/Security/SecurityAgentPlugins if no tool that you trust needs it.' \
   $'MA-PERSISTENCE-014\tConfirm that you trust the vendor of the authorization plugin and still use its software.' \
-  $'MA-PERSISTENCE-015\tMake the PAM module writable by root only, so that no other account can change code that checks passwords.' \
+  $'MA-PERSISTENCE-015\tMake the PAM module writable by root only with chown and chmod, which change owner and permissions.' \
   $'MA-PERSISTENCE-016\tFind out which software installed the PAM module outside /usr/lib/pam, and keep it only if a tool that you trust needs it.' \
   $'MA-PERSISTENCE-017\tFind out which software installed each StartupItems entry, and remove the ones that you do not need, because macOS no longer supports this method.' \
   $'MA-PERSISTENCE-018\tFind out which software installed each scripting addition in /Library/ScriptingAdditions, and remove the ones that you do not use.' \
@@ -469,10 +469,10 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-PLATFORM-013\tRead nvram boot-args to see which argument turns off code-signing checks, and remove all boot arguments with sudo nvram -d boot-args unless you need them.' \
   $'MA-PLATFORM-014\tRead nvram boot-args and confirm that you set each argument on purpose; sudo nvram -d boot-args deletes all of them.' \
   $'MA-PLATFORM-015\tFind out which profile or command turned quarantine off, and turn it back on unless a tool you trust needs it off.' \
-  $'MA-PLATFORM-016\tFind out who set DisableLibraryValidation in /Library/Preferences/com.apple.security.libraryvalidation, and delete that key with defaults delete unless a tool that you trust needs it.' \
+  $'MA-PLATFORM-016\tRemove DisableLibraryValidation with sudo defaults delete /Library/Preferences/com.apple.security.libraryvalidation DisableLibraryValidation, which deletes that key, unless a trusted tool needs it.' \
   $'MA-PLATFORM-017\tRemove write access for everyone from each listed app with chmod -R o-w, which changes its permissions, or reinstall the app from its developer.' \
   $'MA-PLATFORM-018\tFind which software made each listed folder in /Library writable by everyone, and remove that access with chmod o-w, which changes its permissions.' \
-  $'MA-PLATFORM-019\tConfirm that Find My Mac is off on purpose, and turn it on in your Apple Account iCloud settings unless an MDM manages it.' \
+  $'MA-PLATFORM-019\tAsk your MDM administrator whether Find My Mac should be off; on a personal Mac, turn it on in your Apple Account iCloud settings.' \
   $'MA-SHARING-001\tFind the program that listens on UDP 69 with sudo lsof -i UDP:69, and stop it unless you need TFTP.' \
   $'MA-SHARING-002\tRun sudo launchctl disable system/com.apple.tftpd unless you need TFTP; it stops launchd from starting the TFTP server on a request.' \
   $'MA-SHARING-003\tTurn off File Sharing in System Settings, General, Sharing unless you need it, and review the shared folders and users.' \
@@ -483,8 +483,8 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-SHARING-008\tLimit SSH to named users by creating the com.apple.access_ssh group with only those users, or turn off Remote Login in System Settings, General, Sharing.' \
   $'MA-SHARING-009\tSet PermitRootLogin no in a file under /etc/ssh/sshd_config.d unless you rely on root SSH sign-in.' \
   $'MA-SHARING-010\tTurn off Internet Sharing in System Settings, General, Sharing unless this Mac must share its connection with other devices.' \
-  $'MA-SHARING-011\tRemove guest access from the shared folders in File Sharing in System Settings, General, Sharing unless guests need it.' \
-  $'MA-SHARING-012\tCopy /etc/exports, then remove each export that you do not need, because each one shares a folder over NFS.' \
+  $'MA-SHARING-011\tTurn off guest access to shared folders in File Sharing options or under Guest User in Users & Groups, unless guests need it.' \
+  $'MA-SHARING-012\tBack up /etc/exports, then remove each export that you do not need, because each one shares a folder over NFS.' \
   $'MA-SHARING-013\tConfirm that you installed the running remote-support tool and still need it, and quit and remove it if not.' \
   $'MA-SHARING-014\tSet PermitUserEnvironment no in a file under /etc/ssh/sshd_config.d unless a user depends on it.' \
   $'MA-SHARING-015\tSet GatewayPorts no in a file under /etc/ssh/sshd_config.d unless forwarded ports must be reachable from other devices.' \
@@ -499,19 +499,19 @@ GUIDANCE=$(printf '%s\n' \
   $'MA-SHARING-024\tTurn off Media Sharing in System Settings, General, Sharing unless you share your library with other devices.' \
   $'MA-SHARING-025\tTurn off Content Caching in System Settings, General, Sharing unless this Mac must serve Apple downloads to other devices.' \
   $'MA-SHARING-026\tFind out whether you still need the installed remote-access tool, and remove it with its own uninstaller if you do not.' \
-  $'MA-TRUST-001\tReview each administrator-trusted certificate in Keychain Access or with security dump-trust-settings -d, and remove trust that you did not add.' \
-  $'MA-TRUST-002\tReview each user-trusted certificate in Keychain Access, and remove trust for the ones that you do not recognise.' \
+  $'MA-TRUST-001\tCheck each administrator-trusted certificate in Keychain Access against software that you installed, and set unknown ones back to Use System Defaults.' \
+  $'MA-TRUST-002\tCheck each custom-trust certificate in your login keychain against software or a workplace that needs it, and set the others back to Use System Defaults.' \
   $'MA-UPDATES-001\tInstall the listed macOS updates in System Settings, General, Software Update, at a time when a restart is acceptable.' \
   $'MA-UPDATES-002\tReview the outdated packages with brew outdated and upgrade the ones that you use; brew upgrade replaces the installed versions with newer ones.' \
   $'MA-UPDATES-003\tTurn on automatic update checks in System Settings, General, Software Update, Automatic Updates, or run a manual check if the last full one is old.' \
-  $'MA-UPDATES-004\tTurn on installing Security Responses and system files in System Settings, General, Software Update, Automatic Updates, unless a profile controls it.' \
+  $'MA-UPDATES-004\tTurn on the automatic option that installs security updates and system files in System Settings, General, Software Update, Automatic Updates, unless a profile controls it.' \
   $'MA-UPDATES-005\tRun a software update check and confirm that background security data updates are on, so that XProtect data refreshes.' \
   $'MA-UPDATES-006\tTurn on automatic downloads in System Settings, General, Software Update, Automatic Updates, and automatic app updates in the App Store settings.' \
   $'MA-UPDATES-007\tDecide whether to turn on automatic installation of macOS updates in System Settings, General, Software Update, or to install them by hand on a schedule.' \
   $'MA-UPDATES-008\tReview the non-Apple installs listed in section 3 and confirm that you recognise each one.' \
   $'MA-UPDATES-009\tRemove the tap with brew untap if nothing needs it; brew untap deletes the tap\'s files from Homebrew.' \
   $'MA-UPDATES-010\tConfirm that you trust each third-party tap that supplies installed packages, because the tap owner controls the code that brew installs from it.' \
-  $'MA-UPDATES-011\tConfirm that each listed cask app came from its official source, because Gatekeeper may never have checked an app that has no quarantine attribute.')
+  $'MA-UPDATES-011\tCheck that each listed app matches its official download, and reinstall it with brew reinstall --cask, which downloads the app again.')
 guidance() { printf '%s\n' "$GUIDANCE" | awk -F'\t' -v i="$1" '$1 == i {print $2; exit}'; }
 known_id() { printf '%s\n' "$GUIDANCE" | cut -f1 | grep -qxF -- "$1"; }
 # skip LABEL REASON: record a check that could not run.

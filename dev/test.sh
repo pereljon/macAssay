@@ -903,8 +903,10 @@ printf '%s\n' "$GUIDANCE" | cut -f1 | sort > "$V/p15ids"
 check "1.5 P15 one line per ID" [ -z "$(uniq -d "$V/p15ids")" ]
 check "1.5 P15 every documented ID has guidance" [ -z "$(comm -23 "$V/p15doc" "$V/p15ids")" ]
 check "1.5 P15 no guidance for an unknown ID" [ -z "$(comm -13 "$V/p15doc" "$V/p15ids")" ]
-check "1.5 P15 every text is non-empty, one field, no pipe or backtick, at most 200 characters" \
-  [ -z "$(printf '%s\n' "$GUIDANCE" | awk -F'\t' 'NF != 2 || $2 == "" || $2 ~ /[|`]/ || length($2) > 200')" ]
+check "1.5 P15 every text is non-empty, one field, no pipe or backtick, at most 200 characters, at most 25 words" \
+  [ -z "$(printf '%s\n' "$GUIDANCE" | awk -F'\t' 'NF != 2 || $2 == "" || $2 ~ /[|`]/ || length($2) > 200 || split($2, w, " ") > 25')" ]
+check "1.5 P15 no em-dash or en-dash in a text" \
+  [ -z "$(printf '%s\n' "$GUIDANCE" | grep -e $'\xe2\x80\x94' -e $'\xe2\x80\x93')" ]
 check "1.5 P15 guidance lookup" [ -n "$(guidance MA-SHARING-026)" ]
 check "1.5 P15 known_id" known_id MA-SHARING-026
 check "1.5 P15 unknown id" not known_id MA-SHARING-999
