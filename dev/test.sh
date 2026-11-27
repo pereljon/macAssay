@@ -1169,6 +1169,8 @@ head -4 "$V/p12.b" > "$V/p12s"; check "1.5 P12 too few lines rejected" p12bad "$
 { cat "$V/p12.b"; echo; } > "$V/p12l"; check "1.5 P12 too many lines rejected" p12bad "$V/p12l"
 { head -1 "$V/p12.b"; echo 'abc$%'; tail -n +3 "$V/p12.b"; } > "$V/p12c"; check "1.5 P12 non-base64 line rejected" p12bad "$V/p12c"
 { cat "$V/p12.b"; printf 'JUNK'; } > "$V/p12j"; check "1.5 P12 trailing data without a newline rejected" p12bad "$V/p12j"
+{ cat "$V/p12.b"; printf '\0'; } > "$V/p12n1"; check "1.5 P12 final NUL-only line rejected" p12bad "$V/p12n1"
+{ head -1 "$V/p12.b"; sed -n 2p "$V/p12.b" | tr -d '\n'; printf '\0\n'; tail -n +3 "$V/p12.b"; } > "$V/p12n2"; check "1.5 P12 NUL after base64 text rejected" p12bad "$V/p12n2"
 check "1.5 P12 only the four fixed names are written" [ -z "$(ls "$V/p12r" "$V/p12x" | grep -vxE '(meta\.tsv|findings\.tsv|skipped\.tsv|body\.md|.*:)?')" ]
 # P17 (rest): --bundle with each output option, and with --host.
 check "1.5 P17 --bundle with --format" p17 --bundle --format md

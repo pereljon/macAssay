@@ -945,8 +945,9 @@ write_bundle() { local f; echo "macassay-bundle 1"
   for f in meta.tsv findings.tsv skipped.tsv body.md; do /usr/bin/base64 < "$1/$f" | tr -d '\n'; echo; done; }
 # read_bundle FILE DIR: decodes a bundle into fixed file names in DIR. The bundle comes from the audited Mac, so every line
 # is checked against the base64 alphabet before decoding (base64 -D exits 0 on some invalid input), and no name or path
-# comes from it.
+# comes from it. bash 3.2 read drops NUL bytes silently, so a file that holds one is rejected first.
 read_bundle() { local l f re='^[A-Za-z0-9+/]*={0,2}$'
+  if [ "$(tr -d '\0' < "$1" | wc -c)" -ne "$(wc -c < "$1")" ]; then return 1; fi
   { IFS= read -r l && [ "$l" = "macassay-bundle 1" ] || return 1
     for f in meta.tsv findings.tsv skipped.tsv body.md; do
       IFS= read -r l || return 1
