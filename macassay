@@ -352,7 +352,7 @@ SKIP_IDS=$(printf '%s\n' \
   $'du /Users\t' \
   $'du system folders\t' \
   $'Disk usage\t' \
-  $'Time Machine backup age and encryption\tMA-BACKUPS-002 MA-BACKUPS-003' \
+  $'Time Machine backup age and encryption\tMA-BACKUPS-002 MA-BACKUPS-003 MA-BACKUPS-004' \
   $'macOS and Homebrew update checks\tMA-UPDATES-001 MA-UPDATES-002' \
   $'bputil -d\tMA-PLATFORM-009' \
   $'pfctl -s info\t' \

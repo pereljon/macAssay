@@ -879,6 +879,7 @@ check "1.5 P19 every ID in SKIP_IDS is known" [ -z "$(printf '%s\n' "$SKIP_IDS" 
 ( SKIPS="$V/p19s"; : > "$SKIPS"; skip "7-day log searches (XProtect, SSH)" "--quick" )
 check "1.5 P19 skip writes the IDs" [ "$(cut -f4 "$V/p19s")" = "MA-EVENTS-001 MA-EVENTS-002" ]
 check "1.5 P19 skip writes four fields" [ "$(awk -F'\t' '{print NF}' "$V/p19s")" = 4 ]
+check "1.5 P19 Time Machine skip lists the three IDs" [ "$(skip_row "Time Machine backup age and encryption")" = "MA-BACKUPS-002 MA-BACKUPS-003 MA-BACKUPS-004" ]
 # P14 (first part): enrollment state from profiles status output.
 check "1.5 P14 not enrolled" [ "$(printf 'Enrolled via DEP: No\nMDM enrollment: No\n' | enroll_state)" = $'No\tNo' ]
 check "1.5 P14 enrolled" [ "$(printf 'Enrolled via DEP: Yes\nMDM enrollment: Yes (User Approved)\n' | enroll_state)" = $'Yes\tYes' ]
