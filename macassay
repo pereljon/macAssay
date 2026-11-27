@@ -57,7 +57,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.5.2 (2026-11-27)"
+VERSION="1.5.2+dev"
 # Over SSH, Full Disk Access comes from the Remote Login setting for remote users, not from a terminal app.
 FDA_HINT="needs Full Disk Access for the terminal app, or for remote users in the Remote Login settings"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
@@ -1854,7 +1854,7 @@ while read -r addr proc; do
   case "$path" in /*) ;; *) cwd=$(txtpath "$pid"); [ -n "$cwd" ] && path="$cwd" ;; esac
   s=$(sig "$path")
   tgt="$host"; [ "$host" = "*" ] && tgt="$LANIP"; case "$tgt" in *:*) tgt="[$tgt]";; esac
-  code=000; [ -n "$tgt" ] && code=$(/usr/bin/curl -q -s -o /dev/null -m 3 -w '%{http_code}' "http://$tgt:$port/" 2>/dev/null)
+  code=000; [ -n "$tgt" ] && code=$(/usr/bin/curl -q --noproxy '*' -s -o /dev/null -m 3 -w '%{http_code}' "http://$tgt:$port/" 2>/dev/null)
   say "| \`$(mdesc "$addr")\` | \`$(mdesc "$path")\` | $(mdesc "$pid") | $(mdesc "$s") | $code |"
   case "$s" in Apple) ;; *)
     case "$code" in 200) finding MA-NETWORK-001 MEDIUM Network "Non-Apple listener answers HTTP 200 without a login on $addr ($path). Check whether it needs authentication.";;

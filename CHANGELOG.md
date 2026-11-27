@@ -2,6 +2,12 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
+## Unreleased
+
+### Fixed
+
+- The HTTP probe of each listener followed the `http_proxy` and `ALL_PROXY` environment variables, so with a proxy set, the probe of the Mac's own address went to the proxy, also under `--offline`. The probe now bypasses every proxy.
+
 ## [1.5.2] - 2026-11-27
 
 The sudo rules are the same as in 1.5.1; an upgrade needs no new install of them.
