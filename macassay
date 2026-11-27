@@ -1343,7 +1343,7 @@ while [ $# -gt 0 ]; do
 done
 
 FMTS=$(check_formats "$FORMATS") || die "Unknown format in --format: $FORMATS (use md, json, ocsf, html, or csv)." 2
-case "$FAILON" in ''|high|medium|low|info) ;; *) die "--fail-on takes high, medium, low, or info." 2 ;; esac
+case " $OUTOPTS " in *" --fail-on "*) case "$FAILON" in high|medium|low|info) ;; *) die "--fail-on takes high, medium, low, or info." 2 ;; esac ;; esac
 if [ -n "$MODE" ] && [ -n "$OUTOPTS" ]; then die "--$MODE cannot be combined with$OUTOPTS." 2; fi
 case "$FMTS" in *" "*) [ "$STDOUT" -eq 0 ] || die "--stdout works with one format only." 2 ;; esac
 

@@ -1155,6 +1155,7 @@ mkfix "$V/p11"
 printf 'MA-SHARING-026\t\tok\n' > "$V/p11.acc"
 ( FAILON=medium; rfix "$V/p11" md ); check "1.5 P11 accepted MEDIUM with --fail-on medium exits 0" [ $? -eq 0 ]
 check "1.5 P11 bad level exits 2" p17 --fail-on severe
+check "1.5 P11 empty level exits 2" p17 --fail-on ""
 for m in --print-sudoers --install-sudoers; do check "1.5 P17 --fail-on with $m" p17 "$m" --fail-on high; done
 
 echo ""
