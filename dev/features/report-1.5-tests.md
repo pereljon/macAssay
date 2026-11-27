@@ -237,6 +237,11 @@ Whole-branch review on 2026-11-26 by an Opus subagent, at `d29589e`. Verdict: re
 - T7 OCSF output with no findings and no skips is one blank line: dropped; documented, no requirement.
 - T8 `render_html` returns its last `printf` status: dropped; no known way for awk to fail mid-page on normalized input (the doc now states it).
 
+Patch review of the A6 fix (`0d964ae`) on 2026-11-27 by a Sonnet subagent. Verdict: ready. It checked the ancestor walk on PID 0 and 1, missing parents, and a parent loop; `$$` in local and remote mode; that `ps` escapes a newline in a command line, so a process cannot forge another's parent; and that G8 fails without the fix.
+
+- The loop guard and the 64-step limit have no test: dropped; no requirement, and a deeper chain is reported, not hidden.
+- A bare `*.jsonl` from `-o x.jsonl` is not ignored: dropped; not a default output name, no requirement.
+
 ## Sources
 
 - OCSF current version: https://schema.ocsf.io/api/version (1.10.0).
