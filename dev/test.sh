@@ -1282,9 +1282,9 @@ H='$(touch PWNED)'
 mkdir -p "$A/Top.app/Contents/Library/LoginItems/H1.app" "$A/Vendor/V.app/Contents/Library/LoginItems/H2.app" \
   "$A/.hide/X.app/Contents/Library/LoginItems/H3.app" "$A/Vendor/V.app/Contents/Library/LaunchAgents" \
   "$A/Vendor/V.app/Contents/Library/LaunchDaemons" "$A/Z.app/Contents/Library/LaunchAgents/U.app/Contents" \
-  "$A/-o $H.app/Contents/Library/LoginItems/H4.app"
+  "$A/-o $H.app/Contents/Library/LoginItems/H4.app" "$A/W.app/Contents/Library/LaunchAgents/sub"
 touch "$A/Vendor/V.app/Contents/Library/LaunchAgents/a.plist" "$A/Vendor/V.app/Contents/Library/LaunchDaemons/d.plist" \
-  "$A/Z.app/Contents/Library/LaunchAgents/U.app/Contents/Info.plist"
+  "$A/Z.app/Contents/Library/LaunchAgents/U.app/Contents/Info.plist" "$A/W.app/Contents/Library/LaunchAgents/sub/x.plist"
 app_login_items "$A" > "$W/v1"
 check "1.5.1 V1 app directly under the root" grep -qxF "$A/Top.app/Contents/Library/LoginItems/H1.app" "$W/v1"
 check "1.5.1 V1 app in a vendor folder" grep -qxF "$A/Vendor/V.app/Contents/Library/LoginItems/H2.app" "$W/v1"
@@ -1293,6 +1293,7 @@ check "1.5.1 V1 hidden folder is an unusual path" unusual_path "$A/.hide/X.app"
 check "1.5.1 V1 launch agent plist" grep -qxF "$A/Vendor/V.app/Contents/Library/LaunchAgents/a.plist" "$W/v1"
 check "1.5.1 V1 launch daemon plist" grep -qxF "$A/Vendor/V.app/Contents/Library/LaunchDaemons/d.plist" "$W/v1"
 check "1.5.1 V1 nested bundle Info.plist skipped" not grep -qF "U.app/Contents/Info.plist" "$W/v1"
+check "1.5.1 V1 plist in a subfolder of LaunchAgents skipped" not grep -qF "LaunchAgents/sub/x.plist" "$W/v1"
 check "1.5.1 V1 hostile app name listed unchanged" grep -qxF "$A/-o $H.app/Contents/Library/LoginItems/H4.app" "$W/v1"
 check "1.5.1 V1 hostile app name not run" not [ -e PWNED ]
 

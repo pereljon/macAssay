@@ -15,7 +15,7 @@ Two kinds of test cover version 1.5.1:
 - V1. `app_login_items` on a test folder:
   - Listed: a login item of an app directly under the root; a login item of an app in a vendor folder; a login item of an app in a hidden folder, which `unusual_path` then matches.
   - Listed: a launchd plist in `Contents/Library/LaunchAgents` and in `Contents/Library/LaunchDaemons` of an app in a vendor folder.
-  - Not listed: `Info.plist` inside a bundle inside `Contents/Library/LaunchAgents`.
+  - Not listed: `Info.plist` inside a bundle inside `Contents/Library/LaunchAgents`, and a plist in a subfolder of `Contents/Library/LaunchAgents` at depth 6.
   - An app folder whose name holds a space, a leading `-`, and `$(touch PWNED)` is listed unchanged, and no `PWNED` file appears.
 - V2. `btm_items` on a fixture dump with two accounts:
   - An item listed in both accounts with dispositions `enabled` and `disabled` prints once, with `enabled/disabled`.
@@ -25,9 +25,9 @@ Two kinds of test cover version 1.5.1:
   - An item with an executable path shows that path; an item with only a URL shows the URL.
   - Output is one line per item in the order `TYPE | NAME | PATH | DISPOSITIONS`.
 - V3. The outbound check on fixture `netstat` text:
-  - Text with no `tcp` line records a skip with the label `Outbound connections`, and the body says `skipped`.
-  - Text with TCP sockets but no outbound connection prints `- Established outbound TCP connections ...: none`.
-  - The label has a row in `SKIP_IDS` (the existing skip-row fixture covers this).
+  - `tcp_listed` fails on text with no `tcp` line, and succeeds on text with a listener.
+  - The label `Outbound connections` has a row in `SKIP_IDS`.
+  - The skip record and the body line are checked live in M1. The `none` line when no connection is outbound comes from `block` on empty input, which fixture P7 covers; no run on this Mac can show it, because its `netstat` lists no sockets.
 - V4. For each format that `check_formats` accepts, `git check-ignore -q` ignores `macassay-host-20261127-1200` plus `fmt_ext FORMAT`. The case is skipped with a note outside a git repo.
 - The existing F, G, P, and R cases still pass.
 
@@ -45,14 +45,20 @@ Two kinds of test cover version 1.5.1:
 
 ## Review findings
 
-None yet.
+Pre-merge review, 2026-11-27, opus at high effort, against `ebf7475`. Triage per the development `AGENTS.md` (Review findings).
+
+- R1. The V1 nested-bundle case sat at depth 7, beyond `-maxdepth 6`, so it passed without the exclusion. Fixed: a depth-6 plist in a subfolder of `LaunchAgents`, which fails without the exclusion.
+- R2. The plan and results claimed V3 cases that the fixtures do not hold (the skip record, the `none` line). Fixed: V3 is narrowed to what it tests, and the rest points to M1 and fixture P7 (root `AGENTS.md`, do not report work as passing without having checked it).
+- R3. An item whose Identifier claims `com.apple.` is hidden from the background items block; the plist Label or bundle ID sets it. Dropped: not Critical, and no requirement; the approved design sets this filter. Legacy plists still show in the startup items table. Candidate for the B2 review in `docs/ISSUES.md`.
+- R4. Under a UTF-8 locale, an invalid byte in the dump makes `/usr/bin/awk` abort, and the block then reads `none`. Dropped: not Critical, and no trigger shown (`sfltool` prints plist strings and file names, normally valid UTF-8). The open item to run the suite under a UTF-8 locale in `docs/ISSUES.md` covers the class.
+- R5. DISPOSITIONS keeps only the first word, so `disallowed` (from training knowledge, set when the user turns an item off) is not shown. Dropped: no requirement; the approved design says first word, and no item on this Mac shows `disallowed`. Candidate for the B2 review.
 
 ## Results
 
 Run 2026-11-27 on the development Mac (macOS 27.2.1).
 
 - B1: on `master` (`797a541`), 600 fixture cases pass, `bash -n` passes, and ShellCheck shows the three historical findings (2 SC2010, 3 SC2012 lines).
-- V1 to V4: pass; 615 cases pass in all. The old P4 case tested `btm_unique`, which V2 replaces. ShellCheck on `macassay` matches the baseline; on `dev/test.sh` the one new SC2016, the intended literal `$(touch PWNED)` in V1, is suppressed inline.
+- V1 to V4: pass; 616 cases pass in all. The V1 subfolder case fails when the `! -path` exclusion is removed (checked 2026-11-27). The old P4 case tested `btm_unique`, which V2 replaces. ShellCheck on `macassay` matches the baseline; on `dev/test.sh` the one new SC2016, the intended literal `$(touch PWNED)` in V1, is suppressed inline.
 - T1: pass; `dev/test.sh | tail -1` took 7.1 s in all.
 - T2: pass; the watchdog printed "suite timed out after 60 seconds" at 60 s. The piped run still ended at 120 s, because the injected `sleep 120` is the suite's own hung command and holds the pipe. A real hang behaves the same, and so did the old watchdog.
 - M1: pass. The outbound section reads `skipped (netstat lists no TCP sockets for this account)`, and Limitations lists it. The login items section now lists the app in a vendor folder, 17 items against 16 before.
