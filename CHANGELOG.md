@@ -2,6 +2,14 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
+## Unreleased
+
+### Fixed
+
+- The privacy permissions check reported no grants on macOS 27 and blamed Full Disk Access. macOS 27 moved the user TCC database to a protected location, and the grants for Full Disk Access, Accessibility, Screen Recording, and Input Monitoring live in the system database, which the audit never read. With Full Disk Access, the audit now reads the system database as the user, with no new sudo rule. A missing user database records a skip with that reason, and a query that fails, for example after a format change, records a skip instead of reading `none`.
+- MA-APPS-001 (HIGH) fired for iPhone and iPad apps, which macOS runs from a temporary folder. An app that passes Apple's App Store signature check for iPhone apps no longer counts; the path alone never decides.
+- Full Disk Access skip reasons now name the Remote Login setting for remote users as well as the terminal app, since an SSH run gets its access there.
+
 ## [1.5.1] - 2026-11-27
 
 The sudo rules are the same as in 1.5.0; an upgrade needs no new install of them.

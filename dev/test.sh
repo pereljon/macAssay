@@ -1380,5 +1380,49 @@ if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     check "1.5.1 V4 .gitignore covers $f reports" git check-ignore -q "macassay-host-20261127-1200$(fmt_ext "$f")"; done
 else echo "skip V4: not in a git repo"; fi
 
+# ---------- 1.5.2 ----------
+X="$T/v152"; mkdir -p "$X"
+# W1: ios_app trusts Apple's App Store signature for iPhone apps, never the path alone.
+CS_RC=0
+# shellcheck disable=SC2329  # ios_app calls this stub in place of the real codesign
+codesign() { printf '%s\n' "$@" > "$X/cs.args"; return "$CS_RC"; }
+WP="/private/var/folders/aa/bb/X/U/d/Wrapper/App.app/App"
+check "1.5.2 W1 signed iPhone app in a Wrapper" ios_app "$WP"
+check "1.5.2 W1 codesign got --verify" grep -qxF -- --verify "$X/cs.args"
+check "1.5.2 W1 codesign got --ignore-resources" grep -qxF -- --ignore-resources "$X/cs.args"
+check "1.5.2 W1 codesign got the requirement" grep -qxF -- '-R=anchor apple generic and certificate leaf[subject.CN] = "Apple iPhone OS Application Signing"' "$X/cs.args"
+CS_RC=3
+check "1.5.2 W1 other signature in a Wrapper fails" not ios_app "$WP"
+rm -f "$X/cs.args"; CS_RC=0
+check "1.5.2 W1 path without a Wrapper fails" not ios_app "/private/var/folders/aa/bb/T/tool"
+check "1.5.2 W1 codesign not called without a Wrapper" [ ! -e "$X/cs.args" ]
+unset -f codesign
+
+# W2: tcc_report on fixture databases; the query's status decides the skip.
+mkdb() { rm -f "$1"; sqlite3 "$1" "create table access (service text, client text, auth_value integer); $2" >/dev/null; }
+tccrun() { ( BODY="$X/$1.body"; SKIPS="$X/$1.skips"; : > "$BODY"; : > "$SKIPS"; tcc_report "$2" "$3" ); }
+mkdb "$X/sys.db" "insert into access values ('kTCCServiceSystemPolicyAllFiles','com.example.granted',2), ('kTCCServiceSystemPolicyAllFiles','com.example.denied',0), ('kTCCServiceAccessibility','x\`y\$(touch PWNED)',2);"
+mkdb "$X/usr.db" "insert into access values ('kTCCServiceMicrophone','com.example.mic',2);"
+tccrun ok "$X/sys.db" "$X/usr.db"
+check "1.5.2 W2 granted Full Disk Access listed" has "$X/ok.body" "kTCCServiceSystemPolicyAllFiles|com.example.granted"
+check "1.5.2 W2 denied grant not listed" hasnt "$X/ok.body" "com.example.denied"
+check "1.5.2 W2 user database grant listed" has "$X/ok.body" "kTCCServiceMicrophone|com.example.mic"
+check "1.5.2 W2 no skip when both read" [ ! -s "$X/ok.skips" ]
+# shellcheck disable=SC2016  # the literal $(...) is the hostile client name under test
+check "1.5.2 W2 hostile client name inside the code block" has "$X/ok.body" 'x`y$(touch PWNED)'
+check "1.5.2 W2 hostile client name not run" not [ -e PWNED ]
+tccrun nouser "$X/sys.db" "$X/missing.db"
+check "1.5.2 W2 missing user database skip" grep -q $'\tPrivacy permissions (user TCC database)\tnot at ~/Library/Application Support/com.apple.TCC; newer macOS keeps it in a protected location\t' "$X/nouser.skips"
+check "1.5.2 W2 missing user database body line" has "$X/nouser.body" "- Privacy permissions (user database): skipped (not at"
+cp "$X/sys.db" "$X/locked.db"; chmod 000 "$X/locked.db"
+tccrun locked "$X/locked.db" "$X/usr.db"
+check "1.5.2 W2 unreadable system database skip" grep -q $'\tPrivacy permissions (system TCC database)\tnot readable, or the database format changed; needs Full Disk Access' "$X/locked.skips"
+check "1.5.2 W2 unreadable system database body line" has "$X/locked.body" "- Privacy permissions (system database): skipped ("
+chmod 600 "$X/locked.db"
+rm -f "$X/notable.db"; sqlite3 "$X/notable.db" "create table other (a);" >/dev/null
+tccrun notable "$X/notable.db" "$X/usr.db"
+check "1.5.2 W2 changed format records a skip" grep -q $'\tPrivacy permissions (system TCC database)\t' "$X/notable.skips"
+check "1.5.2 W2 changed format does not read none" hasnt "$X/notable.body" "(system database): none"
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

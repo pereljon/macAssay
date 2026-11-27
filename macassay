@@ -57,7 +57,9 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.5.1 (2026-11-27)"
+VERSION="1.5.1+dev"
+# Over SSH, Full Disk Access comes from the Remote Login setting for remote users, not from a terminal app.
+FDA_HINT="needs Full Disk Access for the terminal app, or for remote users in the Remote Login settings"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH
 umask 077
 RULES=/etc/sudoers.d/macassay
@@ -362,6 +364,12 @@ rc_pattern_sevs() {
 boot_policy_sev() { case "$1" in ''|Full) ;; Permissive) echo HIGH ;; *) echo MEDIUM ;; esac; }
 # temp_program PATH: succeeds for a program in a temporary or shared folder, except one under App Translocation.
 temp_program() { case "$1" in */AppTranslocation/*) return 1 ;; /tmp/*|/private/tmp/*|/private/var/folders/*|/Users/Shared/*) return 0 ;; *) return 1 ;; esac; }
+# ios_app PATH: succeeds for an App Store iPhone or iPad app, which macOS runs from a Wrapper folder under
+# /private/var/folders. Apple's signature decides, never the path. --ignore-resources is needed because a plain
+# verification rejects these apps ("resource envelope is obsolete"); the executable's signature is still checked.
+ios_app() {
+  case "$1" in */Wrapper/*.app/*) ;; *) return 1 ;; esac
+  codesign --verify --ignore-resources -R='anchor apple generic and certificate leaf[subject.CN] = "Apple iPhone OS Application Signing"' "$1" >/dev/null 2>&1; }
 
 # stdin: crontab lines. Prints the schedule and command name; arguments and variable values may hold secrets.
 crontab_summary() {
@@ -832,7 +840,7 @@ skip_reason() { awk -F'\t' -v l="$1" '$2 == l {print $3; exit}' "$SKIPS"; }
 readable() {
   [ -e "$1" ] || return 0
   if [ -d "$1" ]; then ls "$1" >/dev/null 2>&1 && return 0; else head -c 1 "$1" >/dev/null 2>&1 && return 0; fi
-  skip "$2" "$1 is not readable; Full Disk Access for the terminal app may be needed"; return 1; }
+  skip "$2" "$1 is not readable; it may need Full Disk Access for the terminal app, or for remote users in the Remote Login settings"; return 1; }
 # priv LABEL COMMAND ARGS...: run one command allowed by the macassay sudo rules. Fails when skipped.
 priv() {
   local label="$1" rc; shift
@@ -1399,6 +1407,17 @@ ssh_cfg() {
 # git_hooks_path FILE: prints each core.hooksPath value in a git config file. git itself is never run.
 git_hooks_path() { awk '/^[[:space:]]*\[/ { s = tolower($0); gsub(/[[:space:]]/, "", s); next }
   s ~ /^\[core\]/ && tolower($0) ~ /^[[:space:]]*hookspath[[:space:]]*=/ { v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); print v }' "$1" 2>/dev/null; }
+TCC_SQL="select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service"
+# tcc_report SYSDB USERDB: lists privacy permission grants from both TCC databases. The query's own status decides the
+# skip, because sqlite3 opens a file whose access table is missing or changed without an error.
+tcc_report() {
+  local o sl="Privacy permissions (system TCC database)" ul="Privacy permissions (user TCC database)"
+  if o=$(sqlite3 -init /dev/null -readonly "$1" "$TCC_SQL" 2>/dev/null); then printf '%s\n' "$o" | block "Privacy permissions granted (system database)"
+  else skip "$sl" "not readable, or the database format changed; $FDA_HINT"; say "- Privacy permissions (system database): skipped ($(skip_reason "$sl"))"; fi
+  if [ ! -e "$2" ]; then skip "$ul" "not at ~/Library/Application Support/com.apple.TCC; newer macOS keeps it in a protected location"
+    say "- Privacy permissions (user database): skipped ($(skip_reason "$ul"))"
+  elif o=$(sqlite3 -init /dev/null -readonly "$2" "$TCC_SQL" 2>/dev/null); then printf '%s\n' "$o" | block "Privacy permissions granted (user database)"
+  else skip "$ul" "not readable, or the database format changed; $FDA_HINT"; say "- Privacy permissions (user database): skipped ($(skip_reason "$ul"))"; fi; }
 # shellcheck disable=SC2317  # exit runs when the script is executed, not sourced, with MACASSAY_LIB=1.
 [ "${MACASSAY_LIB:-}" = 1 ] && { return 0 2>/dev/null || exit 0; }
 
@@ -1542,8 +1561,8 @@ TMP_PL=/Library/Preferences/com.apple.TimeMachine.plist
 TMDEST=$(tmutil destinationinfo 2>/dev/null | awk -F': ' '/^Name/{print $2}' | paste -sd, -); TMRC=0
 TMU=""
 if [ -e "$TMP_PL" ] && ! plutil -lint "$TMP_PL" >/dev/null 2>&1; then
-  skip "Time Machine backup age and encryption" "settings file unreadable; needs Full Disk Access for the terminal app"
-  TMU="unreadable (needs Full Disk Access for the terminal app)"
+  skip "Time Machine backup age and encryption" "settings file unreadable; $FDA_HINT"
+  TMU="unreadable ($FDA_HINT)"
 elif [ -n "$TMDEST" ] && [ ! -e "$TMP_PL" ]; then
   skip "Time Machine settings" "settings file missing while a destination exists"; TMU="unreadable (settings file missing)"
 fi
@@ -1987,7 +2006,7 @@ h3 "Running programs outside standard locations"
 say "| Program | Signer |"; say "|---|---|"
 ps -axo comm= | sort -u | grep -E '^/' | grep -vE '^/(System|usr/(libexec|sbin|bin)|sbin|bin|Library/Apple|Applications/[^/]+\.app)/' | while read -r p; do
   s=$(sig "$p"); say "| \`$(mdesc "$p")\` | $(mdesc "$s") |"
-  temp_program "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
+  temp_program "$p" && ! ios_app "$p" && finding MA-APPS-001 HIGH Apps "Program running from a temporary or shared folder: $p ($s)"
 done
 say ""; say "**Applications that Gatekeeper rejects**"; say ""
 if [ "$OFFLINE" -eq 0 ]; then
@@ -2189,12 +2208,7 @@ security dump-trust-settings 2>/dev/null | trusted_certs | mask_hex > "$TMP/uts"
 if [ -s "$TMP/uts" ]; then block "User trust settings (certificates the user trusts)" < "$TMP/uts"
   finding MA-TRUST-002 MEDIUM Trust "$(grep -c . "$TMP/uts") certificate(s) are trusted in the user's trust settings; a trusted root can intercept HTTPS. Confirm each one."
 else say "- User-trusted certificates: none"; fi
-TCCU="$THOME/Library/Application Support/com.apple.TCC/TCC.db"
-if sqlite3 -init /dev/null -readonly "$TCCU" 'select 1' >/dev/null 2>&1; then
-  sqlite3 -init /dev/null -readonly "$TCCU" "select service, client from access where auth_value=2 and service in ('kTCCServiceAccessibility','kTCCServiceScreenCapture','kTCCServiceSystemPolicyAllFiles','kTCCServiceListenEvent','kTCCServicePostEvent','kTCCServiceMicrophone','kTCCServiceCamera') order by service" 2>/dev/null | block "Privacy permissions granted (user database)"
-else say "- Privacy permissions (TCC): not readable from this process (needs Full Disk Access for the terminal app)."
-  skip "Privacy permissions (user TCC database)" "not readable; needs Full Disk Access for the terminal app"; fi
-skip "Privacy permissions (system TCC database)" "needs root and Full Disk Access; the sudo rules do not cover it"
+tcc_report "/Library/Application Support/com.apple.TCC/TCC.db" "$THOME/Library/Application Support/com.apple.TCC/TCC.db"
 
 # ---------- 14. Security events from the logs ----------
 h2 "14. Security events from the logs"
