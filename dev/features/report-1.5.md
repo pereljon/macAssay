@@ -1,7 +1,7 @@
 ---
 kind: feature
 lifecycle: building
-status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5); built on feature/report-1.5 (Tasks 0 to 15); pre-merge review fixed 2026-11-26; manual tests M1 to M4 pass 2026-11-27; M5 layout pass 2026-11-27, rerun pending after the A6 fix; M6 (Safari) on hold
+status: drafted 2026-11-26; architecture review findings applied 2026-11-26; approved by the user 2026-11-26 (A5); built on feature/report-1.5 (Tasks 0 to 15); pre-merge review fixed 2026-11-26; manual tests M1 to M4 pass 2026-11-27; M5 pass 2026-11-27 after the A6 fix; M6 (Safari) on hold
 ---
 
 # Report formats, run comparison, and managed Macs (version 1.5)
