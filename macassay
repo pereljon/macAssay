@@ -450,7 +450,7 @@ out_paths() { local out="$1" base="$2" f; shift 2
     case "$base" in *.ocsf.jsonl) base="${base%.ocsf.jsonl}" ;; *.md|*.json|*.jsonl|*.html|*.csv) base="${base%.*}" ;; esac; fi
   for f; do printf '%s\t%s%s\n' "$f" "$base" "$(fmt_ext "$f")"; done; }
 # render_one FORMAT R: prints one format on stdout.
-render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; *) return 1 ;; esac; }
+render_one() { case "$1" in md) render_md "$2" ;; csv) render_csv "$2" ;; json|ocsf) osascript -l JavaScript -e "$REPORT_JS" "$1" "$2" ;; *) return 1 ;; esac; }
 # render_all SRC: normalizes, validates, and renders the data files in SRC into every format in FMTS.
 # Writes no file unless every format rendered. Returns 0, 1, or 3 (--fail-on).
 render_all() { local R="$TMP/render" f p n
@@ -929,6 +929,55 @@ BREW_RECEIPTS_JS='function run(argv) {
     } catch (e) {}
   });
   return out.join("\n");
+}'
+# A fixed JXA script. Arguments: MODE (json or ocsf) and the render folder R. Prints the format. JSON.stringify
+# escapes every value; JSON.parse runs no code. Input files are already normalized and validated.
+REPORT_JS='function run(argv) {
+  var mode = argv[0], dir = argv[1];
+  function read(p) { var s = $.NSString.stringWithContentsOfFileEncodingError(p, $.NSUTF8StringEncoding, null); return s.isNil() ? null : s.js; }
+  function tsv(name) { var t = read(dir + "/" + name); return t ? t.split("\n").filter(function (l) { return l !== ""; }).map(function (l) { return l.split("\t"); }) : []; }
+  var RANK = {HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1}, meta = {};
+  tsv("meta.tsv").forEach(function (r) { meta[r[0]] = r[1]; });
+  function m(k, d) { return meta[k] === undefined ? d : meta[k]; }
+  function num(k) { return Number(m(k, "0")); }
+  function flag(k) { return m(k, "0") === "1"; }
+  var rows = tsv("rows.tsv").map(function (r) { return {severity: r[0], id: r[1], section: r[2], text: r[3], section_number: Number(r[4]),
+    source: r[5], accepted: r[6] === "1", reason: r[7] || "", guidance: r[8] || ""}; });
+  var skipped = tsv("skipped.tsv").map(function (r) { return {kind: r[0], label: r[1], reason: r[2], ids: r[3] ? r[3].split(" ") : []}; });
+  var open = rows.filter(function (f) { return !f.accepted; });
+  if (mode === "json") {
+    var counts = {HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0, accepted: rows.length - open.length};
+    open.forEach(function (f) { counts[f.severity]++; });
+    var doc = {schema: "macassay-report/1", tool: {name: "macassay", version: m("version", "unknown")},
+      host: m("host", "unknown"), user: m("user", "unknown"), date: m("date", "unknown"), epoch: num("epoch"),
+      options: {quick: flag("quick"), offline: flag("offline"), skip_du: flag("skip_du")},
+      management: {dep: m("dep", "unknown"), mdm: m("mdm", "unknown")},
+      privileged: {ran: num("priv_ran"), skipped: num("priv_skipped")}, counts: counts,
+      findings: rows.map(function (f) { return {id: f.id, severity: f.severity, section: f.section, section_number: f.section_number,
+        text: f.text, source: f.source, accepted: f.accepted, guidance: f.guidance}; }),
+      accepted: rows.filter(function (f) { return f.accepted; }).map(function (f) { return {id: f.id, reason: f.reason}; }),
+      skipped: skipped.map(function (s) { return {kind: s.kind, label: s.label, reason: s.reason}; }),
+      limitations: (read(dir + "/limits.txt") || "").split("\n").filter(function (l) { return l !== ""; })};
+    return JSON.stringify(doc, null, 2);
+  }
+  if (mode === "ocsf") {
+    var host = m("host", "unknown"), seen = {}, out = [];
+    var ev = function (x) { var e = {activity_id: 1, category_uid: 2, class_uid: 2003, type_uid: 200301, time: num("epoch") * 1000,
+      metadata: {version: "1.10.0", product: {name: "macAssay", version: m("version", "unknown")}},
+      device: {hostname: host, type_id: flag("laptop") ? 3 : 2}};
+      for (var k in x) e[k] = x[k]; return JSON.stringify(e); };
+    rows.forEach(function (f) { seen[f.id] = (seen[f.id] || 0) + 1;
+      var x = {severity_id: RANK[f.severity], status_id: f.accepted ? 3 : 1,
+        finding_info: {uid: host + ":" + f.id + ":" + seen[f.id], title: f.text},
+        compliance: {status_id: 3, control: f.id},
+        unmapped: {section: f.section, section_number: f.section_number, source: f.source}};
+      if (f.guidance) x.remediation = {desc: f.guidance};
+      out.push(ev(x)); });
+    skipped.forEach(function (s, i) { out.push(ev({severity_id: 1, finding_info: {uid: host + ":MA-SKIP:" + (i + 1), title: s.label},
+      compliance: {status_id: 2, status_details: [s.reason]}, unmapped: {kind: s.kind}})); });
+    return out.join("\n");
+  }
+  throw new Error("unknown mode");
 }'
 # brew_receipts PREFIX; reads every formula and cask receipt under the Homebrew prefix. Runs no brew command, so it never downloads.
 brew_receipts() { osascript -l JavaScript -e "$BREW_RECEIPTS_JS" "$1"/Cellar/*/*/INSTALL_RECEIPT.json "$1"/Caskroom/*/.metadata/INSTALL_RECEIPT.json 2>/dev/null | grep .; }

@@ -1010,5 +1010,45 @@ for m in --print-sudoers --install-sudoers; do
   check "1.5 P17 --stdout with $m" p17 "$m" --stdout
 done
 
+# JSON helpers for the tests: jx FILE EXPR evaluates EXPR with d bound to the parsed file; jxl does the same for
+# newline-delimited JSON, with d an array of events. Test input only.
+JX_JS='function run(a) { var t = $.NSString.stringWithContentsOfFileEncodingError(a[0], $.NSUTF8StringEncoding, null).js;
+  var d = a[2] === "l" ? t.split("\n").filter(String).map(function (l) { return JSON.parse(l); }) : JSON.parse(t);
+  return String(new Function("d", "return (" + a[1] + ");")(d)); }'
+jx()  { osascript -l JavaScript -e "$JX_JS" "$1" "$2" j 2>/dev/null; }
+jxl() { osascript -l JavaScript -e "$JX_JS" "$1" "$2" l 2>/dev/null; }
+# P3: JSON parses, round-trips hostile text, and carries the schema and counts.
+mkfix "$V/p3"; rfix "$V/p3" json
+P3=$V/p3.out.json
+check "1.5 P3 plutil accepts the JSON" plutil -convert xml1 -o /dev/null "$P3"
+check "1.5 P3 schema" [ "$(jx "$P3" 'd.schema')" = "macassay-report/1" ]
+check "1.5 P3 hostile text round-trips" [ "$(jx "$P3" 'd.findings[0].text')" = "<script>alert(1)</script> \"q\" ${Q}s${Q} & \\ café" ]
+check "1.5 P3 formula text round-trips" [ "$(jx "$P3" 'd.findings[1].text')" = '=HYPERLINK("http://x")' ]
+check "1.5 P3 normalized text round-trips" [ "$(jx "$P3" 'd.findings[2].text')" = "-dash <UUID> badbyte" ]
+mkfix "$V/p17e"; rfix "$V/p17e" "md json" "$V/p17e-report.md"
+check "1.5 P17 -o report.md with md and json writes report.md" [ -s "$V/p17e-report.md" ]
+check "1.5 P17 -o report.md with md and json writes report.json" [ -s "$V/p17e-report.json" ]
+check "1.5 P3 counts" [ "$(jx "$P3" '[d.counts.HIGH, d.counts.MEDIUM, d.counts.LOW, d.counts.INFO, d.counts.accepted].join()')" = "0,1,2,0,0" ]
+check "1.5 P3 typed options" [ "$(jx "$P3" 'typeof d.options.quick + " " + typeof d.epoch')" = "boolean number" ]
+check "1.5 P3 guidance present" [ -n "$(jx "$P3" 'd.findings[2].guidance')" ]
+check "1.5 P3 no changes block without --compare" [ "$(jx "$P3" '"changes" in d')" = false ]
+# P4: OCSF events hold the required 1.10.0 attributes with the mapped values.
+mkfix "$V/p4"; printf 'MA-PLATFORM-015\t\tforced by IT\n' > "$V/p4.acc"; rfix "$V/p4" ocsf
+P4=$V/p4.out.ocsf.jsonl
+check "1.5 P4 four events" [ "$(jxl "$P4" 'd.length')" = 4 ]
+check "1.5 P4 required attributes" [ "$(jxl "$P4" 'd.every(function (e) { return e.activity_id === 1 && e.category_uid === 2 && e.class_uid === 2003 && e.type_uid === 200301 && e.compliance && e.finding_info.uid && e.metadata.version === "1.10.0" && e.metadata.product.name === "macAssay" && e.severity_id >= 1 && e.time === 1764612000000 && e.device.type_id === 3 && e.device.hostname === "mini"; })')" = true ]
+check "1.5 P4 MEDIUM is severity 3" [ "$(jxl "$P4" 'd[0].severity_id')" = 3 ]
+check "1.5 P4 skipped check is Warning" [ "$(jxl "$P4" 'd[3].compliance.status_id + " " + d[3].compliance.status_details[0]')" = "2 --quick" ]
+check "1.5 P4 accepted finding is Suppressed" [ "$(jxl "$P4" 'd[2].status_id')" = 3 ]
+check "1.5 P4 open finding is New" [ "$(jxl "$P4" 'd[0].status_id')" = 1 ]
+check "1.5 P4 remediation holds guidance" [ -n "$(jxl "$P4" 'd[0].remediation.desc')" ]
+# P18: two findings with one ID and two skipped checks give four distinct uids; control keeps the bare ID.
+mkfix "$V/p18"; printf 'priv\tbputil -d\trefused or unavailable\tMA-PLATFORM-009\n' >> "$V/p18/skipped.tsv"; rfix "$V/p18" ocsf
+P18=$V/p18.out.ocsf.jsonl
+check "1.5 P18 distinct uids" [ "$(jxl "$P18" 'd.map(function (e) { return e.finding_info.uid; }).filter(function (u, i, a) { return a.indexOf(u) === i; }).length')" = 5 ]
+check "1.5 P18 uid form" [ "$(jxl "$P18" 'd[1].finding_info.uid')" = "mini:MA-SHARING-026:2" ]
+check "1.5 P18 skip uid form" [ "$(jxl "$P18" 'd[4].finding_info.uid')" = "mini:MA-SKIP:2" ]
+check "1.5 P18 control is the bare ID" [ "$(jxl "$P18" 'd[1].compliance.control')" = "MA-SHARING-026" ]
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
