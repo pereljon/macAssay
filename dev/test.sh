@@ -860,5 +860,41 @@ check "1.5 P1 no dashed UUID left" not grep -qE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[
 check "1.5 P1 failed redaction returns 1" [ $? -eq 1 ]
 check "1.5 P1 failed redaction leaves no file" [ ! -e "$V/p1fail" ]
 
+# P20: finding writes six fields, with the section number from h2 and the source.
+( FIND="$V/p20f"; : > "$FIND"; SECT_N=6
+  finding MA-SHARING-022 LOW Sharing "a|b	c"; finding MA-SHARING-022 LOW Sharing "x" managed )
+check "1.5 P20 six fields per finding" [ "$(awk -F'\t' '{print NF}' "$V/p20f" | sort -u)" = 6 ]
+check "1.5 P20 section number" [ "$(cut -f5 "$V/p20f" | sort -u)" = 6 ]
+check "1.5 P20 source local by default, managed when given" [ "$(cut -f6 "$V/p20f" | paste -sd, -)" = "local,managed" ]
+check "1.5 P20 text cleaned" [ "$(head -1 "$V/p20f" | cut -f4)" = "a/b c" ]
+# P19: every literal skip label has a SKIP_IDS row, the per-account labels match, and every ID in SKIP_IDS is known.
+grep -v '^[[:space:]]*#' macassay | grep -oE '(^|[^A-Za-z_])(skip|priv) "[^"$]*"' | sed -E 's/^.*(skip|priv) "//; s/"$//' | sort -u > "$V/p19"
+check "1.5 P19 skip labels found" [ "$(grep -c . "$V/p19")" -ge 19 ]
+check "1.5 P19 every literal skip label has a row" [ -z "$(while IFS= read -r l; do skip_row "$l" >/dev/null || echo "$l"; done < "$V/p19")" ]
+quiet() { "$@" > /dev/null; }
+for l in "shell startup files (bob)" "authorized_keys (bob)" "LaunchAgents (bob)" "sudoers" "sudoers.d/extra_rules"; do
+  check "1.5 P19 row for $l" quiet skip_row "$l"; done
+grep -oE 'MA-[A-Z]+-[0-9]{3}' docs/CHECKS.md | sort -u > "$V/p19known"
+check "1.5 P19 every ID in SKIP_IDS is known" [ -z "$(printf '%s\n' "$SKIP_IDS" | cut -f2 | tr ' ' '\n' | grep . | sort -u | comm -23 - "$V/p19known")" ]
+( SKIPS="$V/p19s"; : > "$SKIPS"; skip "7-day log searches (XProtect, SSH)" "--quick" )
+check "1.5 P19 skip writes the IDs" [ "$(cut -f4 "$V/p19s")" = "MA-EVENTS-001 MA-EVENTS-002" ]
+check "1.5 P19 skip writes four fields" [ "$(awk -F'\t' '{print NF}' "$V/p19s")" = 4 ]
+# P14 (first part): enrollment state from profiles status output.
+check "1.5 P14 not enrolled" [ "$(printf 'Enrolled via DEP: No\nMDM enrollment: No\n' | enroll_state)" = $'No\tNo' ]
+check "1.5 P14 enrolled" [ "$(printf 'Enrolled via DEP: Yes\nMDM enrollment: Yes (User Approved)\n' | enroll_state)" = $'Yes\tYes' ]
+check "1.5 P14 unreadable output" [ "$(printf 'profiles: error\n' | enroll_state)" = $'unknown\tunknown' ]
+( profiles() { return 1; }; SKIPS="$V/p14s"; : > "$SKIPS"; read_enrollment; printf '%s %s\n' "$DEP" "$MDM" > "$V/p14r" )
+check "1.5 P14 failed command gives unknown" [ "$(cat "$V/p14r")" = "unknown unknown" ]
+check "1.5 P14 failed command records a skip" [ "$(cut -f1,2 "$V/p14s")" = $'other\tEnrollment state' ]
+( profiles() { printf 'Enrolled via DEP: No\nMDM enrollment: Yes\n'; }; SKIPS="$V/p14t"; : > "$SKIPS"; read_enrollment; printf '%s %s\n' "$DEP" "$MDM" > "$V/p14u" )
+check "1.5 P14 answered command records no skip" [ ! -s "$V/p14t" ]
+check "1.5 P14 answered command sets the state" [ "$(cat "$V/p14u")" = "No Yes" ]
+# P21: meta.tsv holds the 16 keys, each once.
+( TMP="$V/p21"; mkdir -p "$TMP"; HOST=mini; TUSER=alice; NOW="2026-12-01 10:00 PST"; EPOCH=1764612000; QUICK=0; OFFLINE=1; SKIPDU=0
+  NPR=3; NPS=1; NOS=2; RULES="$T/none"; BREW=""; DEP=No; MDM=No; HASBAT=1; write_meta )
+check "1.5 P21 sixteen keys" [ "$(cut -f1 "$V/p21/meta.tsv" | sort -u | grep -c .)" -eq 16 ]
+check "1.5 P21 no repeated key" [ "$(grep -c . "$V/p21/meta.tsv")" -eq 16 ]
+check "1.5 P21 rules 0 when the file is absent" has "$V/p21/meta.tsv" $'rules\t0'
+
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi

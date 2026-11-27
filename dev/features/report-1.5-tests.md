@@ -94,6 +94,8 @@ Cases:
 - P17. Option combinations: each usage error in the design's Option combinations list exits 2 before any audit work. `-o report.md --format md,json` writes `report.md` and `report.json`.
 - P18. OCSF uid: two MA-SHARING-026 findings and two skipped checks give four distinct `finding_info.uid` values, and `compliance.control` keeps the bare ID.
 - P19. `SKIP_IDS`: every literal skip label in `macassay` has a row, and every ID in it is a known ID.
+- P20. `finding` writes six fields: the section number from `h2`, and the source, `local` by default.
+- P21. `write_meta` writes the 16 keys of the design's `meta.tsv` table, each once.
 
 The 1.4 cases stay. F15, F16, and D1 cover the new optional SOURCE argument to `finding`.
 
