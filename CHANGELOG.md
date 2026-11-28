@@ -2,6 +2,16 @@
 
 Released versions of macassay and what changed in each, in the Keep a Changelog format. Current behavior is in `README.md`; open work is in `docs/ISSUES.md`.
 
+## Unreleased
+
+### Added
+
+- A Remote mode section in `README.md`: turning on Remote Login, the one-time SSH key setup, the first host-key check, and Full Disk Access over SSH.
+
+### Changed
+
+- When the first SSH connection of remote mode fails, the message now says that remote mode signs in with an SSH key or the SSH agent, and points to the README section.
+
 ## [1.5.3] - 2026-11-27
 
 The sudo rules are the same as in 1.5.2; an upgrade needs no new install of them.

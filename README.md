@@ -32,7 +32,7 @@ A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick
 
 [Report formats](#report-formats) explains `--format`, `--compare`, `--accepted`, and `--fail-on`.
 
-Remote mode sends the script inside the SSH command. Nothing is copied to the other Mac, and the report is saved on your Mac.
+[Remote mode](#remote-mode) explains how to set up an audit of another Mac over SSH.
 
 ## Report formats
 
@@ -112,7 +112,29 @@ Some checks read files that macOS protects with Full Disk Access: the Time Machi
 - If your terminal app already has Full Disk Access, these checks run, and you need to do nothing.
 - If it does not, the run still completes. Each of those checks prints `unreadable` with the reason and adds a line to Limitations.
 - To include them, give your terminal app Full Disk Access for the audit: System Settings, Privacy & Security, Full Disk Access. Then quit and reopen the terminal app. While it has the permission, every program you start from it can read Mail, Messages, Safari data, and other protected files, so turn it off after the run if you do not otherwise want it.
-- Over SSH, the setting is "Allow full disk access for remote users" in the Remote Login settings.
+- Over SSH, the setting is "Allow full disk access for remote users" in the Remote Login settings. [Remote mode](#remote-mode) explains its trade-off.
+
+## Remote mode
+
+Remote mode audits another Mac over SSH: `./macassay --host HOST`. macAssay sends the script inside the SSH command, so nothing is copied to the other Mac. The other Mac runs the checks and sends the results back, and the report is saved on your Mac. Every option in [Report formats](#report-formats) works with `--host`.
+
+Remote mode signs in only with an SSH key or the SSH agent. It never asks for a password, a key passphrase, or a yes to a new host key, so a run never waits for input. To audit the Mac you are on through SSH, use `localhost` as the host.
+
+Set up each Mac once:
+
+1. On the Mac to audit, turn on Remote Login: System Settings, General, Sharing, Remote Login. Under "Allow access for", include the account you will sign in as.
+2. On your Mac, if you have no SSH key, create one: `ssh-keygen -t ed25519`.
+3. If the key has a passphrase, add it to the SSH agent before each audit, because remote mode cannot ask for it: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`.
+4. Copy your public key to the Mac to audit: `ssh-copy-id USER@HOST`. It asks you to confirm the host key, then asks for the account's password. It adds the host key to `~/.ssh/known_hosts` on your Mac and your public key to `~/.ssh/authorized_keys` on the Mac to audit.
+5. Run the audit: `./macassay --host HOST --user USER`. To sign in with one key only, add `--key ~/.ssh/id_ed25519`.
+
+macAssay never creates a key or edits `authorized_keys`: you make these changes yourself, and you can undo them by deleting the key's line from `authorized_keys`.
+
+If SSH fails, macAssay prints SSH's error and stops. "Host key verification failed" means that the host key is not in `~/.ssh/known_hosts`. Connect once with `ssh USER@HOST` and confirm the key, then run the audit again. To check the host key against another file, use `--known-hosts FILE`.
+
+Full Disk Access over SSH comes from the Remote Login settings, not from a terminal app. The setting "Allow full disk access for remote users" gives Full Disk Access to every account under "Allow access for" when it signs in over SSH, from any machine that can reach the Mac, while Remote Login is on. Without it, the checks that need Full Disk Access print `unreadable` and are listed under Limitations, as in a local run. If you turn it on for an audit, turn it off afterward unless you need it.
+
+To install the sudo rules on the Mac to audit, run `./macassay --host HOST --install-sudoers`. It asks for that Mac's sudo password. [Privileged checks](#privileged-checks-optional) explains the trade-off.
 
 ## Limits
 
