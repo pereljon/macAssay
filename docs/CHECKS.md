@@ -26,7 +26,7 @@ Other gates and notes:
 - A check that ran but could not read its evidence prints `unreadable (REASON)` and records a skip, never a clean value. These skips are: Time Machine settings (file unreadable or missing while a destination exists), the Jetsam and kernel panic folders, the 7-day log searches, Homebrew outdated packages, the XProtect version, the enrollment state, browser policy files, Remote Management settings, Find My, firewall stealth mode, and screen lock. Each skip lists the finding IDs that the check could have given, so `--compare` reports them as not checked.
 - `-o`, `--stdout`, and remote mode (`--host`, `--user`, `--key`, `--port`, `--known-hosts`) change where the report goes or which Mac is audited. They do not change which checks run. Remote mode passes `--quick`, `--offline`, and `--skip-du` to the remote run.
 - `--print-sudoers` and `--install-sudoers` do not run the audit.
-- While it runs, the script prints one status line per section on standard error: finding counts, skipped checks, and time.
+- While it runs, the script prints two status lines per section on standard error: the section name when it starts, then its finding counts, skipped checks, and time when it ends.
 
 ## 1. System health (Health)
 
