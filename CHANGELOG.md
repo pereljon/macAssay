@@ -7,6 +7,8 @@ Released versions of macassay and what changed in each, in the Keep a Changelog 
 ### Fixed
 
 - The HTTP probe of each listener followed the `http_proxy` and `ALL_PROXY` environment variables, so with a proxy set, the probe of the Mac's own address went to the proxy, also under `--offline`. The probe now bypasses every proxy.
+- Text read from the audited Mac, such as a program path, could render as a remote image, a link, or HTML when the Markdown report was opened in a viewer. The Markdown report now escapes `\`, `[`, `]`, and `<` in that text. The HTML, JSON, CSV, and OCSF reports are unchanged.
+- A report written over an existing file kept that file's permissions, so it could stay readable by other accounts. Each report file now has mode 0600. As a result, `-o /dev/null` now fails; use `--stdout >/dev/null` instead.
 
 ## [1.5.2] - 2026-11-27
 

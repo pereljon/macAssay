@@ -1090,7 +1090,7 @@ check "1.5 P9 load succeeds" [ $? -eq 0 ]
 check "1.5 P9 comments and blank lines ignored" [ "$(grep -c . "$V/p9.acc")" -eq 3 ]
 check "1.5 P9 reason cleaned" [ "$(head -1 "$V/p9.acc" | cut -f3)" = "forced by IT / x <script>" ]
 mkfix "$V/p9r"; cp "$V/p9.acc" "$V/p9r.acc"; rfix "$V/p9r" "md html json" "$V/p9base"
-check "1.5 P9 ID-only line accepts every finding with the ID" grep -qE '^\| LOW \| MA-PLATFORM-015 .* \| forced by IT / x <script> \|$' "$V/p9base.md"
+check "1.5 P9 ID-only line accepts every finding with the ID" grep -qE '^\| LOW \| MA-PLATFORM-015 .* \| forced by IT / x \\<script> \|$' "$V/p9base.md"
 check "1.5 P9 whole-text match accepts" grep -qE '^\| LOW \| MA-SHARING-026 \| Sharing \| =HYPERLINK\("http://x"\) \| approved \|$' "$V/p9base.md"
 check "1.5 P9 regex characters match as fixed text" grep -qE '^\| MEDIUM \| MA-SHARING-026 .* \|  \|$' "$V/p9base.md"
 check "1.5 P9 a regex line accepts nothing" not grep -qE '^\| MEDIUM \| MA-SHARING-026 .* \|  \|$' <(sed -n '/^## Accepted risks/,/^## Limitations/p' "$V/p9base.md")
@@ -1423,6 +1423,69 @@ rm -f "$X/notable.db"; sqlite3 "$X/notable.db" "create table other (a);" >/dev/n
 tccrun notable "$X/notable.db" "$X/usr.db"
 check "1.5.2 W2 changed format records a skip" grep -q $'\tPrivacy permissions (system TCC database)\t' "$X/notable.skips"
 check "1.5.2 W2 changed format does not read none" hasnt "$X/notable.body" "(system database): none"
+
+# Version 1.5.3 cases: Markdown escaping (E) and report permissions (W). H holds a remote image, raw HTML, a link,
+# and an escaped bracket, which Markdown must show as text.
+X3="$T/v153"; mkdir -p "$X3"
+H='![x](http://host.invalid/a.png) <img src=http://host.invalid/b> [l](http://host.invalid/c) \[ end'
+HM='!\[x\](http://host.invalid/a.png) \<img src=http://host.invalid/b> \[l\](http://host.invalid/c) \\\[ end'
+HH='![x](http://host.invalid/a.png) &lt;img src=http://host.invalid/b&gt; [l](http://host.invalid/c) \[ end'
+mkfix "$X3/e"; printf 'HIGH\tMA-PERSISTENCE-001\tPersistence\t%s\t13\tlocal\n' "$H" >> "$X3/e/findings.tsv"
+printf '%s\n' '' '## 13. Persistence' '' "- Program: $(mdesc "$H")" "- Path: \`$(mdcode "$H")\`" "**Account $(mdesc "$H")**" >> "$X3/e/body.md"
+printf 'MA-SHARING-026   # %s\n' "$H" > "$X3/e.txt"; ( TMP="$X3/etmp"; mkdir -p "$TMP"; load_accepted "$X3/e.txt" ) > "$X3/e.acc"
+rfix "$X3/e" "md html json csv ocsf"
+check "1.5.3 E1 render succeeds" [ $? -eq 0 ]
+E3MD="$X3/e.out.md"
+check "1.5.3 E1 finding text escaped in the table" has "$E3MD" "| HIGH | MA-PERSISTENCE-001 | Persistence | $HM |"
+check "1.5.3 E2 no unescaped bracket or angle in the findings table" [ -z "$(grep '^| HIGH | MA-PERSISTENCE-001' "$E3MD" | grep -E '(^|[^\\])[[<]')" ]
+check "1.5.3 E3 mdesc escapes a list item" has "$E3MD" "- Program: $HM"
+check "1.5.3 E4 mdcode adds no backslash" has "$E3MD" "- Path: \`$H\`"
+check "1.5.3 E5 accepted-risk reason escaped" grep -qF "| $HM |" <(grep '^| LOW | MA-SHARING-026' "$E3MD")
+mkdir -p "$X3/c"; printf '%s\n' $'host\tm[x](http://host.invalid/h)' $'date\t2026-11-27' $'options\tquick=0 offline=0 skip-du=0' > "$X3/c/compare.tsv"
+printf 'new\tMA-PERSISTENCE-001\tHIGH\tPersistence\t%s\n' "$H" > "$X3/c/changes.tsv"
+# shellcheck disable=SC2034  # md_changes in macassay reads these
+( M_QUICK=0; M_OFFLINE=0; M_SKIPDU=0; md_changes "$X3/c" ) > "$X3/c.md"
+check "1.5.3 E6 change line escaped" has "$X3/c.md" "- HIGH MA-PERSISTENCE-001: $HM"
+check "1.5.3 E6 old host name escaped" has "$X3/c.md" 'Compared with the run on m\[x\](http://host.invalid/h) at 2026-11-27.'
+E3H="$X3/e.out.html"
+check "1.5.3 E7 HTML body list item shows the original text" has "$E3H" "<li>Program: $HH</li>"
+check "1.5.3 E7 HTML bold line shows the original text" has "$E3H" "<p><strong>Account $HH</strong></p>"
+check "1.5.3 E7 HTML has no image or outside link element" [ -z "$(grep -E '<img|<a href="[^#]' "$E3H")" ]
+check "1.5.3 E8 JSON finding text unchanged" has "$X3/e.out.json" '![x](http://host.invalid/a.png) <img src=http://host.invalid/b> [l](http://host.invalid/c) \\[ end'
+check "1.5.3 E8 CSV finding text unchanged" has "$X3/e.out.csv" "\"$H\""
+check "1.5.3 E8 OCSF finding text unchanged" has "$X3/e.out.ocsf.jsonl" '![x](http://host.invalid/a.png) <img'
+check "1.5.3 E8 no Markdown escape in JSON" hasnt "$X3/e.out.json" '!\\['
+# E9: data without the four characters renders the same Markdown and HTML as release 1.5.2.
+if git rev-parse -q --verify 'refs/tags/v1.5.2' >/dev/null 2>&1 && git show v1.5.2:macassay > "$X3/old.sh" 2>/dev/null; then
+  mkfix "$X3/n"; printf '%s\n' $'MEDIUM\tMA-SHARING-026\tSharing\tRemote tool "q" (x) & y: caf\303\251\t6\tlocal' > "$X3/n/findings.tsv"
+  # shellcheck disable=SC2016  # literal Markdown code spans, not command substitutions
+  printf '%s\n' '' '## 6. Sharing and remote access' '' '- AirDrop: off (managed)' '**Account alice** (`/Users/alice`)' \
+    '| `*.22` | `/sbin/launchd` | 1 | Apple | 000 |' '' '```text' 'plain block' '```' > "$X3/n/body.md"
+  cp -R "$X3/n" "$X3/n2"; rfix "$X3/n" "md html"
+  # shellcheck disable=SC1091,SC2034  # the 1.5.2 script reads MACASSAY_LIB; it is extracted at run time
+  ( MACASSAY_LIB=1; . "$X3/old.sh"; rfix "$X3/n2" "md html" )
+  check "1.5.3 E9 Markdown matches 1.5.2" cmp -s "$X3/n.out.md" "$X3/n2.out.md"
+  check "1.5.3 E9 HTML matches 1.5.2" cmp -s "$X3/n.out.html" "$X3/n2.out.html"
+else echo "skip 1.5.3 E9: no v1.5.2 tag"; fi
+# E11: the limitations list escapes in Markdown and shows the original text in HTML. E12: skip_reason escapes.
+mkfix "$X3/l"; printf 'other\tlabel [x](http://host.invalid/l) <b> \\[\treason\t\n' > "$X3/l/skipped.tsv"; rfix "$X3/l" "md html json"
+check "1.5.3 E11 limitations escaped in Markdown" has "$X3/l.out.md" '- Skipped: label \[x\](http://host.invalid/l) \<b> \\\[ (reason)'
+check "1.5.3 E11 limitations show the original text in HTML" has "$X3/l.out.html" '<li>Skipped: label [x](http://host.invalid/l) &lt;b&gt; \[ (reason)</li>'
+check "1.5.3 E11 limitations unchanged in JSON" has "$X3/l.out.json" 'Skipped: label [x](http://host.invalid/l) <b> \\[ (reason)'
+printf 'other\tE12 label\t%s\t\n' "$H" > "$X3/e12.tsv"
+check "1.5.3 E12 skip_reason escapes" [ "$(SKIPS="$X3/e12.tsv" skip_reason "E12 label")" = "$HM" ]
+# W: report permissions. A new file and an overwritten 0644 file both end up 0600; standard output writes no file.
+mkfix "$X3/w"; rfix "$X3/w" md "$X3/w-new.md"
+check "1.5.3 W1 new report is 0600" [ "$(stat -f %Lp "$X3/w-new.md")" = 600 ]
+( umask 022; echo PREVIOUS-REPORT > "$X3/w-old.md" ); chmod 644 "$X3/w-old.md"; rfix "$X3/w" md "$X3/w-old.md"
+check "1.5.3 W2 overwritten report is 0600" [ "$(stat -f %Lp "$X3/w-old.md")" = 600 ]
+check "1.5.3 W2 overwritten report has the new content" hasnt "$X3/w-old.md" "PREVIOUS-REPORT"
+rfix "$X3/w" "md json" "$X3/w-two"
+check "1.5.3 W3 both formats are 0600" [ "$(stat -f %Lp "$X3/w-two.md")$(stat -f %Lp "$X3/w-two.json")" = 600600 ]
+( cd "$X3" && TMP="$X3/w4.tmp"; mkdir -p "$TMP"; FMTS=md; OUT=""; DEFBASE="$X3/w4"; STDOUT=1; ACCEPTED=""; COMPARE=""; FAILON=""
+  render_all "$X3/w" > "$X3/w4.stdout" 2>/dev/null )
+check "1.5.3 W4 standard output gets the report" has "$X3/w4.stdout" "## Findings"
+check "1.5.3 W4 standard output writes no file" [ ! -e "$X3/w4.md" ]
 
 echo ""
 if [ "$FAILS" -eq 0 ]; then echo "All cases passed."; else echo "$FAILS case(s) failed."; exit 1; fi
