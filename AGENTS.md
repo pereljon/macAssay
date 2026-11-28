@@ -17,11 +17,11 @@
 - A check is a test that the script runs. A finding is a judged result of a check, with a severity, listed in the report's Findings section.
 - A flag is a command-line option, such as `--quick`. Do not call a finding a flag.
 - Write the project name as macAssay in prose. Write `macassay` only for the command, the script file, and file names, in backticks.
-- Write the project name as macAssay in prose. Write `macassay` only for the command, the script file, and file names, in backticks.
 
 ## Security Context
 
 - Users: the user, auditing their own Macs, locally or over SSH.
+- Threat model: macAssay is a preventive audit, not endpoint protection. It assumes the audited Mac is not compromised. Its privilege design guards against bugs in macAssay's own code. It does not guard against other processes that use the macAssay sudo rules or a cached sudo credential.
 - Untrusted input: everything read from the audited Mac (file contents, process names, listener responses, log lines). It must never be executed or used unquoted in a command.
 - Costliest mistakes: a sudoers rule that grants more than a read-only command; a root run that executes user-writable code; secrets copied into a report; a broken `/etc/sudoers.d` file that locks sudo.
 - Before you install sudoers rules or a root-owned copy on any Mac, confirm with the user. State the impact and the undo command.
