@@ -96,8 +96,8 @@ Version 1.5 (design `dev/features/report-1.5.md`, tests `dev/features/report-1.5
 
 Version 1.5.3 (design `dev/features/fixes-1.5.3.md`, tests `dev/features/fixes-1.5.3-tests.md`): fixes from the two outside reviews of 1.5.2 (2026-11-27), approved by the user (A2, A3). The listener proxy fix (A1) is on `master`, under Unreleased in `CHANGELOG.md`.
 
-- [/] Escape untrusted text in the Markdown report, so that it never renders as a link, an image, or HTML.
-- [/] Give each report file mode 0600, also when it replaces an existing file.
+- [x] Escape untrusted text in the Markdown report, so that it never renders as a link, an image, or HTML. (resolved 2026-11-27): built on `fix/1.5.3`; fixtures E1 to E12, viewer check M2, and a full run passed.
+- [x] Give each report file mode 0600, also when it replaces an existing file. (resolved 2026-11-27): built on `fix/1.5.3`; fixtures W1 to W4 and a full run passed.
 
 Version 1.6 (needs a design doc and test plan; decided 2026-11-26, decision A10): new checks from `dev/prior-art-ideas.md`. Candidates, ranked by exposure; the 1.6 design picks the final list:
 
