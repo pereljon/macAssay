@@ -57,7 +57,7 @@
 # The audit never runs as root. Bash 3.2 compatible (macOS /bin/bash); stock macOS tools only.
 # Remote mode sends the script inside the SSH command; nothing is copied to the remote disk.
 
-VERSION="1.5.2+dev"
+VERSION="1.5.3 (2026-11-27)"
 # Over SSH, Full Disk Access comes from the Remote Login setting for remote users, not from a terminal app.
 FDA_HINT="needs Full Disk Access for the terminal app, or for remote users in the Remote Login settings"
 PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH

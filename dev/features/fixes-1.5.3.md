@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: building
-status: drafted 2026-11-27 from two outside reviews of 1.5.2; built on fix/1.5.3 2026-11-27
+lifecycle: shipped
+status: shipped in v1.5.3 (2026-11-27)
 ---
 
 # Markdown escaping and report permissions (version 1.5.3)
