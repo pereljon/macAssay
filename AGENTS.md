@@ -37,6 +37,7 @@
 - Lint with `shellcheck macassay`. ShellCheck comes from Homebrew and is a development tool only; the script still uses stock tools. Three historical findings remain (`ls` parsing, SC2010 and SC2012); compare against the base branch to find the ones a diff adds.
 - Run the fixture tests with `dev/test.sh`; they need no root and no network.
 - Test run: `./macassay -o <path in the session temp folder>`, then review the report. A full local run takes about 3 minutes; `--quick --offline --skip-du` is faster.
+- Run release tests in the user's terminal. The agent's shell has no terminal and no Full Disk Access, so some checks cannot run there.
 - Do not commit generated reports. They describe a real Mac.
 
 ## Change Checklist
