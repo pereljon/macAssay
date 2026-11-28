@@ -1,7 +1,7 @@
 ---
 kind: feature
-lifecycle: building
-status: drafted 2026-11-27 as a password prompt (B1, B2); replaced the same day by a key-only guide (E1, E2) after test M8
+lifecycle: shipped
+status: drafted 2026-11-27 as a password prompt (B1, B2); replaced the same day by a key-only guide (E1, E2) after test M8; shipped in v1.5.4 (2026-11-28)
 ---
 
 # Remote mode guide
