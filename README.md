@@ -18,7 +18,7 @@ macAssay needs no other software: it uses only `/bin/bash` 3.2 and tools that sh
 4. Run `./macassay` as your normal user. It refuses to run as root.
 5. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
 
-A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the checks that contact Apple or Homebrew, and the disk usage scans. While it runs, it prints one status line per section on standard error, with counts only.
+A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the checks that contact Apple or Homebrew, and the disk usage scans. While it runs, it prints two status lines per section on standard error: the section name when it starts, and its counts when it ends.
 
 ```sh
 ./macassay -o ~/Desktop/report.md                       # choose the report file
@@ -125,7 +125,7 @@ Set up each Mac once:
 1. On the Mac to audit, turn on Remote Login: System Settings, General, Sharing, Remote Login. Under "Allow access for", include the account you will sign in as.
 2. On your Mac, if you have no SSH key, create one: `ssh-keygen -t ed25519`.
 3. If the key has a passphrase, add it to the SSH agent before each audit, because remote mode cannot ask for it: `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`.
-4. Copy your public key to the Mac to audit: `ssh-copy-id USER@HOST`. It asks you to confirm the host key, then asks for the account's password. It adds the host key to `~/.ssh/known_hosts` on your Mac and your public key to `~/.ssh/authorized_keys` on the Mac to audit.
+4. Copy your public key to the Mac to audit: `ssh-copy-id USER@HOST`. It asks you to confirm the host key, then asks for the account's password. It adds the host key to `~/.ssh/known_hosts` on your Mac and your public key to `~/.ssh/authorized_keys` on the Mac to audit. If your key is already on that Mac, skip this step, but connect once with `ssh USER@HOST` to confirm the host key.
 5. Run the audit: `./macassay --host HOST --user USER`. To sign in with one key only, add `--key ~/.ssh/id_ed25519`.
 
 macAssay never creates a key or edits `authorized_keys`: you make these changes yourself, and you can undo them by deleting the key's line from `authorized_keys`.

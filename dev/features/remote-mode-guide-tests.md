@@ -26,4 +26,6 @@ None yet.
 - A1 (2026-11-27): pass. Output: `SSH to localhost failed: Host key verification failed.`, then the pointer line; exit 1.
 - A2 (2026-11-27): pass. The audit and `--print-sudoers` each print `root@HOST is not macOS (uname: Linux).` and exit 1.
 - A3 (2026-11-27): pass. Syntax check clean; ShellCheck shows only the three historical findings; 662 fixture cases pass.
+- M2 (2026-11-27, the user, in iTerm on the Mac mini): pass. Remote Login menu path, "Allow access for", and "Allow full disk access for remote users" match the README. The user's key was already in `authorized_keys`, so step 4 was skipped; the first audit then failed with `Host key verification failed` and the README pointer, and the README's fix (connect once with `ssh`) worked. The audit over SSH wrote a report with no prompt (63 findings, 22 s). Follow-ups, approved by the user (G2, G3): step 4 now says what to do when the key is already on the Mac; the README and `docs/CHECKS.md` said one status line per section, while every run prints two (`h2`, `sect_end`), and now say two.
+- M1: not run; optional, since the SSH code is unchanged.
 - The password-prompt build ran A1 (pass) and M8 (fail, see Findings in `remote-mode-guide.md`) before it was replaced.
