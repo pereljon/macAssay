@@ -14,8 +14,9 @@ macAssay needs no other software: it uses only `/bin/bash` 3.2 and tools that sh
 
 1. Get a copy of this repository: `git clone https://github.com/pereljon/macAssay.git`, then `cd macAssay`.
 2. Install the sudo rules (recommended). Without them, macAssay skips every check that needs root, such as all network listeners, the packet filter, background items, and the sudoers files. Review the commands first with `./macassay --print-sudoers`, then run `sudo ./macassay --install-sudoers`. Read the trade-off in [Privileged checks](#privileged-checks-optional) before you install them.
-3. Run `./macassay` as your normal user. It refuses to run as root.
-4. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
+3. Optional: if your terminal app does not have Full Disk Access, read [Full Disk Access](#full-disk-access-optional) to decide whether to grant it for the audit.
+4. Run `./macassay` as your normal user. It refuses to run as root.
+5. Open the report. By default it is `macassay-<host>-<date>.md` in the current folder.
 
 A full run took about 5 minutes on the Mac it was tested on. `./macassay --quick --offline --skip-du` skips the slow log searches, the checks that contact Apple or Homebrew, and the disk usage scans. While it runs, it prints one status line per section on standard error, with counts only.
 
@@ -104,11 +105,21 @@ To install the file:
 
 The installer checks the file with `visudo` before and after it writes it. The file names each account's files and each `sudoers.d` file by path, so install it again after you add a user or a `sudoers.d` file. The file stops sudo from writing a login record for each privileged check. A file from a version before 1.3.2 does not, so install it again after you upgrade. For a remote Mac, run `./macassay --host HOST --install-sudoers`; it asks for the remote sudo password.
 
+## Full Disk Access (optional)
+
+Some checks read files that macOS protects with Full Disk Access: the Time Machine settings, the privacy permission databases, and possibly crash reports, Remote Management settings, and browser policies. macOS grants the permission to the terminal app you run macAssay from, not to macAssay.
+
+- If your terminal app already has Full Disk Access, these checks run, and you need to do nothing.
+- If it does not, the run still completes. Each of those checks prints `unreadable` with the reason and adds a line to Limitations.
+- To include them, give your terminal app Full Disk Access for the audit: System Settings, Privacy & Security, Full Disk Access. Then quit and reopen the terminal app. While it has the permission, every program you start from it can read Mail, Messages, Safari data, and other protected files, so turn it off after the run if you do not otherwise want it.
+- Over SSH, the setting is "Allow full disk access for remote users" in the Remote Login settings.
+
 ## Limits
 
 - The audit changes nothing on the Mac, apart from these side effects:
   - A temporary folder under `/tmp`, removed when the run ends.
-  - A refresh of Apple's update catalog cache, and Homebrew's auto-update, which updates Homebrew and its package lists but no installed package.
+  - A refresh of Apple's update catalog cache.
+  - Homebrew's auto-update: `brew outdated` runs `brew update` first, at most once a day, or once an hour after a Homebrew developer command. It updates Homebrew and its package lists, never an installed package. To skip it, use `--offline`, which also skips the outdated-packages check, or run `HOMEBREW_NO_AUTO_UPDATE=1 ./macassay` to skip it for that run only and compare against the package lists already on the Mac.
   - Gatekeeper asks Apple's servers about each app in `/Applications` and `~/Applications`.
   - One HTTP GET to each of the Mac's own network listeners, to see which ones ask for a login.
   - `nc -z` connection tests to the sharing ports.

@@ -39,7 +39,7 @@ This file holds the logic flow of `macassay` and the invariants that every chang
 Rule: a run has only these side effects:
 - A temporary folder under `/tmp`, removed on exit.
 - `softwareupdate -l`, which refreshes Apple's update catalog cache.
-- Homebrew's auto-update before `brew outdated`, at most once a day by default. It updates Homebrew and its package lists, but no installed package.
+- Homebrew's auto-update before `brew outdated`, at most once a day, or once an hour after a Homebrew developer command (`homebrew.devcmdrun`). It updates Homebrew and its package lists, but no installed package. `HOMEBREW_NO_AUTO_UPDATE=1` in the environment of the run skips it.
 - Gatekeeper assessment of each app (`spctl -a -t exec`, MA-APPS-002), which asks Apple's servers about the app.
 - One HTTP GET to each listener on the Mac's own addresses, `nc -z` tests to the sharing ports, and one SSH connection as `nobody` to 127.0.0.1, which sshd logs.
 - With the sudo rules installed, sudo logs each privileged command. The rules turn off `set_utmp`, so a run writes no login record. Rules from before 1.3.2 lack this, so each privileged check then writes a login record.

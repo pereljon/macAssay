@@ -88,3 +88,7 @@ Pre-merge review of `fix/1.5.3` at `b5d8695` (R, 2026-11-27, opus, high):
 - Mutations (2026-11-27): removing the `chmod`, the `\` from either `md_esc`, `md_unesc` on bold lines, its `\\` handling, or the escaping of change lines, accepted-risk reasons, Markdown limitations, HTML limitations, or `skip_reason` each makes a 1.5.3 case fail.
 - M1 (2026-11-27, agent session without Full Disk Access, `--quick --offline --skip-du --format md,html`): both files are mode 0600. The only escaped value was `tmutil`'s `[Included]`, which shows as `[Included]` in HTML. No backslash appears in a code span. A full run in iTerm is still to do.
 - M2: not run; it needs the user to open a fixture report in a viewer that loads remote images.
+- Homebrew auto-update, for the README (2026-11-27, development Mac, Homebrew 7.0.17), judged by the `FETCH_HEAD` time in the Homebrew repository:
+  - A plain `brew outdated` updated less than 5 hours after the previous update. This Mac has `homebrew.devcmdrun = true`, which sets a 1-hour interval (`brew.sh:550-557`, `utils/auto-update.sh:79-82`); the default is 24 hours.
+  - `HOMEBREW_NO_AUTO_UPDATE=1` with `HOMEBREW_AUTO_UPDATE_SECS=1` blocked the update, both for `brew outdated` alone and through `./macassay --quick --skip-du`; the outdated lists still printed.
+  - `HOMEBREW_AUTO_UPDATE_SECS=1` alone updated Homebrew, for `brew outdated` alone and 13 seconds into a `macassay` run.
